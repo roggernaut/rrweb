@@ -1,6 +1,7 @@
 import { openDB } from 'idb';
 import type { eventWithTime } from '@rrweb/types';
 import type { Session } from '~/types';
+import { ZstdCodec } from 'zstd-codec';
 
 /**
  * Storage related functions with indexedDB.
@@ -118,4 +119,188 @@ export async function downloadSessions(ids: string[]) {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   }
+}
+
+export type SessionUploadResult = {
+  id: string;
+  name: string;
+  ok: boolean;
+  error?: string;
+};
+
+// const COMPRESSION_ENDPOINT = 'http://localhost:8787';
+const COMPRESSION_ENDPOINT = 'https://api.rrwebcloud.com';
+
+type ContentEncoding = 'zstd' | 'br' | 'gzip';
+
+type CompressionResult = {
+  buffer: ArrayBuffer;
+  encoding: ContentEncoding;
+};
+
+type CompressionFormat = 'zstd' | 'brotli' | 'gzip';
+
+let zstdSimplePromise:
+  | Promise<{
+      compress(
+        content: Uint8Array,
+        compressionLevel?: number,
+      ): Uint8Array | null;
+    }>
+  | undefined;
+
+async function compressWithCompressionStream(
+  payload: string,
+  format: CompressionFormat,
+): Promise<CompressionResult> {
+  if (typeof CompressionStream === 'undefined') {
+    throw new Error('CompressionStream is not available.');
+  }
+  const CompressionStreamCtor = CompressionStream as unknown as new (
+    fmt: CompressionFormat,
+  ) => CompressionStream;
+  const compressionStream = new CompressionStreamCtor(format);
+  const payloadStream = new Response(payload).body;
+  if (!payloadStream) {
+    throw new Error('Failed to create payload stream for compression.');
+  }
+  const compressedStream = payloadStream.pipeThrough(compressionStream);
+  const buffer = await new Response(compressedStream).arrayBuffer();
+  const encoding: ContentEncoding =
+    format === 'zstd' ? 'zstd' : format === 'brotli' ? 'br' : 'gzip';
+  return {
+    buffer,
+    encoding,
+  };
+}
+
+async function getZstdSimple() {
+  if (!zstdSimplePromise) {
+    zstdSimplePromise = new Promise((resolve, reject) => {
+      try {
+        ZstdCodec.run((zstdModule) => {
+          try {
+            // eslint-disable-next-line new-cap
+            const simple = new zstdModule.Simple();
+            resolve(simple);
+          } catch (error) {
+            reject(error);
+          }
+        });
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+  return zstdSimplePromise;
+}
+
+async function compressWithZstdWasm(
+  payload: string,
+): Promise<CompressionResult> {
+  const encoder = new TextEncoder();
+  const simple = await getZstdSimple();
+  const encodedPayload = encoder.encode(payload);
+  const compressed = simple.compress(encodedPayload);
+  if (!compressed) {
+    throw new Error('Zstandard compression failed.');
+  }
+  const buffer = compressed.buffer.slice(
+    compressed.byteOffset,
+    compressed.byteOffset + compressed.byteLength,
+  );
+  return {
+    buffer,
+    encoding: 'zstd',
+  };
+}
+
+async function compressPayload(payload: string): Promise<CompressionResult> {
+  if (typeof CompressionStream !== 'undefined') {
+    try {
+      return await compressWithCompressionStream(payload, 'zstd');
+    } catch {
+      // Fallback below.
+    }
+  }
+
+  try {
+    return await compressWithZstdWasm(payload);
+  } catch {
+    // Continue to other formats.
+  }
+
+  if (typeof CompressionStream !== 'undefined') {
+    try {
+      return await compressWithCompressionStream(payload, 'brotli');
+    } catch {
+      // Try gzip fallback below.
+    }
+    return compressWithCompressionStream(payload, 'gzip');
+  }
+
+  throw new Error('No supported compression format available.');
+}
+
+export async function uploadSessions(
+  ids: string[],
+): Promise<SessionUploadResult[]> {
+  const results: SessionUploadResult[] = [];
+
+  for (const sessionId of ids) {
+    let session: Session | undefined;
+    try {
+      session = await getSession(sessionId);
+      if (!session) {
+        throw new Error('Session metadata not found.');
+      }
+      const events = await getEvents(sessionId);
+      if (!Array.isArray(events)) {
+        throw new Error('No recording events were found for this session.');
+      }
+      const payload = events.map((event) => JSON.stringify(event)).join('\n');
+      const payloadSize = new TextEncoder().encode(payload).length;
+      const payloadSizeMB = payloadSize / 1024 / 1024;
+      const { buffer, encoding } = await compressPayload(payload);
+      const compressedPayloadSize = buffer.byteLength;
+      const compressedPayloadSizeMB = compressedPayloadSize / 1024 / 1024;
+      console.log(
+        `Uploading session payload (${session.id}, ${payloadSizeMB}MB)`,
+        `Compressed payload size: ${compressedPayloadSizeMB}MB`,
+        payload,
+      );
+      const response = await fetch(
+        `${COMPRESSION_ENDPOINT}/recordings/${session.id}/ingest`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/ndjson',
+            'Content-Encoding': encoding,
+          },
+          body: buffer,
+        },
+      );
+      if (!response.ok) {
+        throw new Error(
+          `Upload failed with status ${response.status} ${
+            response.statusText || ''
+          }`.trim(),
+        );
+      }
+      results.push({
+        id: sessionId,
+        name: session.name,
+        ok: true,
+      });
+    } catch (error) {
+      results.push({
+        id: sessionId,
+        name: session?.name ?? sessionId,
+        ok: false,
+        error: (error as Error).message,
+      });
+    }
+  }
+
+  return results;
 }

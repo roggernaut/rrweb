@@ -280,8 +280,12 @@ function setDefaultSettings(
 }
 
 function generateSession(title: string) {
+  const sessionId =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : nanoid();
   const newSession: Session = {
-    id: nanoid(),
+    id: sessionId,
     name: title,
     tags: [],
     createTimestamp: Date.now(),

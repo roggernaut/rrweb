@@ -46,6 +46,7 @@ import {
   downloadSessions,
   addSession,
   updateSession,
+  uploadSessions,
 } from '~/utils/storage';
 import {
   FiChevronLeft,
@@ -56,6 +57,10 @@ import {
 
 const columnHelper = createColumnHelper<Session>();
 const channel = new Channel();
+const createSessionId = () =>
+  typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : nanoid();
 
 export function SessionList() {
   const navigate = useNavigate();
@@ -96,6 +101,7 @@ export function SessionList() {
     }),
     [pageIndex, pageSize],
   );
+  const [isUploading, setIsUploading] = useState(false);
 
   const columns = useMemo(
     () => [
@@ -225,7 +231,7 @@ export function SessionList() {
           session: Session;
           events: eventWithTime[];
         };
-        const id = nanoid();
+        const id = createSessionId();
         data.session.id = id;
         await addSession(data.session, data.events);
         toast({
@@ -248,6 +254,53 @@ export function SessionList() {
       }
     };
     reader.readAsText(file);
+  };
+
+  const handleUpload = async () => {
+    const selectedRows = table.getSelectedRowModel().flatRows;
+    if (selectedRows.length === 0) return;
+    setIsUploading(true);
+    try {
+      const results = await uploadSessions(
+        selectedRows.map((row) => row.original.id),
+      );
+      const failed = results.filter((result) => !result.ok);
+      if (failed.length === 0) {
+        toast({
+          title: 'Upload complete',
+          description: `${results.length} session${
+            results.length === 1 ? '' : 's'
+          } uploaded successfully.`,
+          status: 'success',
+          duration: 3000,
+          isClosable: true,
+        });
+      } else {
+        const failureMessage = failed
+          .map(
+            (result) =>
+              `${result.name}: ${result.error ?? 'Unknown error encountered.'}`,
+          )
+          .join('\n');
+        toast({
+          title: 'Upload completed with errors',
+          description: failureMessage,
+          status: 'error',
+          duration: 6000,
+          isClosable: true,
+        });
+      }
+    } catch (error) {
+      toast({
+        title: 'Upload failed',
+        description: (error as Error).message,
+        status: 'error',
+        duration: 6000,
+        isClosable: true,
+      });
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   return (
@@ -447,6 +500,18 @@ export function SessionList() {
                 }}
               >
                 Download
+              </Button>
+              <Button
+                mr={4}
+                size="md"
+                colorScheme="blue"
+                onClick={() => {
+                  void handleUpload();
+                }}
+                isLoading={isUploading}
+                loadingText="Uploading"
+              >
+                Upload
               </Button>
             </Flex>
           )}
