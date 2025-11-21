@@ -22,7 +22,8 @@ export function getSetVisitorId() {
     const secure = window.location.protocol === 'https:' ? ';Secure' : '';
     // In jsdom/test environment, host might be localhost which doesn't support domain cookies
     const host = document.location?.host || 'localhost';
-    const domain = host === 'localhost' ? '' : `;domain=${host.replace(/^www\./, '')}`;
+    const domain =
+      host === 'localhost' ? '' : `;domain=${host.replace(/^www\./, '')}`;
     document.cookie = `${nameEQ}${value};${expires}${domain};path=/;SameSite=Lax${secure}`;
   }
   return value;

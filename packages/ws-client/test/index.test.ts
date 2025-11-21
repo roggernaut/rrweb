@@ -52,7 +52,9 @@ vi.mock('@rrweb/record', () => {
   const recordMock = vi.fn().mockReturnValue(vi.fn()); // returns stop function
   (recordMock as Record<string, unknown>).addCustomEvent = vi.fn();
   (recordMock as Record<string, unknown>).freezePage = vi.fn();
-  (recordMock as Record<string, unknown>).nowTimestamp = vi.fn().mockReturnValue(1234567890);
+  (recordMock as Record<string, unknown>).nowTimestamp = vi
+    .fn()
+    .mockReturnValue(1234567890);
   return {
     record: recordMock,
   };
@@ -199,11 +201,16 @@ describe('ws-client', () => {
       const recordingId = getSetRecordingId();
 
       expect(recordingId).toBe('test-uuid-1234');
-      expect(sessionStorage.getItem('rrweb-cloud-recording-id')).toBe('test-uuid-1234');
+      expect(sessionStorage.getItem('rrweb-cloud-recording-id')).toBe(
+        'test-uuid-1234',
+      );
     });
 
     it('should return existing recording ID from sessionStorage', async () => {
-      sessionStorage.setItem('rrweb-cloud-recording-id', 'existing-recording-id-9999');
+      sessionStorage.setItem(
+        'rrweb-cloud-recording-id',
+        'existing-recording-id-9999',
+      );
       const { getSetRecordingId } = await import('./helpers/recording-id');
 
       const recordingId = getSetRecordingId();
@@ -298,7 +305,7 @@ describe('ws-client', () => {
       expect(record).toHaveBeenCalledWith(
         expect.objectContaining({
           slimDOMOptions: 'all',
-        })
+        }),
       );
     });
 
@@ -316,7 +323,7 @@ describe('ws-client', () => {
       expect(record).toHaveBeenCalledWith(
         expect.objectContaining({
           maskAllInputs: true,
-        })
+        }),
       );
     });
 
@@ -338,7 +345,7 @@ describe('ws-client', () => {
             audio: false,
             stylesheets: true,
           },
-        })
+        }),
       );
     });
 
@@ -360,7 +367,7 @@ describe('ws-client', () => {
       emitFn({ type: 4, data: {} }); // Meta event
 
       expect(WebsocketBuilder).toHaveBeenCalledWith(
-        expect.stringContaining('test-uuid-1234')
+        expect.stringContaining('test-uuid-1234'),
       );
     });
 
@@ -385,7 +392,9 @@ describe('ws-client', () => {
 
     it('should include PII data when includePii is true', async () => {
       const { start } = await import('../src/index');
-      const { WebsocketBuilder, _getMockWs } = await import('websocket-ts') as unknown as {
+      const { WebsocketBuilder, _getMockWs } = (await import(
+        'websocket-ts'
+      )) as unknown as {
         WebsocketBuilder: Mock;
         _getMockWs: () => { send: Mock; addEventListener: Mock };
       };
@@ -435,7 +444,7 @@ describe('ws-client', () => {
         expect.objectContaining({
           method: 'POST',
           body: expect.stringContaining('customField'),
-        })
+        }),
       );
     });
 
@@ -472,7 +481,7 @@ describe('ws-client', () => {
       });
 
       const { start } = await import('../src/index');
-      const { _getMockWs } = await import('websocket-ts') as unknown as {
+      const { _getMockWs } = (await import('websocket-ts')) as unknown as {
         _getMockWs: () => { send: Mock; addEventListener: Mock };
       };
 
@@ -516,7 +525,7 @@ describe('ws-client', () => {
             Authorization: 'Bearer test-api-key',
           },
           body: 'test-data',
-        })
+        }),
       );
     });
 
@@ -529,7 +538,7 @@ describe('ws-client', () => {
         'http://localhost/ingest',
         expect.objectContaining({
           keepalive: true,
-        })
+        }),
       );
     });
 
@@ -543,19 +552,28 @@ describe('ws-client', () => {
         'http://localhost/ingest',
         expect.objectContaining({
           keepalive: false,
-        })
+        }),
       );
     });
 
     it('should return false on fetch error', async () => {
       mockFetch.mockRejectedValueOnce(new Error('Network error'));
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const consoleSpy = vi
+        .spyOn(console, 'error')
+        .mockImplementation(() => {});
       const { postData } = await import('./helpers/post-data');
 
-      const result = await postData('http://localhost/ingest', 'test-api-key', 'test-data');
+      const result = await postData(
+        'http://localhost/ingest',
+        'test-api-key',
+        'test-data',
+      );
 
       expect(result).toBe(false);
-      expect(consoleSpy).toHaveBeenCalledWith('Error POSTing events:', expect.any(Error));
+      expect(consoleSpy).toHaveBeenCalledWith(
+        'Error POSTing events:',
+        expect.any(Error),
+      );
 
       consoleSpy.mockRestore();
     });
@@ -589,7 +607,10 @@ describe('ws-client', () => {
       addCustomEvent('test-tag', { foo: 'bar' });
 
       const recordModule = await import('@rrweb/record');
-      expect(recordModule.record.addCustomEvent).toHaveBeenCalledWith('test-tag', { foo: 'bar' });
+      expect(recordModule.record.addCustomEvent).toHaveBeenCalledWith(
+        'test-tag',
+        { foo: 'bar' },
+      );
     });
 
     it('should POST to meta endpoint for recording-meta tag', async () => {
@@ -607,7 +628,7 @@ describe('ws-client', () => {
             'Content-Type': 'application/json',
           }),
           body: JSON.stringify({ key: 'value' }),
-        })
+        }),
       );
     });
   });
@@ -624,7 +645,7 @@ describe('ws-client', () => {
         expect.stringContaining('/meta'),
         expect.objectContaining({
           body: JSON.stringify({ userId: '123', plan: 'premium' }),
-        })
+        }),
       );
     });
   });
@@ -647,7 +668,7 @@ describe('ws-client', () => {
       const recordModule = await import('@rrweb/record');
       expect(recordModule.record.addCustomEvent).toHaveBeenCalledWith(
         'pageview-meta',
-        { pageId: 'home', category: 'landing' }
+        { pageId: 'home', category: 'landing' },
       );
     });
   });
@@ -671,7 +692,7 @@ describe('ws-client', () => {
       emitFn({ type: 4, data: {} });
 
       expect(WebsocketBuilder).toHaveBeenCalledWith(
-        expect.stringContaining('token=my-api-key')
+        expect.stringContaining('token=my-api-key'),
       );
     });
 
@@ -701,7 +722,7 @@ describe('ws-client', () => {
       const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
       const { start } = await import('../src/index');
-      const { _getMockWs } = await import('websocket-ts') as unknown as {
+      const { _getMockWs } = (await import('websocket-ts')) as unknown as {
         _getMockWs: () => { send: Mock; addEventListener: Mock };
       };
 
@@ -721,14 +742,16 @@ describe('ws-client', () => {
       // Get the message handler that was registered
       const mockWs = _getMockWs();
       const messageHandler = mockWs.addEventListener.mock.calls.find(
-        (call: unknown[]) => call[0] === 'message'
+        (call: unknown[]) => call[0] === 'message',
       )?.[1];
 
       if (messageHandler) {
-        messageHandler(mockWs, { data: JSON.stringify({ type: 'error', message: 'Test error' }) });
+        messageHandler(mockWs, {
+          data: JSON.stringify({ type: 'error', message: 'Test error' }),
+        });
         expect(consoleSpy).toHaveBeenCalledWith(
           'received error, pausing websockets:',
-          expect.objectContaining({ type: 'error' })
+          expect.objectContaining({ type: 'error' }),
         );
       }
 
@@ -739,7 +762,7 @@ describe('ws-client', () => {
       const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
       const { start } = await import('../src/index');
-      const { _getMockWs } = await import('websocket-ts') as unknown as {
+      const { _getMockWs } = (await import('websocket-ts')) as unknown as {
         _getMockWs: () => { send: Mock; addEventListener: Mock };
       };
 
@@ -759,13 +782,15 @@ describe('ws-client', () => {
       // Get the message handler that was registered
       const mockWs = _getMockWs();
       const messageHandler = mockWs.addEventListener.mock.calls.find(
-        (call: unknown[]) => call[0] === 'message'
+        (call: unknown[]) => call[0] === 'message',
       )?.[1];
 
       const testMessage = JSON.stringify({ type: 'ack', id: '123' });
       if (messageHandler) {
         messageHandler(mockWs, { data: testMessage });
-        expect(consoleSpy).toHaveBeenCalledWith(`received message: ${testMessage}`);
+        expect(consoleSpy).toHaveBeenCalledWith(
+          `received message: ${testMessage}`,
+        );
       }
 
       consoleSpy.mockRestore();
@@ -788,7 +813,7 @@ describe('ws-client', () => {
       expect(addEventListenerSpy).toHaveBeenCalledWith(
         'visibilitychange',
         expect.any(Function),
-        false
+        false,
       );
 
       addEventListenerSpy.mockRestore();
@@ -808,7 +833,7 @@ describe('ws-client', () => {
 
       expect(addEventListenerSpy).toHaveBeenCalledWith(
         'freeze',
-        expect.any(Function)
+        expect.any(Function),
       );
 
       addEventListenerSpy.mockRestore();
@@ -818,7 +843,7 @@ describe('ws-client', () => {
   describe('large event handling', () => {
     it('should POST large events instead of sending via WebSocket', async () => {
       const { start } = await import('../src/index');
-      const { _getMockWs } = await import('websocket-ts') as unknown as {
+      const { _getMockWs } = (await import('websocket-ts')) as unknown as {
         _getMockWs: () => { send: Mock; addEventListener: Mock };
       };
 
@@ -848,7 +873,7 @@ describe('ws-client', () => {
         expect.objectContaining({
           method: 'POST',
           body: expect.stringContaining(largeData),
-        })
+        }),
       );
     });
   });
@@ -883,7 +908,7 @@ describe('ws-client', () => {
         expect.stringContaining('/meta'),
         expect.objectContaining({
           method: 'POST',
-        })
+        }),
       );
     });
   });
