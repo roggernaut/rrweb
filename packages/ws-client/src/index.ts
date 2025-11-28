@@ -67,9 +67,7 @@ export function stop(resetRecordingId: boolean) {
 }
 
 function removeRecordingId(): void {
-  try {
-    sessionStorage.removeItem(sessionStorageName);
-  } catch (e) {}
+  sessionStorage.removeItem(sessionStorageName);
 }
 
 function getSetVisitorId() {
@@ -167,8 +165,8 @@ async function postData(
   const keepaliveLimit = 65000;
   let done = false;
   const responses = [];
-  // eslint-disable-next-line no-constant-condition
   const toSend = [];
+  // eslint-disable-next-line no-constant-condition
   while (true) {
     let body;
     if (buffer instanceof ArrayQueue) {
@@ -216,10 +214,8 @@ async function postData(
   if (badResponse) {
     let badResponseInfo = `${badResponse.status} ${badResponse.statusText}`;
     if (!badResponse.bodyUsed) {
-      try {
-        badResponseInfo +=
-          '\nresponse body:' + JSON.stringify(await badResponse.json());
-      } catch (e) {}
+      badResponseInfo +=
+        '\nresponse body:' + JSON.stringify(await badResponse.json());
     }
     throw new Error(`Bad response from POST: ${badResponseInfo}`);
   }
@@ -251,7 +247,7 @@ export function start(
     recordOptions.captureAssets.stylesheets = true; // inlineStylesheet as Asset
   }
 
-  let configEmit = recordOptions.emit;
+  const configEmit = recordOptions.emit;
 
   const handleMessage = (_: Websocket, ev: MessageEvent) => {
     const event = JSON.parse(ev.data);
@@ -353,7 +349,7 @@ export function start(
       if (typeof configEmit === 'function') {
         configEmit(event);
       } else if (typeof window[configEmit] === 'function') {
-        (window[configEmit] as any)(event);
+        (window[configEmit] as typeof recordOptions.emit)(event);
       } else {
         console.error('Could not understand emit config option:', configEmit);
       }
@@ -498,6 +494,7 @@ if (document && document.currentScript) {
         }
       }
     } catch {
+      // eslint-ignore-next-line
       // maybe we are in a weird environment, we're likely gonna fail when we next call new URL on serverurl
     }
   }
