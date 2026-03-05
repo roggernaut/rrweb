@@ -257,7 +257,7 @@ export function start(
     recordOptions.captureAssets.audio = false;
   }
   if (recordOptions.captureAssets.stylesheets === undefined) {
-    recordOptions.captureAssets.stylesheets = true; // inlineStylesheet as Asset
+    recordOptions.captureAssets.stylesheets = true; // stronger than the default 'without-fetch', we'll try to upload all stylesheets until we can ensure there's no CORS issues
   }
 
   const configEmit = recordOptions.emit;
