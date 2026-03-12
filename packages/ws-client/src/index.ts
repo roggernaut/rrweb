@@ -228,8 +228,7 @@ async function postData(
   if (badResponse) {
     let badResponseInfo = `${badResponse.status} ${badResponse.statusText}`;
     if (!badResponse.bodyUsed) {
-      badResponseInfo +=
-        '\nresponse body:' + JSON.stringify(await badResponse.json());
+      badResponseInfo += '\nresponse body:' + (await badResponse.text());
     }
     throw new Error(`Bad response from POST: ${badResponseInfo}`);
   }
