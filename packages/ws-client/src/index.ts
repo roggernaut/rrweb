@@ -166,6 +166,7 @@ function connect(
   // Add event listeners
   ws.addEventListener(WebsocketEvent.open, () => {
     clearInterval(fallbackPosting);
+    wsConnectionPaused = false;
   });
   ws.addEventListener(WebsocketEvent.message, messageHandler);
   return ws;
