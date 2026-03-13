@@ -78,6 +78,10 @@ export function stop(resetRecordingId: boolean) {
   if (resetRecordingId) {
     removeRecordingId();
   }
+  const i = document.getElementById('rrwebcloud-recording-indicator');
+  if (i) {
+    i.remove();
+  }
 }
 
 function removeRecordingId(): void {
@@ -291,6 +295,7 @@ export function start(
     recordVersion: __PKG_VERSION__,
     recordCommitHash: __COMMIT_HASH__,
   };
+  initialPayload.jsSource = 'esm'; // this line get's replaced by prepublish-rrweb.sh
 
   // the expected replacement of recording id
   serverUrl = serverUrl.replace('{recordingId}', recordingId);
