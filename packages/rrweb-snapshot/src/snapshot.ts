@@ -3,9 +3,12 @@ import type {
   SlimDOMOptions,
   MaskTextFn,
   MaskInputFn,
+  MaskAttributeFn,
   KeepIframeSrcFn,
   ICanvas,
   DialogAttributes,
+  CompiledPrivacyPolicy,
+  PrivacyPolicy,
 } from './types';
 import { NodeType } from '@rrweb/types';
 import type {
@@ -31,6 +34,14 @@ import {
   absolutifyURLs,
   markCssSplits,
 } from './snapshot-utils';
+import {
+  compilePrivacyPolicy,
+  maskAttributeWithPrivacy,
+  maskInputWithPrivacy,
+  maskTextWithPrivacy,
+  mergeBlockSelectors,
+  protectSerializedAttribute,
+} from './privacy';
 import dom from '@rrweb/utils';
 
 let _id = 1;
@@ -395,15 +406,19 @@ function serializeNode(
     maskInputOptions: MaskInputOptions;
     maskTextFn: MaskTextFn | undefined;
     maskInputFn: MaskInputFn | undefined;
+    maskAllElementAttributes: boolean;
+    maskAttributeFn: MaskAttributeFn | undefined;
     dataURLOptions?: DataURLOptions;
     inlineImages: boolean;
     recordCanvas: boolean;
+    canvasMaskingConfigured?: () => boolean;
     keepIframeSrcFn: KeepIframeSrcFn;
     /**
      * `newlyAddedElement: true` skips scrollTop and scrollLeft check
      */
     newlyAddedElement?: boolean;
     cssCaptured?: boolean;
+    privacy?: CompiledPrivacyPolicy;
   },
 ): serializedNode | false {
   const {
@@ -416,12 +431,16 @@ function serializeNode(
     maskInputOptions = {},
     maskTextFn,
     maskInputFn,
+    maskAllElementAttributes,
+    maskAttributeFn,
     dataURLOptions = {},
     inlineImages,
     recordCanvas,
+    canvasMaskingConfigured,
     keepIframeSrcFn,
     newlyAddedElement = false,
     cssCaptured = false,
+    privacy,
   } = options;
   // Only record root id when document object is not the base document
   const rootId = getRootId(doc, mirror);
@@ -455,12 +474,16 @@ function serializeNode(
         inlineStylesheet,
         maskInputOptions,
         maskInputFn,
+        maskAllElementAttributes,
+        maskAttributeFn,
         dataURLOptions,
         inlineImages,
         recordCanvas,
+        canvasMaskingConfigured,
         keepIframeSrcFn,
         newlyAddedElement,
         rootId,
+        privacy,
       });
     case n.TEXT_NODE:
       return serializeTextNode(n as Text, {
@@ -469,6 +492,7 @@ function serializeNode(
         maskTextFn,
         rootId,
         cssCaptured,
+        privacy,
       });
     case n.CDATA_SECTION_NODE:
       return {
@@ -501,9 +525,10 @@ function serializeTextNode(
     maskTextFn: MaskTextFn | undefined;
     rootId: number | undefined;
     cssCaptured?: boolean;
+    privacy?: CompiledPrivacyPolicy;
   },
 ): serializedNode {
-  const { needsMask, maskTextFn, rootId, cssCaptured } = options;
+  const { needsMask, maskTextFn, rootId, cssCaptured, privacy } = options;
   // The parent node may not be a html element which has a tagName attribute.
   // So just let it be undefined which is ok in this use case.
   const parent = dom.parentNode(n);
@@ -523,10 +548,20 @@ function serializeTextNode(
       textContent = absolutifyURLs(textContent, getHref(options.doc));
     }
   }
-  if (!isStyle && !isScript && textContent && needsMask) {
-    textContent = maskTextFn
-      ? maskTextFn(textContent, dom.parentElement(n))
-      : textContent.replace(/[\S]/g, '*');
+  if (!isStyle && !isScript && textContent) {
+    if (privacy) {
+      textContent = maskTextWithPrivacy(
+        textContent,
+        dom.parentElement(n),
+        privacy,
+        needsMask,
+        maskTextFn,
+      );
+    } else if (needsMask) {
+      textContent = maskTextFn
+        ? maskTextFn(textContent, dom.parentElement(n))
+        : textContent.replace(/[\S]/g, '*');
+    }
   }
 
   return {
@@ -545,15 +580,19 @@ function serializeElementNode(
     inlineStylesheet: boolean;
     maskInputOptions: MaskInputOptions;
     maskInputFn: MaskInputFn | undefined;
+    maskAllElementAttributes: boolean;
+    maskAttributeFn: MaskAttributeFn | undefined;
     dataURLOptions?: DataURLOptions;
     inlineImages: boolean;
     recordCanvas: boolean;
+    canvasMaskingConfigured?: () => boolean;
     keepIframeSrcFn: KeepIframeSrcFn;
     /**
      * `newlyAddedElement: true` skips scrollTop and scrollLeft check
      */
     newlyAddedElement?: boolean;
     rootId: number | undefined;
+    privacy?: CompiledPrivacyPolicy;
   },
 ): serializedNode | false {
   const {
@@ -563,26 +602,48 @@ function serializeElementNode(
     inlineStylesheet,
     maskInputOptions = {},
     maskInputFn,
+    maskAllElementAttributes,
+    maskAttributeFn,
     dataURLOptions = {},
     inlineImages,
     recordCanvas,
+    canvasMaskingConfigured,
     keepIframeSrcFn,
     newlyAddedElement = false,
     rootId,
+    privacy,
   } = options;
   const needBlock = _isBlockedElement(n, blockClass, blockSelector);
   const tagName = getValidTagName(n);
   let attributes: attributes = {};
+  const generatedAttributeNames = new Set<string>();
+  let serializationComplete = false;
+  const protectLateAttribute = (name: string, value: string) =>
+    serializationComplete
+      ? protectSerializedAttribute({
+          element: n,
+          name,
+          value,
+          privacy,
+          maskAllElementAttributes,
+          maskAttributeFn,
+          isGenerated: generatedAttributeNames.has(name),
+        })
+      : value;
   const len = n.attributes.length;
   for (let i = 0; i < len; i++) {
     const attr = n.attributes[i];
     if (!ignoreAttribute(tagName, attr.name, attr.value)) {
-      attributes[attr.name] = transformAttribute(
+      const transformed = transformAttribute(
         doc,
         tagName,
         toLowerCase(attr.name),
         attr.value,
       );
+      const protectedValue = privacy
+        ? maskAttributeWithPrivacy(n, attr.name, transformed, privacy)
+        : transformed;
+      if (protectedValue !== null) attributes[attr.name] = protectedValue;
     }
   }
   // remote css
@@ -623,14 +684,29 @@ function serializeElementNode(
       attributes.type !== 'button' &&
       value
     ) {
-      attributes.value = maskInputValue({
-        element: n,
-        type: getInputType(n),
-        tagName,
-        value,
-        maskInputOptions,
-        maskInputFn,
-      });
+      const type = getInputType(n);
+      if (privacy) {
+        const legacyMask = Boolean(
+          maskInputOptions[tagName as keyof MaskInputOptions] ||
+            (type && maskInputOptions[type as keyof MaskInputOptions]),
+        );
+        attributes.value = maskInputWithPrivacy(
+          value,
+          n,
+          privacy,
+          legacyMask,
+          maskInputFn,
+        );
+      } else {
+        attributes.value = maskInputValue({
+          element: n,
+          type,
+          tagName,
+          value,
+          maskInputOptions,
+          maskInputFn,
+        });
+      }
     } else if (checked) {
       attributes.checked = checked;
     }
@@ -652,10 +728,16 @@ function serializeElementNode(
     (attributes as DialogAttributes).rr_open_mode = n.matches('dialog:modal')
       ? 'modal'
       : 'non-modal';
+    generatedAttributeNames.add('rr_open_mode');
   }
 
   // canvas image data
-  if (tagName === 'canvas' && recordCanvas) {
+  if (
+    tagName === 'canvas' &&
+    recordCanvas &&
+    !canvasMaskingConfigured?.() &&
+    privacy?.policy.preset !== 'strict'
+  ) {
     if ((n as ICanvas).__context === '2d') {
       // only record this on 2d canvas
       if (!is2DCanvasBlank(n as HTMLCanvasElement)) {
@@ -687,7 +769,11 @@ function serializeElementNode(
     }
   }
   // save image offline
-  if (tagName === 'img' && inlineImages) {
+  if (
+    tagName === 'img' &&
+    inlineImages &&
+    privacy?.policy.preset !== 'strict'
+  ) {
     if (!canvasService) {
       canvasService = doc.createElement('canvas');
       canvasCtx = canvasService.getContext('2d');
@@ -702,9 +788,9 @@ function serializeElementNode(
         canvasService!.width = image.naturalWidth;
         canvasService!.height = image.naturalHeight;
         canvasCtx!.drawImage(image, 0, 0);
-        attributes.rr_dataURL = canvasService!.toDataURL(
-          dataURLOptions.type,
-          dataURLOptions.quality,
+        attributes.rr_dataURL = protectLateAttribute(
+          'rr_dataURL',
+          canvasService!.toDataURL(dataURLOptions.type, dataURLOptions.quality),
         );
       } catch (err) {
         if (image.crossOrigin !== 'anonymous') {
@@ -721,7 +807,10 @@ function serializeElementNode(
       }
       if (image.crossOrigin === 'anonymous') {
         priorCrossOrigin
-          ? (attributes.crossOrigin = priorCrossOrigin)
+          ? (attributes.crossOrigin = protectLateAttribute(
+              'crossOrigin',
+              priorCrossOrigin,
+            ))
           : image.removeAttribute('crossorigin');
       }
     };
@@ -740,6 +829,7 @@ function serializeElementNode(
     mediaAttributes.rr_mediaMuted = (n as HTMLMediaElement).muted;
     mediaAttributes.rr_mediaLoop = (n as HTMLMediaElement).loop;
     mediaAttributes.rr_mediaVolume = (n as HTMLMediaElement).volume;
+    generatedAttributeNames.add('rr_mediaState');
   }
   // Scroll
   if (!newlyAddedElement) {
@@ -749,9 +839,11 @@ function serializeElementNode(
     // So we can safely skip the `scrollTop/Left` calls for newly added elements
     if (n.scrollLeft) {
       attributes.rr_scrollLeft = n.scrollLeft;
+      generatedAttributeNames.add('rr_scrollLeft');
     }
     if (n.scrollTop) {
       attributes.rr_scrollTop = n.scrollTop;
+      generatedAttributeNames.add('rr_scrollTop');
     }
   }
   // block element
@@ -762,6 +854,8 @@ function serializeElementNode(
       rr_width: `${width}px`,
       rr_height: `${height}px`,
     };
+    generatedAttributeNames.add('rr_width');
+    generatedAttributeNames.add('rr_height');
   }
   // iframe
   if (tagName === 'iframe' && !keepIframeSrcFn(attributes.src as string)) {
@@ -772,6 +866,24 @@ function serializeElementNode(
     }
     delete attributes.src; // prevent auto loading
   }
+
+  // Apply runtime attribute controls to the final representation, after
+  // synthesized form/layout values. The portable policy remains the last
+  // authority inside protectSerializedAttribute.
+  for (const [name, value] of Object.entries(attributes)) {
+    if (typeof value === 'string' || value === null) {
+      attributes[name] = protectSerializedAttribute({
+        element: n,
+        name,
+        value,
+        privacy,
+        maskAllElementAttributes,
+        maskAttributeFn,
+        isGenerated: generatedAttributeNames.has(name),
+      });
+    }
+  }
+  serializationComplete = true;
 
   let isCustomElement: true | undefined;
   try {
@@ -935,11 +1047,14 @@ export function serializeNodeWithId(
     needsMask?: boolean;
     maskTextFn: MaskTextFn | undefined;
     maskInputFn: MaskInputFn | undefined;
+    maskAllElementAttributes?: boolean;
+    maskAttributeFn?: MaskAttributeFn;
     slimDOMOptions: SlimDOMOptions;
     dataURLOptions?: DataURLOptions;
     keepIframeSrcFn?: KeepIframeSrcFn;
     inlineImages?: boolean;
     recordCanvas?: boolean;
+    canvasMaskingConfigured?: () => boolean;
     preserveWhiteSpace?: boolean;
     onSerialize?: (n: Node) => unknown;
     onIframeLoad?: (
@@ -953,6 +1068,7 @@ export function serializeNodeWithId(
     ) => unknown;
     stylesheetLoadTimeout?: number;
     cssCaptured?: boolean;
+    privacy?: CompiledPrivacyPolicy;
   },
 ): serializedNodeWithId | null {
   const {
@@ -967,10 +1083,13 @@ export function serializeNodeWithId(
     maskInputOptions = {},
     maskTextFn,
     maskInputFn,
+    maskAllElementAttributes = false,
+    maskAttributeFn,
     slimDOMOptions,
     dataURLOptions = {},
     inlineImages = false,
     recordCanvas = false,
+    canvasMaskingConfigured,
     onSerialize,
     onIframeLoad,
     iframeLoadTimeout = 5000,
@@ -979,6 +1098,7 @@ export function serializeNodeWithId(
     keepIframeSrcFn = () => false,
     newlyAddedElement = false,
     cssCaptured = false,
+    privacy,
   } = options;
   let { needsMask } = options;
   let { preserveWhiteSpace = true } = options;
@@ -1004,12 +1124,16 @@ export function serializeNodeWithId(
     maskInputOptions,
     maskTextFn,
     maskInputFn,
+    maskAllElementAttributes,
+    maskAttributeFn,
     dataURLOptions,
     inlineImages,
     recordCanvas,
+    canvasMaskingConfigured,
     keepIframeSrcFn,
     newlyAddedElement,
     cssCaptured,
+    privacy,
   });
   if (!_serializedNode) {
     // TODO: dev only
@@ -1078,10 +1202,13 @@ export function serializeNodeWithId(
       maskInputOptions,
       maskTextFn,
       maskInputFn,
+      maskAllElementAttributes,
+      maskAttributeFn,
       slimDOMOptions,
       dataURLOptions,
       inlineImages,
       recordCanvas,
+      canvasMaskingConfigured,
       preserveWhiteSpace,
       onSerialize,
       onIframeLoad,
@@ -1090,6 +1217,7 @@ export function serializeNodeWithId(
       stylesheetLoadTimeout,
       keepIframeSrcFn,
       cssCaptured: false,
+      privacy,
     };
 
     if (
@@ -1154,10 +1282,13 @@ export function serializeNodeWithId(
             maskInputOptions,
             maskTextFn,
             maskInputFn,
+            maskAllElementAttributes,
+            maskAttributeFn,
             slimDOMOptions,
             dataURLOptions,
             inlineImages,
             recordCanvas,
+            canvasMaskingConfigured,
             preserveWhiteSpace,
             onSerialize,
             onIframeLoad,
@@ -1165,6 +1296,7 @@ export function serializeNodeWithId(
             onStylesheetLoad,
             stylesheetLoadTimeout,
             keepIframeSrcFn,
+            privacy,
           });
 
           if (serializedIframeNode) {
@@ -1206,10 +1338,13 @@ export function serializeNodeWithId(
             maskInputOptions,
             maskTextFn,
             maskInputFn,
+            maskAllElementAttributes,
+            maskAttributeFn,
             slimDOMOptions,
             dataURLOptions,
             inlineImages,
             recordCanvas,
+            canvasMaskingConfigured,
             preserveWhiteSpace,
             onSerialize,
             onIframeLoad,
@@ -1217,6 +1352,7 @@ export function serializeNodeWithId(
             onStylesheetLoad,
             stylesheetLoadTimeout,
             keepIframeSrcFn,
+            privacy,
           });
 
           if (serializedLinkNode) {
@@ -1246,10 +1382,13 @@ function snapshot(
     maskAllInputs?: boolean | MaskInputOptions;
     maskTextFn?: MaskTextFn;
     maskInputFn?: MaskInputFn;
+    maskAllElementAttributes?: boolean;
+    maskAttributeFn?: MaskAttributeFn;
     slimDOM?: 'all' | boolean | SlimDOMOptions;
     dataURLOptions?: DataURLOptions;
     inlineImages?: boolean;
     recordCanvas?: boolean;
+    canvasMaskingConfigured?: () => boolean;
     preserveWhiteSpace?: boolean;
     onSerialize?: (n: Node) => unknown;
     onIframeLoad?: (
@@ -1263,20 +1402,24 @@ function snapshot(
     ) => unknown;
     stylesheetLoadTimeout?: number;
     keepIframeSrcFn?: KeepIframeSrcFn;
+    privacyPolicy?: PrivacyPolicy;
   },
 ): serializedNodeWithId | null {
   const {
     mirror = new Mirror(),
     blockClass = 'rr-block',
-    blockSelector = null,
+    blockSelector: legacyBlockSelector = null,
     maskTextClass = 'rr-mask',
     maskTextSelector = null,
     inlineStylesheet = true,
     inlineImages = false,
     recordCanvas = false,
+    canvasMaskingConfigured,
     maskAllInputs = false,
     maskTextFn,
     maskInputFn,
+    maskAllElementAttributes = false,
+    maskAttributeFn,
     slimDOM = false,
     dataURLOptions,
     preserveWhiteSpace,
@@ -1286,7 +1429,10 @@ function snapshot(
     onStylesheetLoad,
     stylesheetLoadTimeout,
     keepIframeSrcFn = () => false,
+    privacyPolicy,
   } = options || {};
+  const privacy = compilePrivacyPolicy(privacyPolicy);
+  const blockSelector = mergeBlockSelectors(legacyBlockSelector, privacy);
   const maskInputOptions: MaskInputOptions =
     maskAllInputs === true
       ? {
@@ -1326,10 +1472,13 @@ function snapshot(
     maskInputOptions,
     maskTextFn,
     maskInputFn,
+    maskAllElementAttributes,
+    maskAttributeFn,
     slimDOMOptions,
     dataURLOptions,
     inlineImages,
     recordCanvas,
+    canvasMaskingConfigured,
     preserveWhiteSpace,
     onSerialize,
     onIframeLoad,
@@ -1338,6 +1487,7 @@ function snapshot(
     stylesheetLoadTimeout,
     keepIframeSrcFn,
     newlyAddedElement: false,
+    privacy,
   });
 }
 

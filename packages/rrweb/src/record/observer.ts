@@ -1,6 +1,7 @@
 import {
   type MaskInputOptions,
-  maskInputValue,
+  maskInputWithPrivacy,
+  shouldMaskInputWithPrivacy,
   Mirror,
   getInputType,
   toLowerCase,
@@ -389,6 +390,7 @@ function initInputObserver({
   ignoreSelector,
   maskInputOptions,
   maskInputFn,
+  privacy,
   sampling,
   userTriggeredOnInput,
 }: observerParam): listenerHandler {
@@ -425,18 +427,20 @@ function initInputObserver({
 
     if (type === 'radio' || type === 'checkbox') {
       isChecked = (target as HTMLInputElement).checked;
-    } else if (
-      maskInputOptions[tagName.toLowerCase() as keyof MaskInputOptions] ||
-      maskInputOptions[type as keyof MaskInputOptions]
-    ) {
-      text = maskInputValue({
-        element: target,
-        maskInputOptions,
-        tagName,
-        type,
-        value: text,
-        maskInputFn,
-      });
+    } else {
+      const legacyMask = Boolean(
+        maskInputOptions[tagName.toLowerCase() as keyof MaskInputOptions] ||
+          maskInputOptions[type as keyof MaskInputOptions],
+      );
+      if (shouldMaskInputWithPrivacy(target, privacy, legacyMask)) {
+        text = maskInputWithPrivacy(
+          text,
+          target,
+          privacy,
+          legacyMask,
+          maskInputFn,
+        );
+      }
     }
     cbWithDedup(
       target,

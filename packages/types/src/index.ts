@@ -589,13 +589,47 @@ export type canvasManagerMutationCallback = (
   p: canvasMutationWithType,
 ) => void;
 
-export type ImageBitmapDataURLWorkerParams = {
-  id: number;
-  bitmap: ImageBitmap;
+/**
+ * A rectangle to obscure in a captured canvas frame. Coordinates are CSS
+ * pixels relative to the canvas element, not backing-store pixels.
+ */
+export type CanvasMaskRegion = {
+  x: number;
+  y: number;
   width: number;
   height: number;
-  dataURLOptions: DataURLOptions;
 };
+
+/** Runtime canvas adapter for applications whose sensitive pixels are not DOM nodes. */
+export type CanvasMasking = {
+  /**
+   * Return rectangles to paint black, `[]` to capture the frame unchanged, or
+   * `null`/`undefined` when a safe answer cannot be produced. Unanswerable
+   * frames are skipped rather than captured without masking.
+   */
+  maskRegions: (
+    canvas: HTMLCanvasElement,
+  ) => CanvasMaskRegion[] | null | undefined;
+  /**
+   * Optional dynamic switch. When omitted, supplying `canvasMasking` means it
+   * is configured. Throwing is treated as configured so snapshots fail closed.
+   */
+  isConfigured?: () => boolean;
+};
+
+export type ImageBitmapDataURLWorkerParams =
+  | {
+      id: number;
+      bitmap: ImageBitmap;
+      width: number;
+      height: number;
+      dataURLOptions: DataURLOptions;
+      /** Capture-resolution rectangles. An empty array still marks a provider-owned frame. */
+      maskRegions?: CanvasMaskRegion[];
+    }
+  | {
+      resetFrameDedup: true;
+    };
 
 export type ImageBitmapDataURLWorkerResponse =
   | {

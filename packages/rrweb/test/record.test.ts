@@ -121,6 +121,65 @@ describe('record', function (this: ISuite) {
     ).toEqual(1);
   });
 
+  it('applies data-privacy to full snapshots and incremental events', async () => {
+    await ctx.page.setContent(`
+      <p id="contact" data-privacy="mask" title="initial@example.com">initial@example.com</p>
+      <input id="name" data-privacy="mask" type="text" value="Initial Name" />
+      <input id="password" data-privacy="allow" type="password" value="secret" />
+    `);
+    await ctx.page.evaluate(() => {
+      const { record } = (window as unknown as IWindow).rrweb;
+      record({
+        emit: (window as unknown as IWindow).emit,
+      });
+
+      const contact = document.querySelector('#contact')!;
+      contact.textContent = 'changed@example.com';
+      contact.setAttribute('title', 'changed@example.com');
+
+      const name = document.querySelector('#name') as HTMLInputElement;
+      name.value = 'Changed Name';
+      name.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    });
+    await waitForRAF(ctx.page);
+
+    const payload = JSON.stringify(ctx.events);
+    expect(payload).not.toContain('initial@example.com');
+    expect(payload).not.toContain('changed@example.com');
+    expect(payload).not.toContain('Initial Name');
+    expect(payload).not.toContain('Changed Name');
+    expect(payload).not.toContain('secret');
+    expect(payload).toContain('xxxxxxx@xxxxxxx.xxx');
+  });
+
+  it('applies final attribute masking to snapshots and mutations', async () => {
+    await ctx.page.setContent(`
+      <div id="target" title="initial@example.com" style="color: red"></div>
+    `);
+    await ctx.page.evaluate(() => {
+      const { record } = (window as unknown as IWindow).rrweb;
+      record({
+        emit: (window as unknown as IWindow).emit,
+        maskAttributeFn: (name, value) =>
+          name === 'style' || name === 'title' ? '[MASKED]' : value,
+      });
+
+      const target = document.querySelector('#target')!;
+      target.setAttribute('title', 'changed@example.com');
+      target.setAttribute(
+        'style',
+        'color: blue; background-color: red; border-color: green;',
+      );
+    });
+    await waitForRAF(ctx.page);
+
+    const payload = JSON.stringify(ctx.events);
+    expect(payload).not.toContain('initial@example.com');
+    expect(payload).not.toContain('changed@example.com');
+    expect(payload).not.toContain('background-color');
+    expect(payload).toContain('[MASKED]');
+  });
+
   it('can checkout full snapshot by count', async () => {
     await ctx.page.evaluate(() => {
       const { record } = (window as unknown as IWindow).rrweb;
