@@ -152,6 +152,49 @@ describe('record', function (this: ISuite) {
     expect(payload).toContain('xxxxxxx@xxxxxxx.xxx');
   });
 
+  it('applies detector plugins to the initial full snapshot', async () => {
+    await ctx.page.setContent(`
+      <p id="contact">person@example.com</p>
+      <input id="name" type="text" value="Visible Name" />
+    `);
+    await ctx.page.evaluate(() => {
+      const { record } = (window as unknown as IWindow).rrweb;
+      record({
+        emit: (window as unknown as IWindow).emit,
+        privacyPolicy: { version: 1, preset: 'balanced' },
+        plugins: [
+          {
+            name: 'rrweb/privacy-detectors@1',
+            applyPrivacyPolicy(policy) {
+              const portable = (policy as { version: 1; preset: string }) || {
+                version: 1,
+                preset: 'legacy',
+              };
+              return {
+                ...portable,
+                detectors: {
+                  email: true,
+                  phone: false,
+                  paymentCard: false,
+                  ssn: false,
+                  ipAddress: false,
+                },
+              };
+            },
+            options: {},
+          },
+        ],
+      });
+    });
+    await waitForRAF(ctx.page);
+
+    const payload = JSON.stringify(ctx.events);
+    expect(payload).not.toContain('person@example.com');
+    expect(payload).toContain('xxxxxx@xxxxxxx.xxx');
+    expect(payload).not.toContain('Visible Name');
+    expect(payload).toContain('xxxxxxx xxxx');
+  });
+
   it('applies final attribute masking to snapshots and mutations', async () => {
     await ctx.page.setContent(`
       <div id="target" title="initial@example.com" style="color: red"></div>

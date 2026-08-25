@@ -109,15 +109,14 @@ function record<T = eventWithTime>(
     privacyPolicy,
   } = options;
 
-  const privacy = compilePrivacyPolicy(
-    (plugins || []).reduce(
-      (policy, plugin) =>
-        plugin.applyPrivacyPolicy
-          ? (plugin.applyPrivacyPolicy(policy) as typeof privacyPolicy)
-          : policy,
-      privacyPolicy,
-    ),
+  const portablePrivacyPolicy = (plugins || []).reduce(
+    (policy, plugin) =>
+      plugin.applyPrivacyPolicy
+        ? (plugin.applyPrivacyPolicy(policy) as typeof privacyPolicy)
+        : policy,
+    privacyPolicy,
   );
+  const privacy = compilePrivacyPolicy(portablePrivacyPolicy);
   const blockSelector = mergeBlockSelectors(legacyBlockSelector, privacy);
   // Strict remains fail-closed for the whole canvas. Region providers are
   // available to balanced/custom/legacy policies, where the application owns
@@ -299,6 +298,7 @@ function record<T = eventWithTime>(
   const stylesheetManager = new StylesheetManager({
     mutationCb: wrappedMutationEmit,
     adoptedStyleSheetCb: wrappedAdoptedStyleSheetEmit,
+    privacy,
   });
 
   const iframeManager = new IframeManager({
@@ -405,7 +405,7 @@ function record<T = eventWithTime>(
       recordCanvas,
       canvasMaskingConfigured,
       inlineImages,
-      privacyPolicy,
+      privacyPolicy: portablePrivacyPolicy,
       onSerialize: (n) => {
         if (isSerializedIframe(n, mirror)) {
           iframeManager.addIframe(n as HTMLIFrameElement);

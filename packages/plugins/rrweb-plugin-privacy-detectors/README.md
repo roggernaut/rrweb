@@ -34,6 +34,9 @@ record({
 });
 ```
 
+If `privacyPolicy` is omitted, the plugin keeps the `legacy` preset (existing
+`maskTextFn` / `maskInputOptions` behavior) and only adds heuristic matching.
+
 For snapshot-only use (no recorder):
 
 ```js

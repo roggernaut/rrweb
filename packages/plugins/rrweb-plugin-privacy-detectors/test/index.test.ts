@@ -42,4 +42,19 @@ describe('privacy detectors plugin', () => {
       phone: true,
     });
   });
+
+  it('does not upgrade an omitted recorder policy to balanced', () => {
+    const plugin = getRecordPrivacyDetectorsPlugin();
+    expect(plugin.applyPrivacyPolicy?.(undefined)).toMatchObject({
+      version: 1,
+      preset: 'legacy',
+      detectors: {
+        email: true,
+        phone: true,
+        paymentCard: true,
+        ssn: true,
+        ipAddress: true,
+      },
+    });
+  });
 });

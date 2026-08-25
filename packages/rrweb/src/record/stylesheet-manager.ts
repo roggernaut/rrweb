@@ -1,4 +1,8 @@
-import { stringifyRule } from 'rrweb-snapshot';
+import {
+  maskTextWithPrivacy,
+  stringifyRule,
+  type CompiledPrivacyPolicy,
+} from 'rrweb-snapshot';
 import type {
   elementNode,
   serializedNodeWithId,
@@ -13,14 +17,17 @@ export class StylesheetManager {
   private trackedLinkElements: WeakSet<HTMLLinkElement> = new WeakSet();
   private mutationCb: mutationCallBack;
   private adoptedStyleSheetCb: adoptedStyleSheetCallback;
+  private privacy: CompiledPrivacyPolicy | undefined;
   public styleMirror = new StyleSheetMirror();
 
   constructor(options: {
     mutationCb: mutationCallBack;
     adoptedStyleSheetCb: adoptedStyleSheetCallback;
+    privacy?: CompiledPrivacyPolicy;
   }) {
     this.mutationCb = options.mutationCb;
     this.adoptedStyleSheetCb = options.adoptedStyleSheetCb;
+    this.privacy = options.privacy;
   }
 
   public attachLinkElement(
@@ -67,10 +74,13 @@ export class StylesheetManager {
         styleId = this.styleMirror.add(sheet);
         styles.push({
           styleId,
-          rules: Array.from(sheet.rules || CSSRule, (r, index) => ({
-            rule: stringifyRule(r, sheet.href),
-            index,
-          })),
+          rules: Array.from(
+            sheet.cssRules || sheet.rules || [],
+            (r, index) => ({
+              rule: this.maskAdoptedRule(stringifyRule(r, sheet.href), sheet),
+              index,
+            }),
+          ),
         });
       } else styleId = this.styleMirror.getId(sheet);
       adoptedStyleSheetData.styleIds.push(styleId);
@@ -82,6 +92,17 @@ export class StylesheetManager {
   public reset() {
     this.styleMirror.reset();
     this.trackedLinkElements = new WeakSet();
+  }
+
+  private maskAdoptedRule(rule: string, sheet: CSSStyleSheet): string {
+    if (!rule || !this.privacy) return rule;
+    const owner = sheet.ownerNode;
+    return maskTextWithPrivacy(
+      rule,
+      owner instanceof Element ? (owner as HTMLElement) : null,
+      this.privacy,
+      false,
+    );
   }
 
   // TODO: take snapshot on stylesheet reload by applying event listener

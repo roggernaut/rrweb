@@ -51,6 +51,7 @@
   },
   "homepage": "https://github.com/rrweb-io/rrweb#readme",
   "devDependencies": {
+    "@rrweb/types": "^2.1.1",
     "rrweb-snapshot": "^2.1.1",
     "typescript": "^5.4.5",
     "vite": "^6.0.1",
@@ -58,6 +59,7 @@
     "vitest": "^1.4.0"
   },
   "peerDependencies": {
+    "@rrweb/types": "^2.1.1",
     "rrweb": "^2.1.1",
     "rrweb-snapshot": "^2.1.1"
   }

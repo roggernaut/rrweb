@@ -26,10 +26,11 @@ export const getRecordPrivacyDetectorsPlugin: (
   return {
     name: PLUGIN_NAME,
     applyPrivacyPolicy(policy) {
-      return applyPrivacyDetectors(
-        policy as PrivacyPolicy | undefined,
-        _options,
-      );
+      const portable = (policy as PrivacyPolicy | undefined) || {
+        version: 1 as const,
+        preset: 'legacy' as const,
+      };
+      return applyPrivacyDetectors(portable, _options);
     },
     options: _options,
   };
