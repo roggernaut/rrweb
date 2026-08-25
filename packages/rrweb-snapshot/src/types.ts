@@ -126,6 +126,11 @@ export type PrivacyTarget = {
 };
 
 export type PrivacyDetectorOptions = Partial<{
+  /**
+   * Explicit opt-in flags for built-in heuristic detectors. Presets do not
+   * enable these; use `@rrweb/rrweb-plugin-privacy-detectors` or
+   * `applyPrivacyDetectors`.
+   */
   email: boolean;
   phone: boolean;
   paymentCard: boolean;

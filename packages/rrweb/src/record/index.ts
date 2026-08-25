@@ -109,7 +109,15 @@ function record<T = eventWithTime>(
     privacyPolicy,
   } = options;
 
-  const privacy = compilePrivacyPolicy(privacyPolicy);
+  const privacy = compilePrivacyPolicy(
+    (plugins || []).reduce(
+      (policy, plugin) =>
+        plugin.applyPrivacyPolicy
+          ? (plugin.applyPrivacyPolicy(policy) as typeof privacyPolicy)
+          : policy,
+      privacyPolicy,
+    ),
+  );
   const blockSelector = mergeBlockSelectors(legacyBlockSelector, privacy);
   // Strict remains fail-closed for the whole canvas. Region providers are
   // available to balanced/custom/legacy policies, where the application owns

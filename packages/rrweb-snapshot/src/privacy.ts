@@ -66,13 +66,35 @@ const MEDIA_SOURCE_ATTRIBUTES = new Set([
   'srcset',
 ]);
 
-const DEFAULT_DETECTORS: Required<Omit<PrivacyDetectorOptions, 'custom'>> = {
+export const DEFAULT_PRIVACY_DETECTORS: Required<
+  Omit<PrivacyDetectorOptions, 'custom'>
+> = {
   email: true,
   phone: true,
   paymentCard: true,
   ssn: true,
   ipAddress: true,
 };
+
+/**
+ * Opt into Highlight-style heuristic PII detectors (email, phone, Luhn card,
+ * SSN-like, IPv4). These are not implied by `balanced` or `strict`; load them
+ * through this helper or `@rrweb/rrweb-plugin-privacy-detectors`.
+ */
+export function applyPrivacyDetectors(
+  policy: PrivacyPolicy | undefined,
+  options?: Partial<typeof DEFAULT_PRIVACY_DETECTORS>,
+): PrivacyPolicy {
+  const base: PrivacyPolicy = policy || { version: 1, preset: 'balanced' };
+  return {
+    ...base,
+    detectors: {
+      ...DEFAULT_PRIVACY_DETECTORS,
+      ...options,
+      ...base.detectors,
+    },
+  };
+}
 
 const DETECTOR_SCAN_CHUNK_SIZE = 8_192;
 const CUSTOM_DETECTOR_SCAN_CHUNK_SIZE = 512;
@@ -187,10 +209,6 @@ export function compilePrivacyPolicy(
   const rules = [...DATA_PRIVACY_RULES, ...policyRules];
 
   const detectorOptions = {
-    ...(effectivePolicy.preset === 'balanced' ||
-    effectivePolicy.preset === 'strict'
-      ? DEFAULT_DETECTORS
-      : {}),
     ...effectivePolicy.detectors,
   };
   const detectors: CompiledPrivacyPolicy['detectors'] = [];

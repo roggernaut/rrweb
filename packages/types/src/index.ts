@@ -319,6 +319,12 @@ export type RecordPlugin<TOptions = unknown> = {
     options: TOptions,
   ) => listenerHandler;
   eventProcessor?: <TExtend>(event: eventWithTime) => eventWithTime & TExtend;
+  /**
+   * Transform the portable privacy policy before it is compiled. Used by
+   * opt-in detector plugins so heuristic PII matching is not core recorder
+   * behavior.
+   */
+  applyPrivacyPolicy?: (policy: unknown) => unknown;
   getMirror?: (mirrors: {
     nodeMirror: IMirror<Node>;
     crossOriginIframeMirror: ICrossOriginIframeMirror;

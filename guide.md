@@ -237,6 +237,8 @@ The machine-readable contract is published as
 validation outside JavaScript.
 
 ```js
+import { getRecordPrivacyDetectorsPlugin } from '@rrweb/rrweb-plugin-privacy-detectors';
+
 record({
   emit(event) {
     // store event
@@ -262,6 +264,11 @@ record({
       blockedQueryParameters: ['token', 'session'],
     },
   },
+  plugins: [
+    // Highlight-style fuzzy PII matching; omit this plugin to record
+    // unmatched page text unchanged.
+    getRecordPrivacyDetectorsPlugin(),
+  ],
 });
 ```
 
@@ -271,9 +278,10 @@ The presets have the following behavior:
   URL parameters, and disables canvas recording. Use a custom or balanced
   policy with the canvas adapter below when the application can identify safe
   regions precisely.
-- `balanced` masks form values and common PII matches while preserving normal
-  page text. Built-in detectors cover email, phone, Luhn-valid payment card,
-  SSN-like, and IPv4 values.
+- `balanced` masks form values while preserving normal page text. Heuristic
+  PII matching (email, phone, Luhn-valid payment card, SSN-like, and IPv4) is
+  **not** implied; opt in with `@rrweb/rrweb-plugin-privacy-detectors` or
+  `applyPrivacyDetectors`.
 - `custom` applies explicit rules and configured detectors. Password, hidden,
   payment, and one-time-code inputs remain protected.
 - `legacy` uses the existing rrweb masking options without additional policy

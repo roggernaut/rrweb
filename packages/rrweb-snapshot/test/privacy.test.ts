@@ -4,6 +4,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import snapshot from '../src/snapshot';
 import {
+  applyPrivacyDetectors,
   compilePrivacyPolicy,
   detectSensitiveText,
   getPrivacyAction,
@@ -14,7 +15,9 @@ import {
 } from '../src/privacy';
 
 const balanced = () =>
-  compilePrivacyPolicy({ version: 1, preset: 'balanced' })!;
+  compilePrivacyPolicy(
+    applyPrivacyDetectors({ version: 1, preset: 'balanced' }),
+  )!;
 
 describe('privacy policy', () => {
   beforeEach(() => {
@@ -48,6 +51,40 @@ describe('privacy policy', () => {
         false,
       ),
     ).toBe('Contact xxxxxx@xxxxxxx.xxx about order 12345');
+  });
+
+  it('does not enable heuristic detectors from the balanced preset alone', () => {
+    const element = document.createElement('p');
+    const privacy = compilePrivacyPolicy({
+      version: 1,
+      preset: 'balanced',
+    });
+    expect(
+      maskTextWithPrivacy(
+        'Contact person@example.com about order 12345',
+        element,
+        privacy,
+        false,
+      ),
+    ).toBe('Contact person@example.com about order 12345');
+    expect(privacy.detectors).toEqual([]);
+  });
+
+  it('lets applyPrivacyDetectors opt into heuristic matching', () => {
+    expect(
+      applyPrivacyDetectors(
+        {
+          version: 1,
+          preset: 'balanced',
+          detectors: { email: false },
+        },
+        { email: true },
+      ).detectors,
+    ).toMatchObject({
+      email: false,
+      phone: true,
+      paymentCard: true,
+    });
   });
 
   it('runs configured detectors in custom policies', () => {
@@ -475,7 +512,10 @@ describe('privacy policy', () => {
 
     const balancedPayload = JSON.stringify(
       snapshot(document, {
-        privacyPolicy: { version: 1, preset: 'balanced' },
+        privacyPolicy: applyPrivacyDetectors({
+          version: 1,
+          preset: 'balanced',
+        }),
       }),
     );
     expect(balancedPayload).not.toContain('person@example.com');
@@ -497,7 +537,7 @@ describe('privacy policy', () => {
       <a href="https://example.com/?token=secret">Account</a>`;
 
     const serialized = snapshot(document, {
-      privacyPolicy: {
+      privacyPolicy: applyPrivacyDetectors({
         version: 1,
         preset: 'balanced',
         rules: [
@@ -506,7 +546,7 @@ describe('privacy policy', () => {
             action: 'allow',
           },
         ],
-      },
+      }),
     });
     const payload = JSON.stringify(serialized);
 
@@ -551,7 +591,10 @@ describe('privacy policy', () => {
       <div data-owner="person@example.com" title="person@example.com"></div>`;
     const payload = JSON.stringify(
       snapshot(document, {
-        privacyPolicy: { version: 1, preset: 'balanced' },
+        privacyPolicy: applyPrivacyDetectors({
+          version: 1,
+          preset: 'balanced',
+        }),
         maskAttributeFn: (name, value) =>
           name === 'data-owner' ? '[OWNER]' : value,
       }),
