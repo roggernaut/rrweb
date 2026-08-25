@@ -530,10 +530,13 @@ function serializeTextNode(
 ): serializedNode {
   const { needsMask, maskTextFn, rootId, cssCaptured, privacy } = options;
   // The parent node may not be a html element which has a tagName attribute.
+  // Named form controls can also shadow `tagName` (e.g. <input name="tagName">).
   // So just let it be undefined which is ok in this use case.
   const parent = dom.parentNode(n);
   const parentTagName =
-    parent && (parent as HTMLElement).tagName?.toUpperCase();
+    parent && typeof (parent as HTMLElement).tagName === 'string'
+      ? (parent as HTMLElement).tagName.toUpperCase()
+      : undefined;
   let textContent: string | null = '';
   const isStyle = parentTagName === 'STYLE' ? true : undefined;
   const isScript = parentTagName === 'SCRIPT' ? true : undefined;

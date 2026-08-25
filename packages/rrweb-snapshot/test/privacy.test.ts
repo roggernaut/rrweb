@@ -644,6 +644,53 @@ describe('privacy policy', () => {
     expect(protectedSnapshot).not.toContain('rr_dataURL');
   });
 
+  it('does not throw when a form control shadows HTMLFormElement.tagName', () => {
+    const form = document.createElement('form');
+    const input = document.createElement('input');
+    input.setAttribute('name', 'tagName');
+    const text = document.createTextNode('visible email person@example.com');
+    form.appendChild(input);
+    form.appendChild(text);
+    document.body.appendChild(form);
+
+    expect(() =>
+      maskTextWithPrivacy(
+        'visible email person@example.com',
+        form,
+        balanced(),
+        false,
+      ),
+    ).not.toThrow();
+    expect(() => snapshot(document)).not.toThrow();
+  });
+
+  it('walks ancestors when getRootNode has been monkey-patched', () => {
+    const originalGetRootNode = Node.prototype.getRootNode;
+    Node.prototype.getRootNode = function () {
+      throw new Error('getRootNode was hijacked by framework');
+    };
+    try {
+      document.body.innerHTML =
+        '<main data-privacy="mask"><span id="target">secret</span></main>';
+      const target = document.querySelector('#target')!;
+      const privacy = compilePrivacyPolicy({
+        version: 1,
+        preset: 'balanced',
+        rules: [
+          {
+            target: { type: 'selector', selector: '[data-privacy="mask"]' },
+            action: 'mask',
+          },
+        ],
+      });
+      expect(() => getPrivacyAction(target, privacy)).not.toThrow();
+      expect(getPrivacyAction(target, privacy)).toBe('mask');
+      expect(() => snapshot(document)).not.toThrow();
+    } finally {
+      Node.prototype.getRootNode = originalGetRootNode;
+    }
+  });
+
   it('keeps the legacy path unchanged when no policy is supplied', () => {
     document.body.innerHTML =
       '<p>Visible text</p><input type="hidden" value="legacy-hidden-value">';

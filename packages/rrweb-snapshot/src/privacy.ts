@@ -6,6 +6,7 @@ import type {
   SensitiveDataKind,
   MaskAttributeFn,
 } from './types';
+import dom from '@rrweb/utils';
 
 const ACTION_PRIORITY: Record<PrivacyAction, number> = {
   allow: 0,
@@ -379,7 +380,7 @@ export function maskTextWithPrivacy(
     return legacyMask ? applyLegacyMask(value, element, legacyMaskFn) : value;
   }
 
-  if (element && element.tagName.toUpperCase() === 'SCRIPT') {
+  if (nativeElementTagName(element) === 'SCRIPT') {
     return 'SCRIPT_PLACEHOLDER';
   }
 
@@ -463,14 +464,14 @@ export function maskAttributeWithPrivacy(
   if (
     privacy.policy.preset === 'strict' &&
     normalizedName === 'value' &&
-    FORM_VALUE_TAGS.has(element.tagName)
+    FORM_VALUE_TAGS.has(nativeElementTagName(element))
   ) {
     return replacePreservingShape(value);
   }
 
   if (
     privacy.policy.preset === 'strict' &&
-    MEDIA_TAGS.has(element.tagName) &&
+    MEDIA_TAGS.has(nativeElementTagName(element)) &&
     MEDIA_SOURCE_ATTRIBUTES.has(normalizedName)
   ) {
     return null;
@@ -671,7 +672,7 @@ export function replacePreservingShape(value: string): string {
 }
 
 function isProtectedInput(element: HTMLElement): boolean {
-  if (element.tagName !== 'INPUT') return false;
+  if (nativeElementTagName(element) !== 'INPUT') return false;
   const input = element as HTMLInputElement;
   if (
     input.type === 'password' ||
@@ -909,8 +910,27 @@ function ensureGlobalFlag(flags = ''): string {
   return flags.includes('g') ? flags : `${flags}g`;
 }
 
+function nativeElementTagName(element: Element | null | undefined): string {
+  if (!element) return '';
+  const tagName = element.tagName;
+  if (typeof tagName === 'string') return tagName.toUpperCase();
+  // HTMLFormElement (and similar) expose named controls as own properties,
+  // so `<input name="tagName">` shadows the prototype getter.
+  try {
+    const native: unknown = Object.getOwnPropertyDescriptor(
+      Element.prototype,
+      'tagName',
+    )?.get?.call(element);
+    return typeof native === 'string' ? native.toUpperCase() : '';
+  } catch {
+    return '';
+  }
+}
+
 function parentElementAcrossShadowRoot(element: Element): Element | null {
-  if (element.parentElement) return element.parentElement;
-  const root = element.getRootNode();
-  return 'host' in root && root.host instanceof Element ? root.host : null;
+  const parent = dom.parentElement(element);
+  if (parent) return parent;
+  const root = dom.getRootNode(element);
+  if (!root || !('host' in root) || !('mode' in root)) return null;
+  return dom.host(root as ShadowRoot);
 }
