@@ -1,5 +1,35 @@
 # rrweb
 
+## 2.2.0
+
+### Minor Changes
+
+- [`43d0ebd`](https://github.com/rrweb-io/rrweb/commit/43d0ebd7dbd845a8e39b264885613b3d9b30f3f5) - Add an opt-in, versioned privacy policy with strict, balanced, custom, and
+  legacy presets. Policies consistently protect text, form values, sensitive
+  attributes, URLs, snapshots, and incremental mutations while preserving the
+  existing rrweb masking options as the backwards-compatible legacy path. The
+  vendor-neutral `data-privacy="exclude|mask|allow"` HTML binding works without
+  recorder-specific configuration. Add fail-closed canvas-region masking for
+  complex canvas applications, suppress unmasked full-snapshot canvas stills,
+  and provide coarse and callback-based final attribute masking escape hatches.
+
+- [`3b8004a`](https://github.com/rrweb-io/rrweb/commit/3b8004a0a60200afab8b0605e936e7fede35da7f) Thanks [@cursoragent](https://github.com/cursoragent)! - Move Highlight-style heuristic PII auto-detection out of `balanced`/`strict`
+  defaults and into an opt-in `@rrweb/rrweb-plugin-privacy-detectors` plugin.
+  Presets still mask form values and honor policy rules; email/phone/card/SSN/IP
+  text matching is enabled only by the plugin or `applyPrivacyDetectors`.
+
+### Patch Changes
+
+- [`d30807d`](https://github.com/rrweb-io/rrweb/commit/d30807d56f72849e860272fea3f10f81688feece) Thanks [@cursoragent](https://github.com/cursoragent)! - Harden privacy detector compilation against nested and high-quantifier ReDoS
+  patterns, lookaround, and named backreferences. Apply capture policies to CSS
+  text, `_cssText`, inline style, and stylesheet mutations, and keep custom
+  detector schema constraints aligned with runtime validation.
+- Updated dependencies [[`43d0ebd`](https://github.com/rrweb-io/rrweb/commit/43d0ebd7dbd845a8e39b264885613b3d9b30f3f5), [`3b8004a`](https://github.com/rrweb-io/rrweb/commit/3b8004a0a60200afab8b0605e936e7fede35da7f), [`d30807d`](https://github.com/rrweb-io/rrweb/commit/d30807d56f72849e860272fea3f10f81688feece)]:
+  - rrweb-snapshot@2.2.0
+  - @rrweb/types@2.2.0
+  - rrdom@2.2.0
+  - @rrweb/utils@2.2.0
+
 ## 2.1.1
 
 ### Patch Changes
