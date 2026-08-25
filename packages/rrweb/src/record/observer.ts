@@ -1,6 +1,7 @@
 import {
   type MaskInputOptions,
   maskInputWithPrivacy,
+  maskTextWithPrivacy,
   shouldMaskInputWithPrivacy,
   Mirror,
   getInputType,
@@ -593,8 +594,29 @@ function getIdAndStyleId(
   };
 }
 
+function stylesheetOwnerElement(
+  sheet: CSSStyleSheet | null | undefined,
+): HTMLElement | null {
+  const owner = sheet?.ownerNode;
+  return owner instanceof Element ? (owner as HTMLElement) : null;
+}
+
+function maskCssForRecord(
+  value: string,
+  sheet: CSSStyleSheet | null | undefined,
+  privacy: observerParam['privacy'],
+): string {
+  if (!value || !privacy) return value;
+  return maskTextWithPrivacy(
+    value,
+    stylesheetOwnerElement(sheet),
+    privacy,
+    false,
+  );
+}
+
 function initStyleSheetObserver(
-  { styleSheetRuleCb, mirror, stylesheetManager }: observerParam,
+  { styleSheetRuleCb, mirror, stylesheetManager, privacy }: observerParam,
   { win }: { win: IWindow },
 ): listenerHandler {
   if (!win.CSSStyleSheet || !win.CSSStyleSheet.prototype) {
@@ -625,7 +647,7 @@ function initStyleSheetObserver(
           styleSheetRuleCb({
             id,
             styleId,
-            adds: [{ rule, index }],
+            adds: [{ rule: maskCssForRecord(rule, thisArg, privacy), index }],
           });
         }
         return target.apply(thisArg, argumentsList);
@@ -705,7 +727,7 @@ function initStyleSheetObserver(
             styleSheetRuleCb({
               id,
               styleId,
-              replace: text,
+              replace: maskCssForRecord(text, thisArg, privacy),
             });
           }
           return target.apply(thisArg, argumentsList);
@@ -737,7 +759,7 @@ function initStyleSheetObserver(
             styleSheetRuleCb({
               id,
               styleId,
-              replaceSync: text,
+              replaceSync: maskCssForRecord(text, thisArg, privacy),
             });
           }
           return target.apply(thisArg, argumentsList);
@@ -805,7 +827,11 @@ function initStyleSheetObserver(
                 styleId,
                 adds: [
                   {
-                    rule,
+                    rule: maskCssForRecord(
+                      rule,
+                      thisArg.parentStyleSheet,
+                      privacy,
+                    ),
                     index: [
                       ...getNestedCSSRulePositions(thisArg),
                       index || 0, // defaults to 0
@@ -936,6 +962,7 @@ function initStyleDeclarationObserver(
     mirror,
     ignoreCSSAttributes,
     stylesheetManager,
+    privacy,
   }: observerParam,
   { win }: { win: IWindow },
 ): listenerHandler {
@@ -965,7 +992,11 @@ function initStyleDeclarationObserver(
             styleId,
             set: {
               property,
-              value,
+              value: maskCssForRecord(
+                value,
+                thisArg.parentRule?.parentStyleSheet,
+                privacy,
+              ),
               priority,
             },
             // eslint-disable-next-line @typescript-eslint/no-non-null-assertion

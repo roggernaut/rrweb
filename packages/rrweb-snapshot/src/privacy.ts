@@ -42,7 +42,9 @@ const SENSITIVE_ATTRIBUTES = new Set([
   'aria-description',
   'aria-label',
   'placeholder',
+  'style',
   'title',
+  '_csstext',
 ]);
 
 const URL_ATTRIBUTES = new Set([
@@ -77,8 +79,8 @@ const CUSTOM_DETECTOR_SCAN_CHUNK_SIZE = 512;
 const MAX_DETECTOR_MATCHES = 1_000;
 const MAX_CUSTOM_PATTERN_LENGTH = 256;
 const MAX_CUSTOM_MATCH_LENGTH = 1_024;
+const MAX_CUSTOM_QUANTIFIERS = 12;
 const DEFAULT_CUSTOM_MATCH_LENGTH = 256;
-const NON_CONTENT_TEXT_TAGS = new Set(['SCRIPT', 'STYLE']);
 
 const PROTECTED_AUTOCOMPLETE = new Set([
   'cc-csc',
@@ -197,7 +199,7 @@ export function compilePrivacyPolicy(
     detectors.push({
       name: 'email',
       regex:
-        /[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[a-zA-Z0-9-]{1,63}(?:\.[a-zA-Z0-9-]{1,63}){1,3}/g,
+        /[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[a-zA-Z0-9-]{1,63}(?:\.[a-zA-Z0-9-]{1,63})+/g,
       classification: 'contact',
       minimumLength: 6,
       maximumMatchLength: 320,
@@ -359,8 +361,8 @@ export function maskTextWithPrivacy(
     return legacyMask ? applyLegacyMask(value, element, legacyMaskFn) : value;
   }
 
-  if (element && NON_CONTENT_TEXT_TAGS.has(element.tagName)) {
-    return element.tagName === 'SCRIPT' ? 'SCRIPT_PLACEHOLDER' : value;
+  if (element && element.tagName.toUpperCase() === 'SCRIPT') {
+    return 'SCRIPT_PLACEHOLDER';
   }
 
   const action = getPrivacyAction(element, privacy);
@@ -698,21 +700,34 @@ function validateCustomDetector(
       `Custom detector "${label}" maximumMatchLength must be an integer from 1-${MAX_CUSTOM_MATCH_LENGTH}`,
     );
   }
+  if (minimumLength > maximumMatchLength) {
+    throw new Error(
+      `Custom detector "${label}" minimumLength cannot exceed maximumMatchLength`,
+    );
+  }
   if (
     flags &&
     (!/^[dgimsuv]*$/.test(flags) || new Set(flags).size !== flags.length)
   ) {
     throw new Error(`Custom detector "${label}" has unsupported regex flags`);
   }
-  if (/\\[1-9]/.test(pattern) || /\(\?<([=!])/.test(pattern)) {
+  if (
+    /\\[1-9]/.test(pattern) ||
+    /\\k</.test(pattern) ||
+    hasLookaroundOrNamedGroup(pattern)
+  ) {
     throw new Error(
-      `Custom detector "${label}" cannot use backreferences or lookbehind`,
+      `Custom detector "${label}" cannot use lookaround, named groups, or backreferences`,
     );
   }
-  if (hasUnsafeNestedRepetition(pattern)) {
+  const scan = scanCustomPattern(pattern);
+  if (scan.nestedRepetition) {
     throw new Error(
       `Custom detector "${label}" contains ambiguous nested repetition`,
     );
+  }
+  if (scan.quantifiers > MAX_CUSTOM_QUANTIFIERS) {
+    throw new Error(`Custom detector "${label}" contains too many quantifiers`);
   }
 
   let regex: RegExp;
@@ -727,10 +742,57 @@ function validateCustomDetector(
   }
 }
 
-function hasUnsafeNestedRepetition(pattern: string): boolean {
+function quantifierLength(pattern: string, index: number): number {
+  const character = pattern[index];
+  if (character === '*' || character === '+' || character === '?') {
+    return pattern[index + 1] === '?' ? 2 : 1;
+  }
+  if (character === '{') {
+    const match = pattern.slice(index).match(/^\{\d+(?:,\d*)?\}/);
+    if (!match) return 0;
+    return match[0].length + (pattern[index + match[0].length] === '?' ? 1 : 0);
+  }
+  return 0;
+}
+
+function hasLookaroundOrNamedGroup(pattern: string): boolean {
+  let inCharacterClass = false;
+  let escaped = false;
+
+  for (let index = 0; index < pattern.length; index += 1) {
+    const character = pattern[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (character === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (character === '[') {
+      inCharacterClass = true;
+      continue;
+    }
+    if (character === ']' && inCharacterClass) {
+      inCharacterClass = false;
+      continue;
+    }
+    if (inCharacterClass || character !== '(') continue;
+    if (pattern[index + 1] !== '?') continue;
+    if (pattern[index + 2] === ':') continue;
+    return true;
+  }
+  return false;
+}
+
+function scanCustomPattern(pattern: string): {
+  nestedRepetition: boolean;
+  quantifiers: number;
+} {
   const groups: Array<{ repeated: boolean; alternation: boolean }> = [];
   let inCharacterClass = false;
   let escaped = false;
+  let quantifiers = 0;
 
   for (let index = 0; index < pattern.length; index += 1) {
     const character = pattern[index];
@@ -754,6 +816,9 @@ function hasUnsafeNestedRepetition(pattern: string): boolean {
 
     if (character === '(') {
       groups.push({ repeated: false, alternation: false });
+      if (pattern[index + 1] === '?' && pattern[index + 2] === ':') {
+        index += 2;
+      }
       continue;
     }
     if (character === '|') {
@@ -761,38 +826,31 @@ function hasUnsafeNestedRepetition(pattern: string): boolean {
       if (group) group.alternation = true;
       continue;
     }
-    if (character === '*' || character === '+') {
+
+    const length = quantifierLength(pattern, index);
+    if (length > 0) {
+      quantifiers += 1;
       const group = groups[groups.length - 1];
       if (group) group.repeated = true;
+      index += length - 1;
       continue;
     }
-    if (character === '{') {
-      const repetition = pattern.slice(index).match(/^\{\d+,\}/);
-      if (repetition) {
-        const group = groups[groups.length - 1];
-        if (group) group.repeated = true;
-      }
-      continue;
-    }
+
     if (character !== ')') continue;
 
     const group = groups.pop();
     if (!group) continue;
-    const following = pattern.slice(index + 1);
-    const unboundedOuterRepeat =
-      following.startsWith('*') ||
-      following.startsWith('+') ||
-      /^\{\d+,\}/.test(following);
-    if (unboundedOuterRepeat && (group.repeated || group.alternation)) {
-      return true;
+    const outerLength = quantifierLength(pattern, index + 1);
+    if (outerLength > 0 && (group.repeated || group.alternation)) {
+      return { nestedRepetition: true, quantifiers };
     }
     const parent = groups[groups.length - 1];
-    if (parent && group.repeated) parent.repeated = true;
-    if (unboundedOuterRepeat) {
-      if (parent) parent.repeated = true;
+    if (parent && (group.repeated || outerLength > 0)) {
+      parent.repeated = true;
     }
   }
-  return false;
+
+  return { nestedRepetition: false, quantifiers };
 }
 
 function applyLegacyMask(

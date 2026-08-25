@@ -532,7 +532,8 @@ function serializeTextNode(
   // The parent node may not be a html element which has a tagName attribute.
   // So just let it be undefined which is ok in this use case.
   const parent = dom.parentNode(n);
-  const parentTagName = parent && (parent as HTMLElement).tagName;
+  const parentTagName =
+    parent && (parent as HTMLElement).tagName?.toUpperCase();
   let textContent: string | null = '';
   const isStyle = parentTagName === 'STYLE' ? true : undefined;
   const isScript = parentTagName === 'SCRIPT' ? true : undefined;
@@ -548,7 +549,7 @@ function serializeTextNode(
       textContent = absolutifyURLs(textContent, getHref(options.doc));
     }
   }
-  if (!isStyle && !isScript && textContent) {
+  if (!isScript && textContent) {
     if (privacy) {
       textContent = maskTextWithPrivacy(
         textContent,
@@ -557,7 +558,7 @@ function serializeTextNode(
         needsMask,
         maskTextFn,
       );
-    } else if (needsMask) {
+    } else if (!isStyle && needsMask) {
       textContent = maskTextFn
         ? maskTextFn(textContent, dom.parentElement(n))
         : textContent.replace(/[\S]/g, '*');

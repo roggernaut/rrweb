@@ -140,7 +140,8 @@ export type PrivacyDetectorOptions = Partial<{
     minimumLength?: number;
     /**
      * Maximum possible match length. Used as overlap when scanning long values
-     * in bounded chunks. Defaults to 256 and cannot exceed 1,024.
+     * in bounded chunks. Defaults to 256 and cannot exceed 1,024. Must be at
+     * least `minimumLength`.
      */
     maximumMatchLength?: number;
   }>;

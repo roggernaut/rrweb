@@ -768,9 +768,21 @@ export default class MutationBuffer {
                 newPriority !== old.style.getPropertyPriority(pname)
               ) {
                 if (newPriority === '') {
-                  item.styleDiff[pname] = newValue;
+                  item.styleDiff[pname] = this.privacy
+                    ? maskTextWithPrivacy(newValue, target, this.privacy, false)
+                    : newValue;
                 } else {
-                  item.styleDiff[pname] = [newValue, newPriority];
+                  item.styleDiff[pname] = [
+                    this.privacy
+                      ? maskTextWithPrivacy(
+                          newValue,
+                          target,
+                          this.privacy,
+                          false,
+                        )
+                      : newValue,
+                    newPriority,
+                  ];
                 }
               } else {
                 // for checking

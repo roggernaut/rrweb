@@ -82,10 +82,17 @@ describe('privacy policy', () => {
 
     expect(policyWith('(a+)+$')).toThrow('ambiguous nested repetition');
     expect(policyWith('(a|aa)+$')).toThrow('ambiguous nested repetition');
+    expect(policyWith('(a+){1,20}')).toThrow('ambiguous nested repetition');
+    expect(policyWith('(a{1,10})+')).toThrow('ambiguous nested repetition');
+    expect(policyWith('(?:a+)+')).toThrow('ambiguous nested repetition');
     expect(policyWith('(a)\\1')).toThrow('backreferences');
+    expect(policyWith('(?<x>a)\\k<x>')).toThrow('backreferences');
+    expect(policyWith('(?=secret)')).toThrow('lookaround');
+    expect(policyWith('(?!secret)')).toThrow('lookaround');
     expect(policyWith('a*')).toThrow('cannot match empty text');
     expect(policyWith('account', 'y')).toThrow('unsupported regex flags');
     expect(policyWith('a'.repeat(257))).toThrow('must be 1-256 characters');
+    expect(policyWith('a?'.repeat(13))).toThrow('too many quantifiers');
     expect(() =>
       compilePrivacyPolicy({
         version: 1,
@@ -101,6 +108,37 @@ describe('privacy policy', () => {
         },
       }),
     ).toThrow('maximumMatchLength');
+    expect(() =>
+      compilePrivacyPolicy({
+        version: 1,
+        preset: 'custom',
+        detectors: {
+          custom: [
+            {
+              name: 'inverted',
+              pattern: 'account_[0-9]+',
+              minimumLength: 32,
+              maximumMatchLength: 8,
+            },
+          ],
+        },
+      }),
+    ).toThrow('minimumLength cannot exceed maximumMatchLength');
+
+    expect(() =>
+      compilePrivacyPolicy({
+        version: 1,
+        preset: 'custom',
+        detectors: {
+          custom: [
+            { name: 'account-id', pattern: 'acct_[0-9]+' },
+            { name: 'optional-colour', pattern: 'colou?r' },
+            { name: 'grouped', pattern: '(?:acct_)[0-9]{4,12}' },
+            { name: 'repeated-atom', pattern: '(foo)+' },
+          ],
+        },
+      }),
+    ).not.toThrow();
   });
 
   it('uses detector length fast paths and finds matches across scan chunks', () => {
@@ -170,7 +208,7 @@ describe('privacy policy', () => {
     ]);
   });
 
-  it('skips non-content text and replaces incremental script text', () => {
+  it('masks style text under policy while keeping script placeholders', () => {
     const style = document.createElement('style');
     const script = document.createElement('script');
     expect(
@@ -180,7 +218,15 @@ describe('privacy policy', () => {
         balanced(),
         false,
       ),
-    ).toBe('.person@example.com { color: red }');
+    ).toBe('.xxxxxx@xxxxxxx.xxx { color: red }');
+    expect(
+      maskTextWithPrivacy(
+        '.person@example.com { color: red }',
+        style,
+        compilePrivacyPolicy({ version: 1, preset: 'strict' }),
+        false,
+      ),
+    ).toBe('.xxxxxx@xxxxxxx.xxx { xxxxx: xxx }');
     expect(
       maskTextWithPrivacy(
         'window.secret = "person@example.com"',
@@ -189,6 +235,18 @@ describe('privacy policy', () => {
         false,
       ),
     ).toBe('SCRIPT_PLACEHOLDER');
+  });
+
+  it('detects emails with more than four domain labels', () => {
+    const value = 'Contact first.last@sub.mail.company.co.uk today';
+    expect(
+      detectSensitiveText(value, balanced()).some(
+        (match) =>
+          match.detector === 'email' &&
+          value.slice(match.start, match.end) ===
+            'first.last@sub.mail.company.co.uk',
+      ),
+    ).toBe(true);
   });
 
   it('uses nearest explicit rules and safer action for ties', () => {
@@ -408,6 +466,27 @@ describe('privacy policy', () => {
         }),
       ),
     ).toBe('mask');
+  });
+
+  it('masks CSS text, inline style, and stylesheet snapshots', () => {
+    document.body.innerHTML = `
+      <style>.hero { content: "person@example.com"; }</style>
+      <div style="--owner: person@example.com"></div>`;
+
+    const balancedPayload = JSON.stringify(
+      snapshot(document, {
+        privacyPolicy: { version: 1, preset: 'balanced' },
+      }),
+    );
+    expect(balancedPayload).not.toContain('person@example.com');
+    expect(balancedPayload).toContain('xxxxxx@xxxxxxx.xxx');
+
+    const strictPayload = JSON.stringify(
+      snapshot(document, {
+        privacyPolicy: { version: 1, preset: 'strict' },
+      }),
+    );
+    expect(strictPayload).not.toContain('person@example.com');
   });
 
   it('applies policy before a snapshot is serialized', () => {

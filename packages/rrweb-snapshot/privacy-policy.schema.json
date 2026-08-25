@@ -60,9 +60,12 @@
       "additionalProperties": false,
       "required": ["name", "pattern"],
       "properties": {
-        "name": { "type": "string", "minLength": 1 },
-        "pattern": { "type": "string", "minLength": 1 },
-        "flags": { "type": "string" },
+        "name": { "type": "string", "minLength": 1, "pattern": ".*\\S.*" },
+        "pattern": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "flags": {
+          "type": "string",
+          "pattern": "^[dgimsuv]{0,7}$"
+        },
         "classification": { "$ref": "#/$defs/sensitiveDataKind" },
         "minimumLength": {
           "type": "integer",
