@@ -72,6 +72,14 @@ const DEFAULT_DETECTORS: Required<Omit<PrivacyDetectorOptions, 'custom'>> = {
   ipAddress: true,
 };
 
+const DETECTOR_SCAN_CHUNK_SIZE = 8_192;
+const CUSTOM_DETECTOR_SCAN_CHUNK_SIZE = 512;
+const MAX_DETECTOR_MATCHES = 1_000;
+const MAX_CUSTOM_PATTERN_LENGTH = 256;
+const MAX_CUSTOM_MATCH_LENGTH = 1_024;
+const DEFAULT_CUSTOM_MATCH_LENGTH = 256;
+const NON_CONTENT_TEXT_TAGS = new Set(['SCRIPT', 'STYLE']);
+
 const PROTECTED_AUTOCOMPLETE = new Set([
   'cc-csc',
   'cc-exp',
@@ -189,15 +197,22 @@ export function compilePrivacyPolicy(
     detectors.push({
       name: 'email',
       regex:
-        /[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+/g,
+        /[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[a-zA-Z0-9-]{1,63}(?:\.[a-zA-Z0-9-]{1,63}){1,3}/g,
       classification: 'contact',
+      minimumLength: 6,
+      maximumMatchLength: 320,
+      scanChunkSize: DETECTOR_SCAN_CHUNK_SIZE,
+      validate: (candidate) => candidate.length <= 254,
     });
   }
   if (detectorOptions.phone) {
     detectors.push({
       name: 'phone',
-      regex: /(?:\+?\d[\d ().-]{7,}\d)/g,
+      regex: /(?:\+?\d[\d ().-]{7,29}\d)/g,
       classification: 'contact',
+      minimumLength: 10,
+      maximumMatchLength: 32,
+      scanChunkSize: DETECTOR_SCAN_CHUNK_SIZE,
       validate: (candidate) => {
         const length = candidate.replace(/\D/g, '').length;
         return length >= 10 && length <= 15;
@@ -209,6 +224,9 @@ export function compilePrivacyPolicy(
       name: 'payment-card',
       regex: /(?:\d[ -]?){12,18}\d/g,
       classification: 'payment',
+      minimumLength: 13,
+      maximumMatchLength: 37,
+      scanChunkSize: DETECTOR_SCAN_CHUNK_SIZE,
       validate: passesLuhn,
     });
   }
@@ -217,6 +235,9 @@ export function compilePrivacyPolicy(
       name: 'ssn',
       regex: /\b\d{3}-?\d{2}-?\d{4}\b/g,
       classification: 'identity',
+      minimumLength: 9,
+      maximumMatchLength: 11,
+      scanChunkSize: DETECTOR_SCAN_CHUNK_SIZE,
     });
   }
   if (detectorOptions.ipAddress) {
@@ -224,15 +245,31 @@ export function compilePrivacyPolicy(
       name: 'ip-address',
       regex: /\b(?:\d{1,3}\.){3}\d{1,3}\b/g,
       classification: 'location',
+      minimumLength: 7,
+      maximumMatchLength: 15,
+      scanChunkSize: DETECTOR_SCAN_CHUNK_SIZE,
       validate: (candidate) =>
         candidate.split('.').every((part) => Number(part) <= 255),
     });
   }
   for (const detector of detectorOptions.custom || []) {
+    const minimumLength = detector.minimumLength ?? 1;
+    const maximumMatchLength =
+      detector.maximumMatchLength ?? DEFAULT_CUSTOM_MATCH_LENGTH;
+    validateCustomDetector(
+      detector.name,
+      detector.pattern,
+      detector.flags,
+      minimumLength,
+      maximumMatchLength,
+    );
     detectors.push({
       name: detector.name,
       regex: new RegExp(detector.pattern, ensureGlobalFlag(detector.flags)),
       classification: detector.classification || 'custom',
+      minimumLength,
+      maximumMatchLength,
+      scanChunkSize: CUSTOM_DETECTOR_SCAN_CHUNK_SIZE,
     });
   }
 
@@ -240,6 +277,10 @@ export function compilePrivacyPolicy(
     policy: effectivePolicy,
     rules,
     detectors,
+    minimumDetectorLength:
+      detectors.length > 0
+        ? Math.min(...detectors.map((detector) => detector.minimumLength))
+        : Number.POSITIVE_INFINITY,
     blockSelector:
       rules
         .filter((rule) => rule.action === 'exclude' && !rule.attributes)
@@ -316,6 +357,10 @@ export function maskTextWithPrivacy(
 ): string {
   if (!privacy) {
     return legacyMask ? applyLegacyMask(value, element, legacyMaskFn) : value;
+  }
+
+  if (element && NON_CONTENT_TEXT_TAGS.has(element.tagName)) {
+    return element.tagName === 'SCRIPT' ? 'SCRIPT_PLACEHOLDER' : value;
   }
 
   const action = getPrivacyAction(element, privacy);
@@ -515,20 +560,67 @@ export function detectSensitiveText(
   value: string,
   privacy: CompiledPrivacyPolicy,
 ): SensitiveMatch[] {
+  if (
+    privacy.detectors.length === 0 ||
+    value.length < privacy.minimumDetectorLength
+  ) {
+    return [];
+  }
+
   const matches: SensitiveMatch[] = [];
   for (const detector of privacy.detectors) {
-    detector.regex.lastIndex = 0;
-    let match: RegExpExecArray | null;
-    while ((match = detector.regex.exec(value))) {
-      if (!detector.validate || detector.validate(match[0])) {
-        matches.push({
-          start: match.index,
-          end: match.index + match[0].length,
-          kind: detector.classification,
-          detector: detector.name,
-        });
+    if (value.length < detector.minimumLength) continue;
+
+    for (
+      let offset = 0;
+      offset < value.length;
+      offset += detector.scanChunkSize
+    ) {
+      const primaryEnd = Math.min(
+        offset + detector.scanChunkSize,
+        value.length,
+      );
+      const scanEnd = Math.min(
+        primaryEnd + detector.maximumMatchLength - 1,
+        value.length,
+      );
+      const chunk = value.slice(offset, scanEnd);
+      detector.regex.lastIndex = 0;
+      let match: RegExpExecArray | null;
+      while ((match = detector.regex.exec(chunk))) {
+        const start = offset + match.index;
+        if (start >= primaryEnd) break;
+        if (match[0].length > detector.maximumMatchLength) {
+          matches.push({
+            start: 0,
+            end: value.length,
+            kind: detector.classification,
+            detector: `${detector.name}:oversize`,
+          });
+          return mergeMatches(matches);
+        }
+        if (!detector.validate || detector.validate(match[0])) {
+          matches.push({
+            start,
+            end: start + match[0].length,
+            kind: detector.classification,
+            detector: detector.name,
+          });
+          if (matches.length >= MAX_DETECTOR_MATCHES) {
+            // Detection is a privacy boundary. If a hostile value produces an
+            // unreasonable number of matches, mask the complete value because
+            // later detectors have not necessarily scanned its prefix.
+            matches.push({
+              start: 0,
+              end: value.length,
+              kind: detector.classification,
+              detector: `${detector.name}:overflow`,
+            });
+            return mergeMatches(matches);
+          }
+        }
+        if (match[0].length === 0) detector.regex.lastIndex += 1;
       }
-      if (match[0].length === 0) detector.regex.lastIndex += 1;
     }
   }
   return mergeMatches(matches);
@@ -572,6 +664,135 @@ function isProtectedInput(element: HTMLElement): boolean {
     .toLowerCase()
     .split(/\s+/)
     .some((token) => PROTECTED_AUTOCOMPLETE.has(token));
+}
+
+function validateCustomDetector(
+  name: string,
+  pattern: string,
+  flags: string | undefined,
+  minimumLength: number,
+  maximumMatchLength: number,
+): void {
+  const label = name || '<unnamed>';
+  if (!name.trim()) throw new Error('Custom detector name cannot be empty');
+  if (!pattern || pattern.length > MAX_CUSTOM_PATTERN_LENGTH) {
+    throw new Error(
+      `Custom detector "${label}" pattern must be 1-${MAX_CUSTOM_PATTERN_LENGTH} characters`,
+    );
+  }
+  if (
+    !Number.isInteger(minimumLength) ||
+    minimumLength < 1 ||
+    minimumLength > MAX_CUSTOM_MATCH_LENGTH
+  ) {
+    throw new Error(
+      `Custom detector "${label}" minimumLength must be an integer from 1-${MAX_CUSTOM_MATCH_LENGTH}`,
+    );
+  }
+  if (
+    !Number.isInteger(maximumMatchLength) ||
+    maximumMatchLength < 1 ||
+    maximumMatchLength > MAX_CUSTOM_MATCH_LENGTH
+  ) {
+    throw new Error(
+      `Custom detector "${label}" maximumMatchLength must be an integer from 1-${MAX_CUSTOM_MATCH_LENGTH}`,
+    );
+  }
+  if (
+    flags &&
+    (!/^[dgimsuv]*$/.test(flags) || new Set(flags).size !== flags.length)
+  ) {
+    throw new Error(`Custom detector "${label}" has unsupported regex flags`);
+  }
+  if (/\\[1-9]/.test(pattern) || /\(\?<([=!])/.test(pattern)) {
+    throw new Error(
+      `Custom detector "${label}" cannot use backreferences or lookbehind`,
+    );
+  }
+  if (hasUnsafeNestedRepetition(pattern)) {
+    throw new Error(
+      `Custom detector "${label}" contains ambiguous nested repetition`,
+    );
+  }
+
+  let regex: RegExp;
+  try {
+    regex = new RegExp(pattern, ensureGlobalFlag(flags));
+  } catch {
+    throw new Error(`Custom detector "${label}" contains an invalid regex`);
+  }
+  regex.lastIndex = 0;
+  if (regex.test('')) {
+    throw new Error(`Custom detector "${label}" cannot match empty text`);
+  }
+}
+
+function hasUnsafeNestedRepetition(pattern: string): boolean {
+  const groups: Array<{ repeated: boolean; alternation: boolean }> = [];
+  let inCharacterClass = false;
+  let escaped = false;
+
+  for (let index = 0; index < pattern.length; index += 1) {
+    const character = pattern[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (character === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (character === '[') {
+      inCharacterClass = true;
+      continue;
+    }
+    if (character === ']' && inCharacterClass) {
+      inCharacterClass = false;
+      continue;
+    }
+    if (inCharacterClass) continue;
+
+    if (character === '(') {
+      groups.push({ repeated: false, alternation: false });
+      continue;
+    }
+    if (character === '|') {
+      const group = groups[groups.length - 1];
+      if (group) group.alternation = true;
+      continue;
+    }
+    if (character === '*' || character === '+') {
+      const group = groups[groups.length - 1];
+      if (group) group.repeated = true;
+      continue;
+    }
+    if (character === '{') {
+      const repetition = pattern.slice(index).match(/^\{\d+,\}/);
+      if (repetition) {
+        const group = groups[groups.length - 1];
+        if (group) group.repeated = true;
+      }
+      continue;
+    }
+    if (character !== ')') continue;
+
+    const group = groups.pop();
+    if (!group) continue;
+    const following = pattern.slice(index + 1);
+    const unboundedOuterRepeat =
+      following.startsWith('*') ||
+      following.startsWith('+') ||
+      /^\{\d+,\}/.test(following);
+    if (unboundedOuterRepeat && (group.repeated || group.alternation)) {
+      return true;
+    }
+    const parent = groups[groups.length - 1];
+    if (parent && group.repeated) parent.repeated = true;
+    if (unboundedOuterRepeat) {
+      if (parent) parent.repeated = true;
+    }
+  }
+  return false;
 }
 
 function applyLegacyMask(

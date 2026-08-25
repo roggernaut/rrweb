@@ -136,6 +136,13 @@ export type PrivacyDetectorOptions = Partial<{
     pattern: string;
     flags?: string;
     classification?: SensitiveDataKind;
+    /** Skip this detector for shorter values. Defaults to 1. */
+    minimumLength?: number;
+    /**
+     * Maximum possible match length. Used as overlap when scanning long values
+     * in bounded chunks. Defaults to 256 and cannot exceed 1,024.
+     */
+    maximumMatchLength?: number;
   }>;
 }>;
 
@@ -163,8 +170,12 @@ export type CompiledPrivacyPolicy = {
     name: string;
     regex: RegExp;
     classification: SensitiveDataKind;
+    minimumLength: number;
+    maximumMatchLength: number;
+    scanChunkSize: number;
     validate?: (candidate: string) => boolean;
   }>;
+  minimumDetectorLength: number;
   blockSelector: string | null;
 };
 

@@ -70,6 +70,127 @@ describe('privacy policy', () => {
     ).toBe('Account xxxx_00000 is active');
   });
 
+  it('rejects unsafe or unbounded custom detector configurations', () => {
+    const policyWith = (pattern: string, flags?: string) => () =>
+      compilePrivacyPolicy({
+        version: 1,
+        preset: 'custom',
+        detectors: {
+          custom: [{ name: 'unsafe', pattern, flags }],
+        },
+      });
+
+    expect(policyWith('(a+)+$')).toThrow('ambiguous nested repetition');
+    expect(policyWith('(a|aa)+$')).toThrow('ambiguous nested repetition');
+    expect(policyWith('(a)\\1')).toThrow('backreferences');
+    expect(policyWith('a*')).toThrow('cannot match empty text');
+    expect(policyWith('account', 'y')).toThrow('unsupported regex flags');
+    expect(policyWith('a'.repeat(257))).toThrow('must be 1-256 characters');
+    expect(() =>
+      compilePrivacyPolicy({
+        version: 1,
+        preset: 'custom',
+        detectors: {
+          custom: [
+            {
+              name: 'too-wide',
+              pattern: 'account_[0-9]+',
+              maximumMatchLength: 1_025,
+            },
+          ],
+        },
+      }),
+    ).toThrow('maximumMatchLength');
+  });
+
+  it('uses detector length fast paths and finds matches across scan chunks', () => {
+    const custom = compilePrivacyPolicy({
+      version: 1,
+      preset: 'custom',
+      detectors: {
+        custom: [
+          {
+            name: 'account-id',
+            pattern: 'acct_[0-9]+',
+            minimumLength: 12,
+            maximumMatchLength: 32,
+          },
+        ],
+      },
+    });
+    expect(detectSensitiveText('acct_1', custom)).toEqual([]);
+    const customBoundaryValue = `${'x'.repeat(508)}acct_12345`;
+    expect(detectSensitiveText(customBoundaryValue, custom)).toEqual([
+      expect.objectContaining({ start: 508, end: customBoundaryValue.length }),
+    ]);
+
+    const value = `${'x'.repeat(8_187)}4111 1111 1111 1111`;
+    expect(
+      detectSensitiveText(value, balanced()).some(
+        (match) => match.detector === 'payment-card' && match.start === 8_187,
+      ),
+    ).toBe(true);
+  });
+
+  it('fails closed when a value produces too many detector matches', () => {
+    const privacy = compilePrivacyPolicy({
+      version: 1,
+      preset: 'custom',
+      detectors: {
+        custom: [
+          {
+            name: 'digit',
+            pattern: '[0-9]',
+            maximumMatchLength: 1,
+          },
+        ],
+      },
+    });
+    const value = '1'.repeat(1_500);
+    expect(detectSensitiveText(value, privacy)).toEqual([
+      expect.objectContaining({ start: 0, end: value.length }),
+    ]);
+
+    const oversize = compilePrivacyPolicy({
+      version: 1,
+      preset: 'custom',
+      detectors: {
+        custom: [
+          {
+            name: 'bounded-digits',
+            pattern: '[0-9]+',
+            maximumMatchLength: 4,
+          },
+        ],
+      },
+    });
+    const oversizeValue = 'public 12345 trailing text';
+    expect(detectSensitiveText(oversizeValue, oversize)).toEqual([
+      expect.objectContaining({ start: 0, end: oversizeValue.length }),
+    ]);
+  });
+
+  it('skips non-content text and replaces incremental script text', () => {
+    const style = document.createElement('style');
+    const script = document.createElement('script');
+    expect(
+      maskTextWithPrivacy(
+        '.person@example.com { color: red }',
+        style,
+        balanced(),
+        false,
+      ),
+    ).toBe('.person@example.com { color: red }');
+    expect(
+      maskTextWithPrivacy(
+        'window.secret = "person@example.com"',
+        script,
+        balanced(),
+        false,
+      ),
+    ).toBe('SCRIPT_PLACEHOLDER');
+  });
+
   it('uses nearest explicit rules and safer action for ties', () => {
     document.body.innerHTML = `
       <main class="allow mask">
