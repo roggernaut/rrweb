@@ -1,6 +1,8 @@
 import {
   type MaskInputOptions,
-  maskInputValue,
+  maskInputWithPrivacy,
+  maskTextWithPrivacy,
+  shouldMaskInputWithPrivacy,
   Mirror,
   getInputType,
   toLowerCase,
@@ -389,6 +391,7 @@ function initInputObserver({
   ignoreSelector,
   maskInputOptions,
   maskInputFn,
+  privacy,
   sampling,
   userTriggeredOnInput,
 }: observerParam): listenerHandler {
@@ -425,18 +428,20 @@ function initInputObserver({
 
     if (type === 'radio' || type === 'checkbox') {
       isChecked = (target as HTMLInputElement).checked;
-    } else if (
-      maskInputOptions[tagName.toLowerCase() as keyof MaskInputOptions] ||
-      maskInputOptions[type as keyof MaskInputOptions]
-    ) {
-      text = maskInputValue({
-        element: target,
-        maskInputOptions,
-        tagName,
-        type,
-        value: text,
-        maskInputFn,
-      });
+    } else {
+      const legacyMask = Boolean(
+        maskInputOptions[tagName.toLowerCase() as keyof MaskInputOptions] ||
+          maskInputOptions[type as keyof MaskInputOptions],
+      );
+      if (shouldMaskInputWithPrivacy(target, privacy, legacyMask)) {
+        text = maskInputWithPrivacy(
+          text,
+          target,
+          privacy,
+          legacyMask,
+          maskInputFn,
+        );
+      }
     }
     cbWithDedup(
       target,
@@ -589,8 +594,29 @@ function getIdAndStyleId(
   };
 }
 
+function stylesheetOwnerElement(
+  sheet: CSSStyleSheet | null | undefined,
+): HTMLElement | null {
+  const owner = sheet?.ownerNode;
+  return owner instanceof Element ? (owner as HTMLElement) : null;
+}
+
+function maskCssForRecord(
+  value: string,
+  sheet: CSSStyleSheet | null | undefined,
+  privacy: observerParam['privacy'],
+): string {
+  if (!value || !privacy) return value;
+  return maskTextWithPrivacy(
+    value,
+    stylesheetOwnerElement(sheet),
+    privacy,
+    false,
+  );
+}
+
 function initStyleSheetObserver(
-  { styleSheetRuleCb, mirror, stylesheetManager }: observerParam,
+  { styleSheetRuleCb, mirror, stylesheetManager, privacy }: observerParam,
   { win }: { win: IWindow },
 ): listenerHandler {
   if (!win.CSSStyleSheet || !win.CSSStyleSheet.prototype) {
@@ -621,7 +647,7 @@ function initStyleSheetObserver(
           styleSheetRuleCb({
             id,
             styleId,
-            adds: [{ rule, index }],
+            adds: [{ rule: maskCssForRecord(rule, thisArg, privacy), index }],
           });
         }
         return target.apply(thisArg, argumentsList);
@@ -701,7 +727,7 @@ function initStyleSheetObserver(
             styleSheetRuleCb({
               id,
               styleId,
-              replace: text,
+              replace: maskCssForRecord(text, thisArg, privacy),
             });
           }
           return target.apply(thisArg, argumentsList);
@@ -733,7 +759,7 @@ function initStyleSheetObserver(
             styleSheetRuleCb({
               id,
               styleId,
-              replaceSync: text,
+              replaceSync: maskCssForRecord(text, thisArg, privacy),
             });
           }
           return target.apply(thisArg, argumentsList);
@@ -801,7 +827,11 @@ function initStyleSheetObserver(
                 styleId,
                 adds: [
                   {
-                    rule,
+                    rule: maskCssForRecord(
+                      rule,
+                      thisArg.parentStyleSheet,
+                      privacy,
+                    ),
                     index: [
                       ...getNestedCSSRulePositions(thisArg),
                       index || 0, // defaults to 0
@@ -932,6 +962,7 @@ function initStyleDeclarationObserver(
     mirror,
     ignoreCSSAttributes,
     stylesheetManager,
+    privacy,
   }: observerParam,
   { win }: { win: IWindow },
 ): listenerHandler {
@@ -961,7 +992,11 @@ function initStyleDeclarationObserver(
             styleId,
             set: {
               property,
-              value,
+              value: maskCssForRecord(
+                value,
+                thisArg.parentRule?.parentStyleSheet,
+                privacy,
+              ),
               priority,
             },
             // eslint-disable-next-line @typescript-eslint/no-non-null-assertion

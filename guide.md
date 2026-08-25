@@ -184,6 +184,7 @@ The `record` function accepts the following options.
 | maskInputOptions         | { password: true } | mask some kinds of input \*<br />refer to the [list](https://github.com/rrweb-io/rrweb/blob/588164aa12f1d94576f89ae0210b98f6e971c895/packages/rrweb-snapshot/src/types.ts#L77-L95)            |
 | maskInputFn              | -                  | customize mask input content recording logic                                                                                                                                                  |
 | maskTextFn               | -                  | customize mask text content recording logic                                                                                                                                                   |
+| privacyPolicy            | -                  | apply a versioned `strict`, `balanced`, `custom`, or `legacy` privacy policy before values are emitted                                                                                        |
 | slimDOMOptions           | {}                 | remove unnecessary parts of the DOM <br />refer to the [list](https://github.com/rrweb-io/rrweb/blob/588164aa12f1d94576f89ae0210b98f6e971c895/packages/rrweb-snapshot/src/types.ts#L97-L108)  |
 | dataURLOptions           | {}                 | Canvas image format and quality ,This parameter will be passed to the OffscreenCanvas.convertToBlob(),Using this parameter effectively reduces the size of the recorded data                  |
 | inlineStylesheet         | true               | Deprecated since 2.0.0. Still supported, but planned to be superseded by future `captureAssets` asset recording APIs.                                                                         |
@@ -191,6 +192,9 @@ The `record` function accepts the following options.
 | packFn                   | -                  | refer to the [storage optimization recipe](./docs/recipes/optimize-storage.md)                                                                                                                |
 | sampling                 | -                  | refer to the [storage optimization recipe](./docs/recipes/optimize-storage.md)                                                                                                                |
 | recordCanvas             | false              | Whether to record the canvas element. Available options:<br/>`false`, <br/>`true`                                                                                                             |
+| canvasMasking            | -                  | Runtime adapter for masking regions of FPS-captured canvas frames. See Privacy below.                                                                                                         |
+| maskAllElementAttributes | false              | Masks every source string attribute in the final serialized representation. This reduces replay fidelity and takes precedence over `maskAttributeFn`.                                         |
+| maskAttributeFn          | -                  | Transforms each final serialized string attribute. Portable policy rules are applied afterward and cannot be overridden by this callback.                                                     |
 | recordCrossOriginIframes | false              | Whether to record cross origin iframes. rrweb has to be injected in each child iframe for this to work. Available options:<br/>`false`, <br/>`true`                                           |
 | recordAfter              | 'load'             | If the document is not ready, then the recorder will start recording after the specified event is fired. Available options: `DOMContentLoaded`, `load`                                        |
 | inlineImages             | false              | Deprecated since 2.0.0. Still supported, but planned to be superseded by future `captureAssets` asset recording APIs.                                                                         |
@@ -201,13 +205,121 @@ The `record` function accepts the following options.
 
 #### Privacy
 
-You may find some contents on the webpage which are not willing to be recorded, then you can use the following approaches:
+Use the vendor-neutral `data-privacy` attribute to declare capture privacy in
+application markup. rrweb recognizes it without recorder-specific
+configuration:
+
+```html
+<section data-privacy="exclude">Never capture this subtree</section>
+<section data-privacy="mask">Mask content in this subtree</section>
+<span data-privacy="allow">This content may be captured</span>
+```
+
+The values are case-sensitive. A declaration applies to descendants until a
+nearer declaration overrides it. An `exclude` declaration cannot be reopened,
+and protected credential and payment inputs remain masked under `allow`.
+Unknown values make no decision, so the element inherits from its nearest
+valid ancestor or the recorder defaults.
+
+The existing rrweb controls remain available as compatibility options:
 
 - An element with the class name `.rr-block` will not be recorded. Instead, it will replay as a placeholder with the same dimension.
 - An element with the class name `.rr-ignore` will not record its input events.
 - All text of elements with the class name `.rr-mask` and their children will be masked.
 - `input[type="password"]` will be masked by default.
 - Mask options to mask the content in input elements.
+
+For a consistent policy across text, inputs, attributes, URLs, snapshots, and
+mutations, pass a versioned `privacyPolicy`:
+
+The machine-readable contract is published as
+`rrweb-snapshot/privacy-policy.schema.json` for SDK type generation and policy
+validation outside JavaScript.
+
+```js
+import { getRecordPrivacyDetectorsPlugin } from '@rrweb/rrweb-plugin-privacy-detectors';
+
+record({
+  emit(event) {
+    // store event
+  },
+  privacyPolicy: {
+    version: 1,
+    preset: 'balanced',
+    rules: [
+      {
+        target: { type: 'selector', selector: '.public-customer-name' },
+        action: 'allow',
+      },
+      {
+        target: { type: 'selector', selector: '.private' },
+        action: 'mask',
+      },
+      {
+        target: { type: 'selector', selector: '.payment-widget' },
+        action: 'exclude',
+      },
+    ],
+    url: {
+      blockedQueryParameters: ['token', 'session'],
+    },
+  },
+  plugins: [
+    // Highlight-style fuzzy PII matching; omit this plugin to record
+    // unmatched page text unchanged.
+    getRecordPrivacyDetectorsPlugin(),
+  ],
+});
+```
+
+The presets have the following behavior:
+
+- `strict` masks page text and form values, removes media sources, sanitizes
+  URL parameters, and disables canvas recording. Use a custom or balanced
+  policy with the canvas adapter below when the application can identify safe
+  regions precisely.
+- `balanced` masks form values while preserving normal page text. Heuristic
+  PII matching (email, phone, Luhn-valid payment card, SSN-like, and IPv4) is
+  **not** implied; opt in with `@rrweb/rrweb-plugin-privacy-detectors` or
+  `applyPrivacyDetectors`.
+- `custom` applies explicit rules and configured detectors. Password, hidden,
+  payment, and one-time-code inputs remain protected.
+- `legacy` uses the existing rrweb masking options without additional policy
+  behavior.
+
+`data-privacy` declarations and policy rules use the same `exclude`, `mask`, and
+`allow` actions. Explicit `allow` decisions can override preset defaults and
+heuristic detection, but cannot unmask protected credential or payment inputs.
+At the same selector distance, the safer action wins: `exclude` over `mask`
+over `allow`. Existing masking options are still applied when a policy does not
+make an explicit decision. Omitting `privacyPolicy` preserves existing behavior
+while still honoring `data-privacy` declarations.
+
+Canvas applications can provide capture-time regions when using FPS canvas
+sampling. Coordinates are CSS pixels relative to the canvas. Return `[]` when
+the frame is safe unchanged, or `null`/`undefined` when regions cannot be
+computed; rrweb skips unanswerable frames. Invalid rectangles and thrown errors
+also fail closed. Masking occurs before encoding, and configuring the adapter
+suppresses the separate `rr_dataURL` full-snapshot path so an unmasked still
+cannot bypass it.
+
+```js
+record({
+  recordCanvas: true,
+  sampling: { canvas: 4 },
+  canvasMasking: {
+    maskRegions(canvas) {
+      return findSensitiveCanvasRegions(canvas); // [{ x, y, width, height }]
+    },
+  },
+});
+```
+
+For unusual attribute-bearing applications, `maskAllElementAttributes` is the
+coarse fail-closed option and `maskAttributeFn(name, value, element)` is the
+targeted escape hatch. The coarse option wins if both are supplied. Callback
+errors are masked rather than exposing the original value, and neither option
+can weaken password protection or a `privacyPolicy` decision.
 
 #### Checkout
 

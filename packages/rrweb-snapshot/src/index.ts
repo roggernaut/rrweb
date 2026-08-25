@@ -17,6 +17,7 @@ import rebuild, {
   createSandboxedIframe,
   rebuildIntoSandboxedIframe,
 } from './rebuild';
+export * from './privacy';
 export * from './types';
 // Legacy broad export kept for compatibility. New internal imports should
 // prefer snapshot-utils.ts / rebuild-utils.ts domain entrypoints.

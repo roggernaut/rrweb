@@ -5,7 +5,12 @@ import {
   ignoreAttribute,
   isShadowRoot,
   needMaskingText,
+  maskAttributeWithPrivacy,
+  protectSerializedAttribute,
+  getPrivacyAction,
+  maskInputWithPrivacy,
   maskInputValue,
+  maskTextWithPrivacy,
   Mirror,
   isNativeShadowDom,
   getInputType,
@@ -144,6 +149,7 @@ export default class MutationBuffer {
   private texts: textCursor[] = [];
   private attributes: attributeCursor[] = [];
   private attributeMap = new WeakMap<Node, attributeCursor>();
+  private generatedAttributes = new WeakMap<Node, Set<string>>();
   private removes: removedNodeMutation[] = [];
   private mapRemoves: Node[] = [];
 
@@ -180,8 +186,12 @@ export default class MutationBuffer {
   private maskInputOptions: observerParam['maskInputOptions'];
   private maskTextFn: observerParam['maskTextFn'];
   private maskInputFn: observerParam['maskInputFn'];
+  private maskAllElementAttributes: observerParam['maskAllElementAttributes'];
+  private maskAttributeFn: observerParam['maskAttributeFn'];
+  private privacy: observerParam['privacy'];
   private keepIframeSrcFn: observerParam['keepIframeSrcFn'];
   private recordCanvas: observerParam['recordCanvas'];
+  private canvasMaskingConfigured: observerParam['canvasMaskingConfigured'];
   private inlineImages: observerParam['inlineImages'];
   private slimDOMOptions: observerParam['slimDOMOptions'];
   private dataURLOptions: observerParam['dataURLOptions'];
@@ -206,8 +216,12 @@ export default class MutationBuffer {
         'maskInputOptions',
         'maskTextFn',
         'maskInputFn',
+        'maskAllElementAttributes',
+        'maskAttributeFn',
+        'privacy',
         'keepIframeSrcFn',
         'recordCanvas',
+        'canvasMaskingConfigured',
         'inlineImages',
         'slimDOMOptions',
         'dataURLOptions',
@@ -325,9 +339,11 @@ export default class MutationBuffer {
         maskInputOptions: this.maskInputOptions,
         maskTextFn: this.maskTextFn,
         maskInputFn: this.maskInputFn,
+        privacy: this.privacy,
         slimDOMOptions: this.slimDOMOptions,
         dataURLOptions: this.dataURLOptions,
         recordCanvas: this.recordCanvas,
+        canvasMaskingConfigured: this.canvasMaskingConfigured,
         inlineImages: this.inlineImages,
         onSerialize: (currentN) => {
           if (isSerializedIframe(currentN, this.mirror)) {
@@ -469,7 +485,19 @@ export default class MutationBuffer {
       attributes: this.attributes
         .map((attribute) => {
           const { attributes } = attribute;
-          if (typeof attributes.style === 'string') {
+          const styleAction = getPrivacyAction(
+            attribute.node as Element,
+            this.privacy,
+            'style',
+            true,
+          );
+          if (
+            !this.maskAllElementAttributes &&
+            !this.maskAttributeFn &&
+            styleAction !== 'mask' &&
+            styleAction !== 'exclude' &&
+            typeof attributes.style === 'string'
+          ) {
             const diffAsStr = JSON.stringify(attribute.styleDiff);
             const unchangedAsStr = JSON.stringify(attribute._unchangedStyles);
             // check if the style diff is actually shorter than the regular string based mutation
@@ -482,6 +510,23 @@ export default class MutationBuffer {
                 attributes.style.split('var(').length
               ) {
                 attributes.style = attribute.styleDiff;
+              }
+            }
+          }
+          if (this.maskAllElementAttributes || this.maskAttributeFn) {
+            for (const [name, value] of Object.entries(attributes)) {
+              if (typeof value === 'string' || value === null) {
+                attributes[name] = protectSerializedAttribute({
+                  element: attribute.node as Element,
+                  name,
+                  value,
+                  privacy: this.privacy,
+                  maskAllElementAttributes: this.maskAllElementAttributes,
+                  maskAttributeFn: this.maskAttributeFn,
+                  isGenerated: this.generatedAttributes
+                    .get(attribute.node)
+                    ?.has(name),
+                });
               }
             }
           }
@@ -511,6 +556,7 @@ export default class MutationBuffer {
     this.texts = [];
     this.attributes = [];
     this.attributeMap = new WeakMap<Node, attributeCursor>();
+    this.generatedAttributes = new WeakMap<Node, Set<string>>();
     this.removes = [];
     this.addedSet = new Set<Node>();
     this.movedSet = new Set<Node>();
@@ -537,14 +583,30 @@ export default class MutationBuffer {
       dom.childNodes(textarea),
       (cn) => dom.textContent(cn) || '',
     ).join('');
-    item.attributes.value = maskInputValue({
-      element: textarea,
-      maskInputOptions: this.maskInputOptions,
-      tagName: textarea.tagName,
-      type: getInputType(textarea),
-      value,
-      maskInputFn: this.maskInputFn,
-    });
+    const type = getInputType(textarea);
+    if (this.privacy) {
+      const legacyMask = Boolean(
+        this.maskInputOptions.textarea ||
+          (type &&
+            this.maskInputOptions[type as keyof typeof this.maskInputOptions]),
+      );
+      item.attributes.value = maskInputWithPrivacy(
+        value,
+        textarea,
+        this.privacy,
+        legacyMask,
+        this.maskInputFn,
+      );
+    } else {
+      item.attributes.value = maskInputValue({
+        element: textarea,
+        maskInputOptions: this.maskInputOptions,
+        tagName: textarea.tagName,
+        type,
+        value,
+        maskInputFn: this.maskInputFn,
+      });
+    }
   };
 
   private processMutation = (m: mutationRecord) => {
@@ -561,12 +623,25 @@ export default class MutationBuffer {
         ) {
           this.texts.push({
             value:
-              needMaskingText(
-                m.target,
-                this.maskTextClass,
-                this.maskTextSelector,
-                true, // checkAncestors
-              ) && value
+              value && this.privacy
+                ? maskTextWithPrivacy(
+                    value,
+                    closestElementOfNode(m.target),
+                    this.privacy,
+                    needMaskingText(
+                      m.target,
+                      this.maskTextClass,
+                      this.maskTextSelector,
+                      true, // checkAncestors
+                    ),
+                    this.maskTextFn,
+                  )
+                : needMaskingText(
+                    m.target,
+                    this.maskTextClass,
+                    this.maskTextSelector,
+                    true, // checkAncestors
+                  ) && value
                 ? this.maskTextFn
                   ? this.maskTextFn(value, closestElementOfNode(m.target))
                   : value.replace(/[\S]/g, '*')
@@ -584,14 +659,33 @@ export default class MutationBuffer {
         if (attributeName === 'value') {
           const type = getInputType(target);
 
-          value = maskInputValue({
-            element: target,
-            maskInputOptions: this.maskInputOptions,
-            tagName: target.tagName,
-            type,
-            value,
-            maskInputFn: this.maskInputFn,
-          });
+          if (this.privacy) {
+            const legacyMask = Boolean(
+              this.maskInputOptions[
+                target.tagName.toLowerCase() as keyof typeof this.maskInputOptions
+              ] ||
+                (type &&
+                  this.maskInputOptions[
+                    type as keyof typeof this.maskInputOptions
+                  ]),
+            );
+            value = maskInputWithPrivacy(
+              value || '',
+              target,
+              this.privacy,
+              legacyMask,
+              this.maskInputFn,
+            );
+          } else {
+            value = maskInputValue({
+              element: target,
+              maskInputOptions: this.maskInputOptions,
+              tagName: target.tagName,
+              type,
+              value,
+              maskInputFn: this.maskInputFn,
+            });
+          }
         }
         if (
           isBlocked(m.target, this.blockClass, this.blockSelector, false) ||
@@ -637,12 +731,20 @@ export default class MutationBuffer {
 
         if (!ignoreAttribute(target.tagName, attributeName, value)) {
           // overwrite attribute if the mutations was triggered in same time
-          item.attributes[attributeName] = transformAttribute(
+          const transformed = transformAttribute(
             this.doc,
             toLowerCase(target.tagName),
             toLowerCase(attributeName),
             value,
           );
+          item.attributes[attributeName] = this.privacy
+            ? maskAttributeWithPrivacy(
+                target,
+                attributeName,
+                transformed,
+                this.privacy,
+              )
+            : transformed;
           if (attributeName === 'style') {
             if (!this.unattachedDoc) {
               try {
@@ -666,9 +768,21 @@ export default class MutationBuffer {
                 newPriority !== old.style.getPropertyPriority(pname)
               ) {
                 if (newPriority === '') {
-                  item.styleDiff[pname] = newValue;
+                  item.styleDiff[pname] = this.privacy
+                    ? maskTextWithPrivacy(newValue, target, this.privacy, false)
+                    : newValue;
                 } else {
-                  item.styleDiff[pname] = [newValue, newPriority];
+                  item.styleDiff[pname] = [
+                    this.privacy
+                      ? maskTextWithPrivacy(
+                          newValue,
+                          target,
+                          this.privacy,
+                          false,
+                        )
+                      : newValue,
+                    newPriority,
+                  ];
                 }
               } else {
                 // for checking
@@ -687,6 +801,12 @@ export default class MutationBuffer {
             } else {
               item.attributes['rr_open_mode'] = 'non-modal';
             }
+            let generated = this.generatedAttributes.get(m.target);
+            if (!generated) {
+              generated = new Set();
+              this.generatedAttributes.set(m.target, generated);
+            }
+            generated.add('rr_open_mode');
           }
         }
         break;
