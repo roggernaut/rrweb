@@ -11,6 +11,7 @@ import {
   resolveTextValue,
   isEventIgnored,
   VENDOR_COMPAT,
+  resolveUnmaskTextSelector,
 } from '../src/privacy';
 import snapshot, {
   _isBlockedElement,
@@ -1219,6 +1220,29 @@ describe('resolveTextValue: exemptScript', () => {
         exemptScript: false,
       }),
     ).toBe('******');
+  });
+});
+
+describe('resolveUnmaskTextSelector', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('finds a target hidden inside an open shadow root', () => {
+    document.body.innerHTML = '<div id="host"></div>';
+    const host = document.querySelector('#host') as HTMLElement;
+    host.attachShadow({ mode: 'open' }).innerHTML =
+      '<p class="rr-unmask">x</p>';
+    expect(resolveUnmaskTextSelector(document, '.rr-unmask')).toBe(
+      '.rr-unmask',
+    );
+  });
+
+  it('resolves to null when the selector matches nowhere, including inside shadow roots', () => {
+    document.body.innerHTML = '<div id="host"></div>';
+    const host = document.querySelector('#host') as HTMLElement;
+    host.attachShadow({ mode: 'open' }).innerHTML = '<p>x</p>';
+    expect(resolveUnmaskTextSelector(document, '.rr-unmask')).toBeNull();
   });
 });
 

@@ -316,6 +316,34 @@ export function validateSelector(selector: string): boolean {
   }
 }
 
+function matchesInDocumentOrOpenShadowRoots(
+  root: Document | ShadowRoot,
+  selector: string,
+): boolean {
+  if (root.querySelector(selector)) return true;
+  const all = root.querySelectorAll('*');
+  for (let index = 0; index < all.length; index += 1) {
+    const sr = (all[index] as HTMLElement).shadowRoot;
+    if (sr && matchesInDocumentOrOpenShadowRoots(sr, selector)) return true;
+  }
+  return false;
+}
+
+/** EXPERIMENTAL: resolves `unmaskTextSelector` to `null` when nothing in `doc` currently matches it; call once per flush, not per node. */
+export function resolveUnmaskTextSelector(
+  doc: Document,
+  unmaskTextSelector: string | null,
+): string | null {
+  if (!unmaskTextSelector) return null;
+  try {
+    return matchesInDocumentOrOpenShadowRoots(doc, unmaskTextSelector)
+      ? unmaskTextSelector
+      : null;
+  } catch {
+    return unmaskTextSelector;
+  }
+}
+
 /** @internal exported for direct unit testing; not part of the privacy API. */
 export function splitSelectorList(selector: string): string[] {
   // A quote or opener that never closes is demoted to plain text and the

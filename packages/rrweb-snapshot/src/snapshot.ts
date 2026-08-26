@@ -40,6 +40,7 @@ import {
   finalizeAttributes,
   resolvePrivacyContext,
   resolveTextValue,
+  resolveUnmaskTextSelector,
   shouldCapturePixels,
   splitSelectorList,
 } from './privacy';
@@ -1105,6 +1106,8 @@ export function serializeNodeWithId(
     stylesheetLoadTimeout?: number;
     cssCaptured?: boolean;
     privacy?: CompiledPrivacyPolicy;
+    /** `needMaskingText` results memoised for one `snapshot()` call; not passed to the two deferred re-serializations below. */
+    maskDecisionCache?: Map<Node, boolean>;
   },
 ): serializedNodeWithId | null {
   const {
@@ -1136,6 +1139,7 @@ export function serializeNodeWithId(
     newlyAddedElement = false,
     cssCaptured = false,
     privacy,
+    maskDecisionCache,
   } = options;
   let { needsMask } = options;
   let { preserveWhiteSpace = true } = options;
@@ -1143,14 +1147,21 @@ export function serializeNodeWithId(
   if (!needsMask || unmaskTextSelector) {
     const checkAncestors =
       needsMask === undefined || Boolean(unmaskTextSelector);
-    needsMask = needMaskingText(
-      n as Element,
-      maskTextClass,
-      maskTextSelector,
-      unmaskTextSelector,
-      checkAncestors,
-      needsMask === true,
-    );
+    const walkStart = isElement(n) ? n : dom.parentElement(n) || n;
+    const cached = maskDecisionCache?.get(walkStart);
+    if (cached !== undefined) {
+      needsMask = cached;
+    } else {
+      needsMask = needMaskingText(
+        n as Element,
+        maskTextClass,
+        maskTextSelector,
+        unmaskTextSelector,
+        checkAncestors,
+        needsMask === true,
+      );
+      maskDecisionCache?.set(walkStart, needsMask);
+    }
   }
 
   const _serializedNode = serializeNode(n, {
@@ -1258,6 +1269,7 @@ export function serializeNodeWithId(
       keepIframeSrcFn,
       cssCaptured: false,
       privacy,
+      maskDecisionCache,
     };
 
     if (
@@ -1478,15 +1490,26 @@ function snapshot(
     privacyPolicy,
     privacy: compiledPrivacy,
   } = options || {};
-  const { privacy, blockSelector, maskTextSelector, unmaskTextSelector } =
-    resolvePrivacyContext({
-      privacy: compiledPrivacy,
-      privacyPolicy,
-      blockSelector: manualBlockSelector,
-      maskTextSelector: manualMaskTextSelector,
-      unmaskTextSelector: manualUnmaskTextSelector,
-    });
+  const {
+    privacy,
+    blockSelector,
+    maskTextSelector,
+    unmaskTextSelector: mergedUnmaskTextSelector,
+  } = resolvePrivacyContext({
+    privacy: compiledPrivacy,
+    privacyPolicy,
+    blockSelector: manualBlockSelector,
+    maskTextSelector: manualMaskTextSelector,
+    unmaskTextSelector: manualUnmaskTextSelector,
+  });
+  // Resolved per document: the same (unresolved) policy is also threaded into
+  // nested iframe documents, where a currently-absent selector may match.
+  const unmaskTextSelector = resolveUnmaskTextSelector(
+    n,
+    mergedUnmaskTextSelector,
+  );
   const splitMaskTextSelector = splitMaskAllSelector(maskTextSelector);
+  const maskDecisionCache = new Map<Node, boolean>();
   const maskInputOptions: MaskInputOptions =
     maskAllInputs === true
       ? {
@@ -1543,6 +1566,7 @@ function snapshot(
     keepIframeSrcFn,
     newlyAddedElement: false,
     privacy,
+    maskDecisionCache,
   });
 }
 
