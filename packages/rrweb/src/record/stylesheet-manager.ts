@@ -1,4 +1,4 @@
-import { stringifyRule, type CompiledPrivacyPolicy } from 'rrweb-snapshot';
+import { stringifyRule } from 'rrweb-snapshot';
 import type {
   elementNode,
   serializedNodeWithId,
@@ -18,8 +18,6 @@ export class StylesheetManager {
   constructor(options: {
     mutationCb: mutationCallBack;
     adoptedStyleSheetCb: adoptedStyleSheetCallback;
-    // Plumbed through for later tasks; not yet consumed here.
-    privacy?: CompiledPrivacyPolicy;
   }) {
     this.mutationCb = options.mutationCb;
     this.adoptedStyleSheetCb = options.adoptedStyleSheetCb;
@@ -72,7 +70,7 @@ export class StylesheetManager {
           rules: Array.from(
             sheet.cssRules || sheet.rules || [],
             (r, index) => ({
-              rule: this.maskAdoptedRule(stringifyRule(r, sheet.href)),
+              rule: stringifyRule(r, sheet.href),
               index,
             }),
           ),
@@ -87,11 +85,6 @@ export class StylesheetManager {
   public reset() {
     this.styleMirror.reset();
     this.trackedLinkElements = new WeakSet();
-  }
-
-  private maskAdoptedRule(rule: string): string {
-    // Task 3 reimplements text masking against the compiled policy.
-    return rule;
   }
 
   // TODO: take snapshot on stylesheet reload by applying event listener

@@ -305,7 +305,6 @@ function record<T = eventWithTime>(
   const stylesheetManager = new StylesheetManager({
     mutationCb: wrappedMutationEmit,
     adoptedStyleSheetCb: wrappedAdoptedStyleSheetEmit,
-    privacy,
   });
 
   const iframeManager = new IframeManager({
