@@ -6,6 +6,8 @@ import {
   isShadowRoot,
   needMaskingText,
   maskInput,
+  finalizeAttribute,
+  FORM_VALUE_TAGS,
   Mirror,
   isNativeShadowDom,
   getInputType,
@@ -33,6 +35,15 @@ import {
   closestElementOfNode,
 } from '../utils';
 import dom from '@rrweb/utils';
+
+/**
+ * `attributeCursor` plus the names this recorder generated itself (currently
+ * only `rr_open_mode`), so the finalization sweep can exempt them without a
+ * side-table keyed by node.
+ */
+type attributeCursorWithGenerated = attributeCursor & {
+  generatedAttributes?: Set<string>;
+};
 
 type DoubleLinkedListNode = {
   previous: DoubleLinkedListNode | null;
@@ -142,8 +153,8 @@ export default class MutationBuffer {
   private locked = false;
 
   private texts: textCursor[] = [];
-  private attributes: attributeCursor[] = [];
-  private attributeMap = new WeakMap<Node, attributeCursor>();
+  private attributes: attributeCursorWithGenerated[] = [];
+  private attributeMap = new WeakMap<Node, attributeCursorWithGenerated>();
   private removes: removedNodeMutation[] = [];
   private mapRemoves: Node[] = [];
 
@@ -336,6 +347,8 @@ export default class MutationBuffer {
         maskInputOptions: this.maskInputOptions,
         maskTextFn: this.maskTextFn,
         maskInputFn: this.maskInputFn,
+        maskAllElementAttributes: this.maskAllElementAttributes,
+        maskAttributeFn: this.maskAttributeFn,
         privacy: this.privacy,
         slimDOMOptions: this.slimDOMOptions,
         dataURLOptions: this.dataURLOptions,
@@ -482,11 +495,9 @@ export default class MutationBuffer {
       attributes: this.attributes
         .map((attribute) => {
           const { attributes } = attribute;
-          if (
-            !this.maskAllElementAttributes &&
-            !this.maskAttributeFn &&
-            typeof attributes.style === 'string'
-          ) {
+          // `style` is never masked by any privacy path, so the compact style
+          // mutation can always be used when it is shorter.
+          if (typeof attributes.style === 'string') {
             const diffAsStr = JSON.stringify(attribute.styleDiff);
             const unchangedAsStr = JSON.stringify(attribute._unchangedStyles);
             // check if the style diff is actually shorter than the regular string based mutation
@@ -502,24 +513,20 @@ export default class MutationBuffer {
               }
             }
           }
-          // Task 6 replaces this with finalizeAttribute.
-          if (this.maskAllElementAttributes || this.maskAttributeFn) {
-            for (const [name, value] of Object.entries(attributes)) {
-              if (typeof value !== 'string') continue;
-              if (this.maskAllElementAttributes) {
-                attributes[name] = '*'.repeat(value.length);
-              } else if (this.maskAttributeFn) {
-                try {
-                  attributes[name] = this.maskAttributeFn(
-                    name,
-                    value,
-                    attribute.node as Element,
-                  );
-                } catch {
-                  attributes[name] = '*'.repeat(value.length);
-                }
-              }
-            }
+          // The single finalization sweep for the mutation path, mirroring
+          // serializeElementNode's: every attribute about to be emitted goes
+          // through `finalizeAttribute` exactly once.
+          for (const [name, value] of Object.entries(attributes)) {
+            if (typeof value !== 'string' && value !== null) continue;
+            attributes[name] = finalizeAttribute({
+              element: attribute.node as Element,
+              name,
+              value,
+              privacy: this.privacy,
+              maskAllElementAttributes: this.maskAllElementAttributes,
+              maskAttributeFn: this.maskAttributeFn,
+              isGenerated: attribute.generatedAttributes?.has(name),
+            });
           }
           return {
             id: this.mirror.getId(attribute.node),
@@ -546,7 +553,7 @@ export default class MutationBuffer {
     // reset
     this.texts = [];
     this.attributes = [];
-    this.attributeMap = new WeakMap<Node, attributeCursor>();
+    this.attributeMap = new WeakMap<Node, attributeCursorWithGenerated>();
     this.removes = [];
     this.addedSet = new Set<Node>();
     this.movedSet = new Set<Node>();
@@ -629,7 +636,14 @@ export default class MutationBuffer {
         let attributeName = m.attributeName as string;
         let value = (m.target as HTMLElement).getAttribute(attributeName);
 
-        if (attributeName === 'value') {
+        // `value` only means "input value" on form controls; on e.g. `<li>` or
+        // `<param>` it is an ordinary attribute and belongs to the normal
+        // `finalizeAttribute` path instead.
+        if (
+          attributeName === 'value' &&
+          typeof target.tagName === 'string' &&
+          FORM_VALUE_TAGS.has(target.tagName.toUpperCase())
+        ) {
           const type = getInputType(target);
 
           value = maskInput({
@@ -736,6 +750,8 @@ export default class MutationBuffer {
             } else {
               item.attributes['rr_open_mode'] = 'non-modal';
             }
+            // recorder-generated, never page data: exempt from masking.
+            (item.generatedAttributes ||= new Set()).add('rr_open_mode');
           }
         }
         break;

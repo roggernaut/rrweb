@@ -1,9 +1,9 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import snapshot from '../src/snapshot';
-import { compilePrivacyPolicy } from '../src/privacy';
+import { compilePrivacyPolicy, finalizeAttribute } from '../src/privacy';
 import { maskInput, isProtectedInput } from '../src/utils';
 import type { PrivacyPolicy } from '../src/types';
 
@@ -181,5 +181,236 @@ describe('maskInput v2', () => {
       }),
     ).toBe('**');
     expect(isProtectedInput(input('autocomplete="cc-number"'))).toBe(true);
+  });
+});
+
+describe('finalizeAttribute', () => {
+  const strict = compilePrivacyPolicy({ version: 1, preset: 'strict' });
+  const balanced = compilePrivacyPolicy({ version: 1, preset: 'balanced' });
+  const legacy = compilePrivacyPolicy({ version: 1, preset: 'legacy' });
+
+  const el = (
+    html = '<img title="Bob" style="color:red" src="https://u:p@a.com/i.png?token=t">',
+    selector = 'img',
+  ) => {
+    document.body.innerHTML = html;
+    return document.querySelector(selector) as Element;
+  };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('never masks style, even under strict', () => {
+    expect(
+      finalizeAttribute({
+        element: el(),
+        name: 'style',
+        value: 'color:red',
+        privacy: strict,
+      }),
+    ).toBe('color:red');
+  });
+
+  it('never masks _cssText, on any path', () => {
+    expect(
+      finalizeAttribute({
+        element: el('<style></style>', 'style'),
+        name: '_cssText',
+        value: 'body{color:red}',
+        privacy: strict,
+        maskAllElementAttributes: true,
+      }),
+    ).toBe('body{color:red}');
+  });
+
+  it('masks listed attributes under strict/balanced', () => {
+    expect(
+      finalizeAttribute({
+        element: el(),
+        name: 'title',
+        value: 'Bob',
+        privacy: strict,
+      }),
+    ).toBe('***');
+    expect(
+      finalizeAttribute({
+        element: el(),
+        name: 'placeholder',
+        value: 'Bob',
+        privacy: balanced,
+      }),
+    ).toBe('***');
+    expect(
+      finalizeAttribute({
+        element: el(),
+        name: 'aria-label',
+        value: 'Bob',
+        privacy: legacy,
+      }),
+    ).toBe('Bob');
+  });
+
+  it('strict nulls media sources; URLs sanitized elsewhere', () => {
+    expect(
+      finalizeAttribute({
+        element: el(),
+        name: 'src',
+        value: 'https://a.com/i.png',
+        privacy: strict,
+      }),
+    ).toBeNull();
+    expect(
+      finalizeAttribute({
+        element: el('<a href="#"></a>', 'a'),
+        name: 'href',
+        value: 'https://u:p@a.com/x?token=t',
+        privacy: balanced,
+      }),
+    ).toBe('https://a.com/x?token=*');
+    // non-media element keeps a sanitized src under strict
+    expect(
+      finalizeAttribute({
+        element: el('<div></div>', 'div'),
+        name: 'src',
+        value: 'https://a.com/x?page=1',
+        privacy: strict,
+      }),
+    ).toBe('https://a.com/x?page=*');
+  });
+
+  it('masks value on form tags under strict only', () => {
+    expect(
+      finalizeAttribute({
+        element: el('<input value="abc">', 'input'),
+        name: 'value',
+        value: 'abc',
+        privacy: strict,
+      }),
+    ).toBe('***');
+    expect(
+      finalizeAttribute({
+        element: el('<li value="3"></li>', 'li'),
+        name: 'value',
+        value: '3',
+        privacy: strict,
+      }),
+    ).toBe('3');
+    expect(
+      finalizeAttribute({
+        element: el('<input value="abc">', 'input'),
+        name: 'value',
+        value: 'abc',
+        privacy: balanced,
+      }),
+    ).toBe('abc');
+  });
+
+  it('maskAllElementAttributes stars everything except generated', () => {
+    expect(
+      finalizeAttribute({
+        element: el(),
+        name: 'title',
+        value: 'Bob',
+        privacy: undefined,
+        maskAllElementAttributes: true,
+      }),
+    ).toBe('***');
+    expect(
+      finalizeAttribute({
+        element: el(),
+        name: 'rr_open_mode',
+        value: 'modal',
+        privacy: undefined,
+        maskAllElementAttributes: true,
+        isGenerated: true,
+      }),
+    ).toBe('modal');
+  });
+
+  it('generated attributes are exempt from maskAttributeFn and the policy', () => {
+    expect(
+      finalizeAttribute({
+        element: el(),
+        name: 'rr_width',
+        value: '100px',
+        privacy: strict,
+        maskAttributeFn: () => 'nope',
+        isGenerated: true,
+      }),
+    ).toBe('100px');
+  });
+
+  // NOTE: must be the first test in this file that combines maskAll + fn --
+  // the warning is one-time per module instance.
+  it('warns once when maskAttributeFn is ignored under maskAllElementAttributes', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const call = () =>
+      finalizeAttribute({
+        element: el(),
+        name: 'title',
+        value: 'Bob',
+        privacy: undefined,
+        maskAllElementAttributes: true,
+        maskAttributeFn: () => 'from-fn',
+      });
+    expect(call()).toBe('***');
+    expect(call()).toBe('***');
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('maskAttributeFn throw fails closed to stars; fn ignored under maskAll', () => {
+    expect(
+      finalizeAttribute({
+        element: el(),
+        name: 'title',
+        value: 'Bob',
+        privacy: undefined,
+        maskAttributeFn: () => {
+          throw new Error('boom');
+        },
+      }),
+    ).toBe('***');
+    expect(
+      finalizeAttribute({
+        element: el(),
+        name: 'title',
+        value: 'Bob',
+        privacy: strict,
+        maskAllElementAttributes: true,
+        maskAttributeFn: () => 'from-fn',
+      }),
+    ).toBe('***');
+  });
+
+  it('maskAttributeFn output wins over the policy', () => {
+    expect(
+      finalizeAttribute({
+        element: el(),
+        name: 'title',
+        value: 'Bob',
+        privacy: strict,
+        maskAttributeFn: (name, value) => `[${name}:${value.length}]`,
+      }),
+    ).toBe('[title:3]');
+  });
+
+  it('passes through null/empty values and untouched attributes', () => {
+    expect(
+      finalizeAttribute({
+        element: el(),
+        name: 'title',
+        value: null,
+        privacy: strict,
+      }),
+    ).toBeNull();
+    expect(
+      finalizeAttribute({
+        element: el(),
+        name: 'data-x',
+        value: 'plain',
+        privacy: strict,
+      }),
+    ).toBe('plain');
   });
 });

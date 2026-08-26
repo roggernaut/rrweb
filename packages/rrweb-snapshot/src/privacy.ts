@@ -1,6 +1,7 @@
 import type {
   CompiledDetector,
   CompiledPrivacyPolicy,
+  MaskAttributeFn,
   PrivacyDetectorOptions,
   PrivacyPolicy,
 } from './types';
@@ -13,6 +14,45 @@ const VENDOR_BLOCK_CLASSES =
   '.rr-block,.mp-block,.fs-exclude,.amp-block,.ph-no-capture,.sentry-block';
 const PRIVACY_PRESETS = new Set(['strict', 'balanced', 'legacy']);
 const MASKED_ATTRIBUTE_DEFAULTS = ['title', 'placeholder', 'aria-label'];
+
+/**
+ * CSS carried as an attribute. Masking these corrupts the replay without
+ * protecting anything, so no branch of `finalizeAttribute` may touch them.
+ */
+const CSS_ATTRIBUTES = new Set(['style', '_csstext']);
+
+/** Attributes whose value is a URL and therefore goes through `sanitizeUrl`. */
+const URL_ATTRIBUTES = new Set([
+  'action',
+  'background',
+  'data',
+  'formaction',
+  'href',
+  'poster',
+  'src',
+  'xlink:href',
+]);
+
+/** Attributes that point at media bytes; dropped entirely under `strict`. */
+const MEDIA_SOURCE_ATTRIBUTES = new Set([
+  'background',
+  'data',
+  'poster',
+  'src',
+  'srcset',
+]);
+
+const MEDIA_TAGS = new Set([
+  'AUDIO',
+  'EMBED',
+  'IFRAME',
+  'IMG',
+  'OBJECT',
+  'SOURCE',
+  'VIDEO',
+]);
+
+export const FORM_VALUE_TAGS = new Set(['INPUT', 'OPTION', 'SELECT', 'TEXTAREA']);
 
 const DEFAULT_BLOCKED_QUERY_PARAMETERS = [
   'access_token',
@@ -224,6 +264,105 @@ export function passesLuhn(candidate: string): boolean {
     double = !double;
   }
   return sum % 10 === 0;
+}
+
+let maskAttributeConflictWarned = false;
+
+function stars(value: string): string {
+  return '*'.repeat(value.length);
+}
+
+/**
+ * A shadowed or non-string `tagName` (e.g. `<input name="tagName">` inside a
+ * form) must not crash the sweep; an unknown tag simply matches no tag set.
+ */
+function tagNameOf(element: Element): string {
+  const t: unknown = element.tagName;
+  return typeof t === 'string' ? t.toUpperCase() : '';
+}
+
+/**
+ * The single decision point for every attribute rrweb records, on both the
+ * snapshot and the mutation path. Called exactly once per attribute, at the
+ * end of serialization, so no earlier stage needs to know about privacy.
+ *
+ * Decision order (first match wins):
+ *  1. `isGenerated` -- the serializer wrote this value itself (rr_width,
+ *     rr_scrollTop, ...), so it is safe by construction and never masked.
+ *     `rr_dataURL` is deliberately NOT flagged generated: it holds real pixels.
+ *  2. `maskAllElementAttributes` -- stars. It is the coarse kill switch and
+ *     takes precedence over `maskAttributeFn`, which is then ignored with a
+ *     one-time warning.
+ *  3. `maskAttributeFn` -- run in try/catch; a throwing callback fails closed
+ *     to stars rather than leaking the raw value.
+ *  4. the compiled policy -- strict drops media sources, URL attributes are
+ *     sanitized, `privacy.maskedAttributes` are starred, and form `value`
+ *     attributes are starred under strict.
+ *
+ * `style`/`_cssText` are exempt from every branch: masked CSS breaks the
+ * replay and reveals nothing.
+ */
+export function finalizeAttribute({
+  element,
+  name,
+  value,
+  privacy,
+  maskAllElementAttributes = false,
+  maskAttributeFn,
+  isGenerated = false,
+}: {
+  element: Element;
+  name: string;
+  value: string | null;
+  privacy: CompiledPrivacyPolicy | undefined;
+  maskAllElementAttributes?: boolean;
+  maskAttributeFn?: MaskAttributeFn;
+  isGenerated?: boolean;
+}): string | null {
+  if (value === null || value === '') return value;
+  if (isGenerated) return value;
+
+  const normalizedName = name.toLowerCase();
+  if (CSS_ATTRIBUTES.has(normalizedName)) return value;
+
+  if (maskAllElementAttributes) {
+    if (maskAttributeFn && !maskAttributeConflictWarned) {
+      maskAttributeConflictWarned = true;
+      console.warn(
+        '[rrweb privacy] maskAllElementAttributes is set; maskAttributeFn is ignored.',
+      );
+    }
+    return stars(value);
+  }
+
+  if (maskAttributeFn) {
+    try {
+      return maskAttributeFn(name, value, element);
+    } catch {
+      return stars(value);
+    }
+  }
+
+  if (!privacy) return value;
+
+  const tagName = tagNameOf(element);
+  if (
+    privacy.preset === 'strict' &&
+    MEDIA_TAGS.has(tagName) &&
+    MEDIA_SOURCE_ATTRIBUTES.has(normalizedName)
+  ) {
+    return null;
+  }
+  if (URL_ATTRIBUTES.has(normalizedName)) return sanitizeUrl(value, privacy);
+  if (privacy.maskedAttributes.includes(normalizedName)) return stars(value);
+  if (
+    normalizedName === 'value' &&
+    privacy.preset === 'strict' &&
+    FORM_VALUE_TAGS.has(tagName)
+  ) {
+    return stars(value);
+  }
+  return value;
 }
 
 export function sanitizeUrl(value: string, privacy: CompiledPrivacyPolicy | undefined): string {

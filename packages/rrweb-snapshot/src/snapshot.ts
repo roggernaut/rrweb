@@ -37,6 +37,7 @@ import {
 import {
   compilePrivacyPolicy,
   detectSensitiveValue,
+  finalizeAttribute,
   mergeBlockSelectors,
   mergeMaskTextSelectors,
   mergeUnmaskTextSelectors,
@@ -677,10 +678,26 @@ function serializeElementNode(
   const needBlock = _isBlockedElement(n, blockClass, blockSelector);
   const tagName = getValidTagName(n);
   let attributes: attributes = {};
-  // Task 6 replaces this with finalizeAttribute: names the serializer itself
-  // generated, exempt from `maskAllElementAttributes` (rr_dataURL is NOT
-  // exempt: it can contain real page pixels).
+  // Names the serializer itself generated, exempt from masking because their
+  // values never came from the page (`rr_dataURL` is NOT listed: it can hold
+  // real page pixels).
   const generatedAttributeNames = new Set<string>();
+  // The `img` inline-image path can write attributes from a `load` listener,
+  // i.e. after the finalization sweep below has already run. Those late writes
+  // go through the same helper so they cannot bypass it.
+  let serializationComplete = false;
+  const finalizeLateAttribute = (name: string, value: string) =>
+    serializationComplete
+      ? finalizeAttribute({
+          element: n,
+          name,
+          value,
+          privacy,
+          maskAllElementAttributes,
+          maskAttributeFn,
+          isGenerated: generatedAttributeNames.has(name),
+        })
+      : value;
   const len = n.attributes.length;
   for (let i = 0; i < len; i++) {
     const attr = n.attributes[i];
@@ -822,9 +839,9 @@ function serializeElementNode(
         canvasService!.width = image.naturalWidth;
         canvasService!.height = image.naturalHeight;
         canvasCtx!.drawImage(image, 0, 0);
-        attributes.rr_dataURL = canvasService!.toDataURL(
-          dataURLOptions.type,
-          dataURLOptions.quality,
+        attributes.rr_dataURL = finalizeLateAttribute(
+          'rr_dataURL',
+          canvasService!.toDataURL(dataURLOptions.type, dataURLOptions.quality),
         );
       } catch (err) {
         if (image.crossOrigin !== 'anonymous') {
@@ -841,7 +858,10 @@ function serializeElementNode(
       }
       if (image.crossOrigin === 'anonymous') {
         priorCrossOrigin
-          ? (attributes.crossOrigin = priorCrossOrigin)
+          ? (attributes.crossOrigin = finalizeLateAttribute(
+              'crossOrigin',
+              priorCrossOrigin,
+            ))
           : image.removeAttribute('crossorigin');
       }
     };
@@ -898,23 +918,23 @@ function serializeElementNode(
     delete attributes.src; // prevent auto loading
   }
 
-  // Task 6 replaces this with finalizeAttribute.
-  if (maskAllElementAttributes || maskAttributeFn) {
-    for (const [name, value] of Object.entries(attributes)) {
-      if (typeof value !== 'string') continue;
-      if (maskAllElementAttributes) {
-        if (!generatedAttributeNames.has(name)) {
-          attributes[name] = '*'.repeat(value.length);
-        }
-      } else if (maskAttributeFn) {
-        try {
-          attributes[name] = maskAttributeFn(name, value, n);
-        } catch {
-          attributes[name] = '*'.repeat(value.length);
-        }
-      }
+  // The single finalization sweep: every attribute rrweb is about to record
+  // passes through `finalizeAttribute` exactly once, here, after every other
+  // stage has had its say. No earlier stage applies privacy itself.
+  for (const [name, value] of Object.entries(attributes)) {
+    if (typeof value === 'string' || value === null) {
+      attributes[name] = finalizeAttribute({
+        element: n,
+        name,
+        value,
+        privacy,
+        maskAllElementAttributes,
+        maskAttributeFn,
+        isGenerated: generatedAttributeNames.has(name),
+      });
     }
   }
+  serializationComplete = true;
 
   let isCustomElement: true | undefined;
   try {
