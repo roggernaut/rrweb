@@ -180,6 +180,8 @@ export default class MutationBuffer {
   private maskInputOptions: observerParam['maskInputOptions'];
   private maskTextFn: observerParam['maskTextFn'];
   private maskInputFn: observerParam['maskInputFn'];
+  private maskAllElementAttributes: observerParam['maskAllElementAttributes'];
+  private maskAttributeFn: observerParam['maskAttributeFn'];
   private privacy: observerParam['privacy'];
   private keepIframeSrcFn: observerParam['keepIframeSrcFn'];
   private recordCanvas: observerParam['recordCanvas'];
@@ -208,6 +210,8 @@ export default class MutationBuffer {
         'maskInputOptions',
         'maskTextFn',
         'maskInputFn',
+        'maskAllElementAttributes',
+        'maskAttributeFn',
         'privacy',
         'keepIframeSrcFn',
         'recordCanvas',
@@ -475,7 +479,11 @@ export default class MutationBuffer {
       attributes: this.attributes
         .map((attribute) => {
           const { attributes } = attribute;
-          if (typeof attributes.style === 'string') {
+          if (
+            !this.maskAllElementAttributes &&
+            !this.maskAttributeFn &&
+            typeof attributes.style === 'string'
+          ) {
             const diffAsStr = JSON.stringify(attribute.styleDiff);
             const unchangedAsStr = JSON.stringify(attribute._unchangedStyles);
             // check if the style diff is actually shorter than the regular string based mutation
@@ -488,6 +496,25 @@ export default class MutationBuffer {
                 attributes.style.split('var(').length
               ) {
                 attributes.style = attribute.styleDiff;
+              }
+            }
+          }
+          // Task 6 replaces this with finalizeAttribute.
+          if (this.maskAllElementAttributes || this.maskAttributeFn) {
+            for (const [name, value] of Object.entries(attributes)) {
+              if (typeof value !== 'string') continue;
+              if (this.maskAllElementAttributes) {
+                attributes[name] = '*'.repeat(value.length);
+              } else if (this.maskAttributeFn) {
+                try {
+                  attributes[name] = this.maskAttributeFn(
+                    name,
+                    value,
+                    attribute.node as Element,
+                  );
+                } catch {
+                  attributes[name] = '*'.repeat(value.length);
+                }
               }
             }
           }

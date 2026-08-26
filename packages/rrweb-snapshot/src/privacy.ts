@@ -168,7 +168,11 @@ export function passesLuhn(candidate: string): boolean {
 }
 
 export function isProtectedInput(element: HTMLElement): boolean {
-  if (element.tagName !== 'INPUT') return false;
+  // Task 9 replaces with untaintedTagName. A shadowed/non-string `tagName`
+  // (e.g. <input name="tagName">) fails closed: treat as protected.
+  const t: unknown = element.tagName;
+  if (typeof t !== 'string') return true;
+  if (t !== 'INPUT') return false;
   const input = element as HTMLInputElement;
   if (
     input.type === 'password' ||

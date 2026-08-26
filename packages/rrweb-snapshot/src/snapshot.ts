@@ -591,6 +591,8 @@ function serializeElementNode(
     inlineStylesheet,
     maskInputOptions = {},
     maskInputFn,
+    maskAllElementAttributes,
+    maskAttributeFn,
     dataURLOptions = {},
     inlineImages,
     recordCanvas,
@@ -603,6 +605,10 @@ function serializeElementNode(
   const needBlock = _isBlockedElement(n, blockClass, blockSelector);
   const tagName = getValidTagName(n);
   let attributes: attributes = {};
+  // Task 6 replaces this with finalizeAttribute: names the serializer itself
+  // generated, exempt from `maskAllElementAttributes` (rr_dataURL is NOT
+  // exempt: it can contain real page pixels).
+  const generatedAttributeNames = new Set<string>();
   const len = n.attributes.length;
   for (let i = 0; i < len; i++) {
     const attr = n.attributes[i];
@@ -683,6 +689,7 @@ function serializeElementNode(
     (attributes as DialogAttributes).rr_open_mode = n.matches('dialog:modal')
       ? 'modal'
       : 'non-modal';
+    generatedAttributeNames.add('rr_open_mode');
   }
 
   // canvas image data
@@ -780,6 +787,7 @@ function serializeElementNode(
     mediaAttributes.rr_mediaMuted = (n as HTMLMediaElement).muted;
     mediaAttributes.rr_mediaLoop = (n as HTMLMediaElement).loop;
     mediaAttributes.rr_mediaVolume = (n as HTMLMediaElement).volume;
+    generatedAttributeNames.add('rr_mediaState');
   }
   // Scroll
   if (!newlyAddedElement) {
@@ -789,9 +797,11 @@ function serializeElementNode(
     // So we can safely skip the `scrollTop/Left` calls for newly added elements
     if (n.scrollLeft) {
       attributes.rr_scrollLeft = n.scrollLeft;
+      generatedAttributeNames.add('rr_scrollLeft');
     }
     if (n.scrollTop) {
       attributes.rr_scrollTop = n.scrollTop;
+      generatedAttributeNames.add('rr_scrollTop');
     }
   }
   // block element
@@ -802,6 +812,8 @@ function serializeElementNode(
       rr_width: `${width}px`,
       rr_height: `${height}px`,
     };
+    generatedAttributeNames.add('rr_width');
+    generatedAttributeNames.add('rr_height');
   }
   // iframe
   if (tagName === 'iframe' && !keepIframeSrcFn(attributes.src as string)) {
@@ -811,6 +823,24 @@ function serializeElementNode(
       attributes.rr_src = attributes.src;
     }
     delete attributes.src; // prevent auto loading
+  }
+
+  // Task 6 replaces this with finalizeAttribute.
+  if (maskAllElementAttributes || maskAttributeFn) {
+    for (const [name, value] of Object.entries(attributes)) {
+      if (typeof value !== 'string') continue;
+      if (maskAllElementAttributes) {
+        if (!generatedAttributeNames.has(name)) {
+          attributes[name] = '*'.repeat(value.length);
+        }
+      } else if (maskAttributeFn) {
+        try {
+          attributes[name] = maskAttributeFn(name, value, n);
+        } catch {
+          attributes[name] = '*'.repeat(value.length);
+        }
+      }
+    }
   }
 
   let isCustomElement: true | undefined;
