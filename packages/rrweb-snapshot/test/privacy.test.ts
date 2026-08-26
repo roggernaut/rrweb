@@ -119,6 +119,11 @@ describe('detectSensitiveValue', () => {
     expect(detectSensitiveValue('bob@example.com', none)).toBe(false);
   });
 
+  it('fails closed on absurdly long input instead of scanning it', () => {
+    const clean = 'a'.repeat(10_001);
+    expect(detectSensitiveValue(clean, withDetectors)).toBe(true);
+  });
+
   it('per-detector toggles work', () => {
     const emailOff = buildDetectors({ email: false, phone: false, paymentCard: true, ssn: false, ipAddress: false });
     expect(emailOff.some((d) => d.name === 'email')).toBe(false);
@@ -131,6 +136,14 @@ describe('detectSensitiveValue', () => {
 
   it('detects dashed phone format (fix regression)', () => {
     expect(detectSensitiveValue('555-123-4567', withDetectors)).toBe(true);
+  });
+
+  it('detects parenthesized area code format (fix regression)', () => {
+    expect(detectSensitiveValue('(555) 123-4567', withDetectors)).toBe(true);
+  });
+
+  it('detects parenthesized area code with country code (fix regression)', () => {
+    expect(detectSensitiveValue('+1 (555) 123-4567', withDetectors)).toBe(true);
   });
 });
 

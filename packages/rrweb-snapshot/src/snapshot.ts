@@ -41,6 +41,7 @@ import {
   mergeBlockSelectors,
   mergeMaskTextSelectors,
   mergeUnmaskTextSelectors,
+  resolveUnmaskTextSelector,
 } from './privacy';
 import dom from '@rrweb/utils';
 
@@ -1502,9 +1503,9 @@ function snapshot(
     legacyMaskTextSelector,
     privacy,
   );
-  const unmaskTextSelector = mergeUnmaskTextSelectors(
-    legacyUnmaskTextSelector,
-    privacy,
+  const unmaskTextSelector = resolveUnmaskTextSelector(
+    n,
+    mergeUnmaskTextSelectors(legacyUnmaskTextSelector, privacy),
   );
   const maskInputOptions: MaskInputOptions =
     maskAllInputs === true

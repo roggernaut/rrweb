@@ -33,3 +33,14 @@ Additional breaking/behavior notes:
 - `maskAllElementAttributes` and `maskAttributeFn` are now mutually
   exclusive: when both are supplied, `maskAllElementAttributes` wins and
   `maskAttributeFn` is ignored with a one-time console warning.
+- Protected inputs -- `password`, `hidden`, `data-rr-is-password`, and
+  autocomplete `cc-*`/`current-password`/`new-password`/`one-time-code` --
+  are now **always** masked, with no `privacyPolicy` required and regardless
+  of `maskInputOptions`. Previously `hidden` inputs and autocomplete-tagged
+  credit-card/password/OTP fields could record their raw value under
+  `legacy`; they cannot anymore.
+- An invalid `maskTextSelector`/`unmaskTextSelector` (including the plain
+  `record()`-level string options, not just policy `rules`) now fails closed
+  -- the bad selector throws inside the mask decision, which is caught and
+  masks the text -- instead of being silently ignored as if it had never been
+  set.

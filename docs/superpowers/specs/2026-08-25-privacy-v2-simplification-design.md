@@ -33,7 +33,18 @@ their forks and wrapper layers, maintained by the community.
 3. **Legacy is sacred.** With no `privacyPolicy` and no privacy plugin
    loaded, behavior and performance are byte-identical to rrweb before this
    feature. (Loading the detectors plugin is an explicit opt-in and does
-   change behavior — see §6.)
+   change behavior — see §6.) Two sanctioned exceptions, both required by
+   principle 1 (fail closed) and neither gated behind `privacyPolicy`:
+   - **Protected inputs always masked.** `password`/`hidden` inputs and
+     autocomplete `cc-*`/`current-password`/`new-password`/`one-time-code`
+     fields are masked unconditionally, with no `privacyPolicy` required and
+     regardless of `maskInputOptions`. Pre-v2 `legacy` behavior let `hidden`
+     inputs and autocomplete-tagged card/password/OTP fields record raw --
+     that gap is intentionally closed, not preserved.
+   - **Invalid selectors fail closed.** An invalid `maskTextSelector`/
+     `unmaskTextSelector` -- the plain `record()`-level string option or a
+     policy rule's selector -- throws inside the mask decision and is caught
+     as a mask, not silently ignored as if unset.
 
 ## Decisions (approved)
 

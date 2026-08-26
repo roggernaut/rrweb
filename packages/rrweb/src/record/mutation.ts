@@ -8,6 +8,7 @@ import {
   maskInput,
   detectSensitiveValue,
   finalizeAttribute,
+  resolveUnmaskTextSelector,
   FORM_VALUE_TAGS,
   Mirror,
   isNativeShadowDom,
@@ -189,6 +190,13 @@ export default class MutationBuffer {
   private maskTextClass: observerParam['maskTextClass'];
   private maskTextSelector: observerParam['maskTextSelector'];
   private unmaskTextSelector: observerParam['unmaskTextSelector'];
+  /**
+   * `unmaskTextSelector` re-resolved once per mutation flush (see
+   * `resolveUnmaskTextSelector`): null when nothing in the live document
+   * currently matches it, so the per-node ancestor walk it otherwise forces
+   * in `needMaskingText`/`serializeNodeWithId` can short-circuit again.
+   */
+  private effectiveUnmaskTextSelector: string | null = null;
   private inlineStylesheet: observerParam['inlineStylesheet'];
   private maskInputOptions: observerParam['maskInputOptions'];
   private maskTextFn: observerParam['maskTextFn'];
@@ -279,6 +287,14 @@ export default class MutationBuffer {
   }
 
   public processMutations = (mutations: mutationRecord[]) => {
+    // Re-probe once per flush rather than per node -- see
+    // `resolveUnmaskTextSelector`. Cheap when `unmaskTextSelector` is unset
+    // (returns null immediately); only walks the live tree when a preset
+    // actually configured one.
+    this.effectiveUnmaskTextSelector = resolveUnmaskTextSelector(
+      this.doc,
+      this.unmaskTextSelector,
+    );
     mutations.forEach(this.processMutation); // adds mutations to the buffer
     this.emit(); // clears buffer if not locked/frozen
   };
@@ -343,7 +359,7 @@ export default class MutationBuffer {
         blockSelector: this.blockSelector,
         maskTextClass: this.maskTextClass,
         maskTextSelector: this.maskTextSelector,
-        unmaskTextSelector: this.unmaskTextSelector,
+        unmaskTextSelector: this.effectiveUnmaskTextSelector,
         skipChild: true,
         newlyAddedElement: true,
         inlineStylesheet: this.inlineStylesheet,
@@ -631,7 +647,7 @@ export default class MutationBuffer {
               m.target,
               this.maskTextClass,
               this.maskTextSelector,
-              this.unmaskTextSelector,
+              this.effectiveUnmaskTextSelector,
               true, // checkAncestors
             )
           ) {

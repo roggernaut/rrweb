@@ -268,7 +268,12 @@ removes a subtree from capture entirely (it replays as a placeholder), which
 is why an `exclude` decision can't be reopened by a nested `mask` or `unmask`.
 Protected inputs -- password, hidden, and autocomplete `cc-*` /
 `current-password` / `new-password` / `one-time-code` fields -- always stay
-masked, regardless of any rule or preset.
+masked, regardless of any rule or preset. This holds even with no
+`privacyPolicy` configured at all, and regardless of `maskInputOptions` --
+these fields cannot be opted back into raw recording. (Previously, under
+`legacy`, `hidden` inputs and autocomplete-tagged credit-card/password/OTP
+fields could record their raw value; that is a breaking change from pre-v2
+behavior.)
 
 Under `balanced` and `strict`, rrweb also recognizes the vendor-neutral
 `data-privacy` attribute and common cross-vendor class names directly in
@@ -303,6 +308,12 @@ unmasked even under `strict`'s mask-everything default or a `mask` rule. It
 only affects text masking -- it cannot unmask input values, the
 `title`/`placeholder`/`aria-label` attributes, or a sanitized URL, and it
 cannot override a protected input or an `exclude`.
+
+An invalid `maskTextSelector` or `unmaskTextSelector` -- either this
+`record()`-level string option or a policy rule's selector -- fails closed:
+rather than being silently ignored (as if it had never been set), it causes
+the affected text to be masked. Prefer a selector you've verified with
+`document.querySelector` over trusting this as a validation mechanism.
 
 ```js
 record({

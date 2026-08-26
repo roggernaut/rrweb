@@ -78,7 +78,7 @@ const CARD_CANDIDATE = /(?:^|[^0-9-])((?:\d[ -]?){12,18}\d)(?:$|[^0-9-])/;
 const SSN_PATTERN = /\b(?!000|666|9\d{2})\d{3}-?(?!00)\d{2}-?(?!0000)\d{4}\b/;
 const EMAIL_PATTERN =
   /[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[a-zA-Z0-9-]{1,63}(?:\.[a-zA-Z0-9-]{1,63})+/;
-const PHONE_PATTERN = /(?:^|\s)\+?\d[\d ().-]{7,13}\d(?:$|\s)/;
+const PHONE_PATTERN = /(?:^|\s)\+?\d{0,3}[\s.-]?\(?\d[\d ().-]{5,13}\d(?:$|\s)/;
 const IPV4_PATTERN = /\b(?:\d{1,3}\.){3}\d{1,3}\b/;
 const MAX_SCAN_LENGTH = 10_000;
 
@@ -158,6 +158,55 @@ export function validateSelector(selector: string): boolean {
     return true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * `querySelector`/`querySelectorAll` never pierce shadow-DOM boundaries, so a
+ * presence probe that only checked `root` would wrongly conclude an unmask
+ * selector living inside an open shadow tree doesn't exist anywhere. Walk
+ * into every open shadow root found under `root` and check there too.
+ */
+function selectorMatchesAnywhere(
+  root: Document | ShadowRoot,
+  selector: string,
+): boolean {
+  if (root.querySelector(selector)) return true;
+  const all = root.querySelectorAll('*');
+  for (let index = 0; index < all.length; index += 1) {
+    const sr = (all[index] as HTMLElement).shadowRoot;
+    if (sr && selectorMatchesAnywhere(sr, selector)) return true;
+  }
+  return false;
+}
+
+/**
+ * Every non-legacy preset sets `unmaskTextSelector`, which forces
+ * `needMaskingText` to re-walk ancestors for every node instead of trusting
+ * the inherited "already masked" decision (see `serializeNodeWithId`'s
+ * `checkAncestors` comment). Most pages never put anything under an unmask
+ * selector, so that walk buys nothing.
+ *
+ * Call this once per full snapshot and once per mutation flush -- not per
+ * node -- to check whether the selector currently matches *anything* in the
+ * document (including inside open shadow roots). When it matches nothing,
+ * the caller can pass `null` downward for that pass and the cheap
+ * short-circuit is restored; when a match exists, the original selector is
+ * returned unchanged and per-node checking still happens exactly as before.
+ * A selector that throws (e.g. detached/invalid document) is assumed present
+ * so behaviour fails closed to masking.
+ */
+export function resolveUnmaskTextSelector(
+  doc: Document,
+  unmaskTextSelector: string | null,
+): string | null {
+  if (!unmaskTextSelector) return null;
+  try {
+    return selectorMatchesAnywhere(doc, unmaskTextSelector)
+      ? unmaskTextSelector
+      : null;
+  } catch {
+    return unmaskTextSelector;
   }
 }
 
@@ -355,7 +404,7 @@ export function finalizeAttribute({
 
   const tagName = untaintedTagName(element);
   if (
-    privacy.preset === 'strict' &&
+    privacy.blockMedia &&
     MEDIA_TAGS.has(tagName) &&
     MEDIA_SOURCE_ATTRIBUTES.has(normalizedName)
   ) {
