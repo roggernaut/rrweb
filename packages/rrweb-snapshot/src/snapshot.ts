@@ -34,14 +34,7 @@ import {
   absolutifyURLs,
   markCssSplits,
 } from './snapshot-utils';
-import {
-  compilePrivacyPolicy,
-  maskAttributeWithPrivacy,
-  maskInputWithPrivacy,
-  maskTextWithPrivacy,
-  mergeBlockSelectors,
-  protectSerializedAttribute,
-} from './privacy';
+import { compilePrivacyPolicy, mergeBlockSelectors } from './privacy';
 import dom from '@rrweb/utils';
 
 let _id = 1;
@@ -528,7 +521,7 @@ function serializeTextNode(
     privacy?: CompiledPrivacyPolicy;
   },
 ): serializedNode {
-  const { needsMask, maskTextFn, rootId, cssCaptured, privacy } = options;
+  const { needsMask, maskTextFn, rootId, cssCaptured } = options;
   // The parent node may not be a html element which has a tagName attribute.
   // Named form controls can also shadow `tagName` (e.g. <input name="tagName">).
   // So just let it be undefined which is ok in this use case.
@@ -553,15 +546,7 @@ function serializeTextNode(
     }
   }
   if (!isScript && textContent) {
-    if (privacy) {
-      textContent = maskTextWithPrivacy(
-        textContent,
-        dom.parentElement(n),
-        privacy,
-        needsMask,
-        maskTextFn,
-      );
-    } else if (!isStyle && needsMask) {
+    if (!isStyle && needsMask) {
       textContent = maskTextFn
         ? maskTextFn(textContent, dom.parentElement(n))
         : textContent.replace(/[\S]/g, '*');
@@ -606,8 +591,6 @@ function serializeElementNode(
     inlineStylesheet,
     maskInputOptions = {},
     maskInputFn,
-    maskAllElementAttributes,
-    maskAttributeFn,
     dataURLOptions = {},
     inlineImages,
     recordCanvas,
@@ -620,34 +603,16 @@ function serializeElementNode(
   const needBlock = _isBlockedElement(n, blockClass, blockSelector);
   const tagName = getValidTagName(n);
   let attributes: attributes = {};
-  const generatedAttributeNames = new Set<string>();
-  let serializationComplete = false;
-  const protectLateAttribute = (name: string, value: string) =>
-    serializationComplete
-      ? protectSerializedAttribute({
-          element: n,
-          name,
-          value,
-          privacy,
-          maskAllElementAttributes,
-          maskAttributeFn,
-          isGenerated: generatedAttributeNames.has(name),
-        })
-      : value;
   const len = n.attributes.length;
   for (let i = 0; i < len; i++) {
     const attr = n.attributes[i];
     if (!ignoreAttribute(tagName, attr.name, attr.value)) {
-      const transformed = transformAttribute(
+      attributes[attr.name] = transformAttribute(
         doc,
         tagName,
         toLowerCase(attr.name),
         attr.value,
       );
-      const protectedValue = privacy
-        ? maskAttributeWithPrivacy(n, attr.name, transformed, privacy)
-        : transformed;
-      if (protectedValue !== null) attributes[attr.name] = protectedValue;
     }
   }
   // remote css
@@ -689,28 +654,14 @@ function serializeElementNode(
       value
     ) {
       const type = getInputType(n);
-      if (privacy) {
-        const legacyMask = Boolean(
-          maskInputOptions[tagName as keyof MaskInputOptions] ||
-            (type && maskInputOptions[type as keyof MaskInputOptions]),
-        );
-        attributes.value = maskInputWithPrivacy(
-          value,
-          n,
-          privacy,
-          legacyMask,
-          maskInputFn,
-        );
-      } else {
-        attributes.value = maskInputValue({
-          element: n,
-          type,
-          tagName,
-          value,
-          maskInputOptions,
-          maskInputFn,
-        });
-      }
+      attributes.value = maskInputValue({
+        element: n,
+        type,
+        tagName,
+        value,
+        maskInputOptions,
+        maskInputFn,
+      });
     } else if (checked) {
       attributes.checked = checked;
     }
@@ -732,7 +683,6 @@ function serializeElementNode(
     (attributes as DialogAttributes).rr_open_mode = n.matches('dialog:modal')
       ? 'modal'
       : 'non-modal';
-    generatedAttributeNames.add('rr_open_mode');
   }
 
   // canvas image data
@@ -792,9 +742,9 @@ function serializeElementNode(
         canvasService!.width = image.naturalWidth;
         canvasService!.height = image.naturalHeight;
         canvasCtx!.drawImage(image, 0, 0);
-        attributes.rr_dataURL = protectLateAttribute(
-          'rr_dataURL',
-          canvasService!.toDataURL(dataURLOptions.type, dataURLOptions.quality),
+        attributes.rr_dataURL = canvasService!.toDataURL(
+          dataURLOptions.type,
+          dataURLOptions.quality,
         );
       } catch (err) {
         if (image.crossOrigin !== 'anonymous') {
@@ -811,10 +761,7 @@ function serializeElementNode(
       }
       if (image.crossOrigin === 'anonymous') {
         priorCrossOrigin
-          ? (attributes.crossOrigin = protectLateAttribute(
-              'crossOrigin',
-              priorCrossOrigin,
-            ))
+          ? (attributes.crossOrigin = priorCrossOrigin)
           : image.removeAttribute('crossorigin');
       }
     };
@@ -833,7 +780,6 @@ function serializeElementNode(
     mediaAttributes.rr_mediaMuted = (n as HTMLMediaElement).muted;
     mediaAttributes.rr_mediaLoop = (n as HTMLMediaElement).loop;
     mediaAttributes.rr_mediaVolume = (n as HTMLMediaElement).volume;
-    generatedAttributeNames.add('rr_mediaState');
   }
   // Scroll
   if (!newlyAddedElement) {
@@ -843,11 +789,9 @@ function serializeElementNode(
     // So we can safely skip the `scrollTop/Left` calls for newly added elements
     if (n.scrollLeft) {
       attributes.rr_scrollLeft = n.scrollLeft;
-      generatedAttributeNames.add('rr_scrollLeft');
     }
     if (n.scrollTop) {
       attributes.rr_scrollTop = n.scrollTop;
-      generatedAttributeNames.add('rr_scrollTop');
     }
   }
   // block element
@@ -858,8 +802,6 @@ function serializeElementNode(
       rr_width: `${width}px`,
       rr_height: `${height}px`,
     };
-    generatedAttributeNames.add('rr_width');
-    generatedAttributeNames.add('rr_height');
   }
   // iframe
   if (tagName === 'iframe' && !keepIframeSrcFn(attributes.src as string)) {
@@ -870,24 +812,6 @@ function serializeElementNode(
     }
     delete attributes.src; // prevent auto loading
   }
-
-  // Apply runtime attribute controls to the final representation, after
-  // synthesized form/layout values. The portable policy remains the last
-  // authority inside protectSerializedAttribute.
-  for (const [name, value] of Object.entries(attributes)) {
-    if (typeof value === 'string' || value === null) {
-      attributes[name] = protectSerializedAttribute({
-        element: n,
-        name,
-        value,
-        privacy,
-        maskAllElementAttributes,
-        maskAttributeFn,
-        isGenerated: generatedAttributeNames.has(name),
-      });
-    }
-  }
-  serializationComplete = true;
 
   let isCustomElement: true | undefined;
   try {

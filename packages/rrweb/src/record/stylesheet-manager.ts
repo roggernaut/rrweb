@@ -1,8 +1,4 @@
-import {
-  maskTextWithPrivacy,
-  stringifyRule,
-  type CompiledPrivacyPolicy,
-} from 'rrweb-snapshot';
+import { stringifyRule, type CompiledPrivacyPolicy } from 'rrweb-snapshot';
 import type {
   elementNode,
   serializedNodeWithId,
@@ -17,17 +13,16 @@ export class StylesheetManager {
   private trackedLinkElements: WeakSet<HTMLLinkElement> = new WeakSet();
   private mutationCb: mutationCallBack;
   private adoptedStyleSheetCb: adoptedStyleSheetCallback;
-  private privacy: CompiledPrivacyPolicy | undefined;
   public styleMirror = new StyleSheetMirror();
 
   constructor(options: {
     mutationCb: mutationCallBack;
     adoptedStyleSheetCb: adoptedStyleSheetCallback;
+    // Plumbed through for later tasks; not yet consumed here.
     privacy?: CompiledPrivacyPolicy;
   }) {
     this.mutationCb = options.mutationCb;
     this.adoptedStyleSheetCb = options.adoptedStyleSheetCb;
-    this.privacy = options.privacy;
   }
 
   public attachLinkElement(
@@ -77,7 +72,7 @@ export class StylesheetManager {
           rules: Array.from(
             sheet.cssRules || sheet.rules || [],
             (r, index) => ({
-              rule: this.maskAdoptedRule(stringifyRule(r, sheet.href), sheet),
+              rule: this.maskAdoptedRule(stringifyRule(r, sheet.href)),
               index,
             }),
           ),
@@ -94,15 +89,9 @@ export class StylesheetManager {
     this.trackedLinkElements = new WeakSet();
   }
 
-  private maskAdoptedRule(rule: string, sheet: CSSStyleSheet): string {
-    if (!rule || !this.privacy) return rule;
-    const owner = sheet.ownerNode;
-    return maskTextWithPrivacy(
-      rule,
-      owner instanceof Element ? (owner as HTMLElement) : null,
-      this.privacy,
-      false,
-    );
+  private maskAdoptedRule(rule: string): string {
+    // Task 3 reimplements text masking against the compiled policy.
+    return rule;
   }
 
   // TODO: take snapshot on stylesheet reload by applying event listener

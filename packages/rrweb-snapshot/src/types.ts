@@ -83,46 +83,20 @@ export type PrivacyPolicy = {
   url?: PrivacyUrlOptions;
 };
 
-export type PrivacyPreset = 'strict' | 'balanced' | 'custom' | 'legacy';
+export type PrivacyPreset = 'strict' | 'balanced' | 'legacy';
 
-export type PrivacyAction = 'allow' | 'mask' | 'exclude';
-
-/**
- * `blur`, `pixelate`, and `shuffle` are portable policy vocabulary reserved
- * for visual recorders. DOM text is currently rendered with `replacement`.
- */
-export type PrivacyMaskStyle =
-  | 'replacement'
-  | 'solid'
-  | 'blur'
-  | 'pixelate'
-  | 'shuffle';
-
-export type SensitiveDataKind =
-  | 'credential'
-  | 'payment'
-  | 'identity'
-  | 'contact'
-  | 'location'
-  | 'custom';
+/** `unmask` is an alias of `allow`. */
+export type PrivacyAction = 'allow' | 'unmask' | 'mask' | 'exclude';
 
 export type PrivacyRule = {
   target: PrivacyTarget;
   action: PrivacyAction;
-  style?: PrivacyMaskStyle;
-  classification?: SensitiveDataKind;
 };
 
 export type PrivacyTarget = {
   type: 'selector';
   /** A CSS selector. Rules also apply to descendants of the matched node. */
   selector: string;
-  /**
-   * Restrict an element rule to these attributes. Without this field, a rule
-   * applies to element text, form values, and the standard sensitive
-   * attributes.
-   */
-  attributes?: string[];
 };
 
 export type PrivacyDetectorOptions = Partial<{
@@ -136,20 +110,6 @@ export type PrivacyDetectorOptions = Partial<{
   paymentCard: boolean;
   ssn: boolean;
   ipAddress: boolean;
-  custom: Array<{
-    name: string;
-    pattern: string;
-    flags?: string;
-    classification?: SensitiveDataKind;
-    /** Skip this detector for shorter values. Defaults to 1. */
-    minimumLength?: number;
-    /**
-     * Maximum possible match length. Used as overlap when scanning long values
-     * in bounded chunks. Defaults to 256 and cannot exceed 1,024. Must be at
-     * least `minimumLength`.
-     */
-    maximumMatchLength?: number;
-  }>;
 }>;
 
 export type PrivacyUrlOptions = {
@@ -163,26 +123,32 @@ export type PrivacyUrlOptions = {
   removeHash?: boolean;
 };
 
+export type CompiledDetector = { name: string; test: (value: string) => boolean };
+
 /** @internal Runtime form shared by snapshot and incremental observers. */
 export type CompiledPrivacyPolicy = {
   policy: PrivacyPolicy;
-  rules: Array<
-    Omit<PrivacyRule, 'target'> & {
-      selector: string;
-      attributes?: Set<string>;
-    }
-  >;
-  detectors: Array<{
-    name: string;
-    regex: RegExp;
-    classification: SensitiveDataKind;
-    minimumLength: number;
-    maximumMatchLength: number;
-    scanChunkSize: number;
-    validate?: (candidate: string) => boolean;
-  }>;
-  minimumDetectorLength: number;
+  preset: PrivacyPreset;
+  /** 'mask' rules + [data-privacy="mask"] + vendor classes (+ '*' under strict) */
+  maskTextSelector: string | null;
+  /** 'allow'/'unmask' rules + [data-privacy="allow"] + vendor unmask classes */
+  unmaskTextSelector: string | null;
+  /** 'exclude' rules + [data-privacy="exclude"] + vendor block classes */
   blockSelector: string | null;
+  /** true under balanced/strict */
+  maskAllInputs: boolean;
+  /** ['title','placeholder','aria-label'] under balanced/strict, else [] */
+  maskedAttributes: string[];
+  /** true under strict */
+  blockMedia: boolean;
+  /** true under balanced/strict */
+  sanitizeUrls: boolean;
+  /** precomputed, lowercased */
+  blockedQueryParameters: Set<string>;
+  allowedQueryParameters: Set<string> | null;
+  removeHash: boolean;
+  /** populated by applyPrivacyDetectors (Task 2); [] here */
+  detectors: CompiledDetector[];
 };
 
 export type KeepIframeSrcFn = (src: string) => boolean;
