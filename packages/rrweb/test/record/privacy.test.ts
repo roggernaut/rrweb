@@ -14,7 +14,7 @@ describe('record() privacy policy plugin fallback', () => {
   it('a plugin returning a malformed policy falls back to the user policy instead of throwing', () => {
     const badPlugin: RecordPlugin = {
       name: 'bad@1',
-      applyPrivacyPolicy: () => ({ nonsense: true }) as never,
+      applyPrivacyPolicy: () => ({ nonsense: true } as never),
     };
 
     let stop: (() => void) | undefined;
@@ -77,7 +77,8 @@ describe('record() and a <form> whose tagName is shadowed', () => {
         event.type === EventType.IncrementalSnapshot &&
         event.data.source === IncrementalSource.Mutation &&
         event.data.attributes.some(
-          (a) => 'data-x' in a.attributes && a.attributes['data-x'] === 'mutated',
+          (a) =>
+            'data-x' in a.attributes && a.attributes['data-x'] === 'mutated',
         ),
     );
     expect(mutationEmitted).toBe(true);

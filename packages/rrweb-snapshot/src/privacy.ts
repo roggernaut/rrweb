@@ -60,7 +60,12 @@ const MEDIA_TAGS = new Set([
   'VIDEO',
 ]);
 
-export const FORM_VALUE_TAGS = new Set(['INPUT', 'OPTION', 'SELECT', 'TEXTAREA']);
+export const FORM_VALUE_TAGS = new Set([
+  'INPUT',
+  'OPTION',
+  'SELECT',
+  'TEXTAREA',
+]);
 
 const DEFAULT_BLOCKED_QUERY_PARAMETERS = [
   'access_token',
@@ -110,7 +115,9 @@ export function applyPrivacyDetectors(
   };
 }
 
-export function buildDetectors(options: PrivacyDetectorOptions | undefined): CompiledDetector[] {
+export function buildDetectors(
+  options: PrivacyDetectorOptions | undefined,
+): CompiledDetector[] {
   const opts = options || {};
   const detectors: CompiledDetector[] = [];
   if (opts.email)
@@ -133,7 +140,8 @@ export function buildDetectors(options: PrivacyDetectorOptions | undefined): Com
         return !!m && passesLuhn(m[1]);
       },
     });
-  if (opts.ssn) detectors.push({ name: 'ssn', test: (v) => SSN_PATTERN.test(v) });
+  if (opts.ssn)
+    detectors.push({ name: 'ssn', test: (v) => SSN_PATTERN.test(v) });
   if (opts.ipAddress)
     detectors.push({
       name: 'ip-address',
@@ -145,7 +153,10 @@ export function buildDetectors(options: PrivacyDetectorOptions | undefined): Com
   return detectors;
 }
 
-export function detectSensitiveValue(value: string, privacy: CompiledPrivacyPolicy): boolean {
+export function detectSensitiveValue(
+  value: string,
+  privacy: CompiledPrivacyPolicy,
+): boolean {
   if (!privacy.detectors.length || !value) return false;
   // Fail closed on absurd inputs instead of scanning them.
   if (value.length > MAX_SCAN_LENGTH) return true;
@@ -210,7 +221,9 @@ export function resolveUnmaskTextSelector(
   }
 }
 
-function joinSelectors(selectors: Array<string | null | undefined>): string | null {
+function joinSelectors(
+  selectors: Array<string | null | undefined>,
+): string | null {
   const kept: string[] = [];
   for (const s of selectors) {
     if (!s) continue;
@@ -223,18 +236,32 @@ function joinSelectors(selectors: Array<string | null | undefined>): string | nu
   return kept.join(',') || null;
 }
 
-export function compilePrivacyPolicy(policy?: PrivacyPolicy): CompiledPrivacyPolicy {
+export function compilePrivacyPolicy(
+  policy?: PrivacyPolicy,
+): CompiledPrivacyPolicy {
   const effective: PrivacyPolicy = policy || { version: 1, preset: 'legacy' };
   if (effective.version !== 1)
-    throw new Error(`Unsupported Privacy at Capture policy version: ${String(effective.version)}`);
+    throw new Error(
+      `Unsupported Privacy at Capture policy version: ${String(
+        effective.version,
+      )}`,
+    );
   if (!PRIVACY_PRESETS.has(effective.preset))
     throw new Error(`Unsupported privacy preset: ${String(effective.preset)}`);
   const preset = effective.preset;
   const nonLegacy = preset !== 'legacy';
 
-  const bySelector = { mask: [] as string[], unmask: [] as string[], exclude: [] as string[] };
+  const bySelector = {
+    mask: [] as string[],
+    unmask: [] as string[],
+    exclude: [] as string[],
+  };
   for (const rule of effective.rules || []) {
-    if (!rule.target || rule.target.type !== 'selector' || !rule.target.selector)
+    if (
+      !rule.target ||
+      rule.target.type !== 'selector' ||
+      !rule.target.selector
+    )
       throw new Error('Privacy rules require a non-empty selector target');
     const action = rule.action === 'allow' ? 'unmask' : rule.action;
     if (!(action in bySelector))
@@ -248,29 +275,50 @@ export function compilePrivacyPolicy(policy?: PrivacyPolicy): CompiledPrivacyPol
     maskTextSelector: nonLegacy
       ? preset === 'strict'
         ? '*'
-        : joinSelectors(['[data-privacy="mask"]', VENDOR_MASK_CLASSES, ...bySelector.mask])
-      : joinSelectors(bySelector.mask.length ? ['[data-privacy="mask"]', ...bySelector.mask] : []),
+        : joinSelectors([
+            '[data-privacy="mask"]',
+            VENDOR_MASK_CLASSES,
+            ...bySelector.mask,
+          ])
+      : joinSelectors(
+          bySelector.mask.length
+            ? ['[data-privacy="mask"]', ...bySelector.mask]
+            : [],
+        ),
     unmaskTextSelector: joinSelectors(
       nonLegacy
-        ? ['[data-privacy="allow"]', VENDOR_UNMASK_CLASSES, ...bySelector.unmask]
+        ? [
+            '[data-privacy="allow"]',
+            VENDOR_UNMASK_CLASSES,
+            ...bySelector.unmask,
+          ]
         : bySelector.unmask,
     ),
     blockSelector: joinSelectors(
       nonLegacy
-        ? ['[data-privacy="exclude"]', VENDOR_BLOCK_CLASSES, ...bySelector.exclude]
-        : bySelector.exclude.length ? ['[data-privacy="exclude"]', ...bySelector.exclude] : [],
+        ? [
+            '[data-privacy="exclude"]',
+            VENDOR_BLOCK_CLASSES,
+            ...bySelector.exclude,
+          ]
+        : bySelector.exclude.length
+        ? ['[data-privacy="exclude"]', ...bySelector.exclude]
+        : [],
     ),
     maskAllInputs: nonLegacy,
     maskedAttributes: nonLegacy ? [...MASKED_ATTRIBUTE_DEFAULTS] : [],
     blockMedia: preset === 'strict',
     sanitizeUrls: nonLegacy,
     blockedQueryParameters: new Set(
-      [...DEFAULT_BLOCKED_QUERY_PARAMETERS, ...(effective.url?.blockedQueryParameters || [])].map(
-        (n) => n.toLowerCase(),
-      ),
+      [
+        ...DEFAULT_BLOCKED_QUERY_PARAMETERS,
+        ...(effective.url?.blockedQueryParameters || []),
+      ].map((n) => n.toLowerCase()),
     ),
     allowedQueryParameters: effective.url?.allowedQueryParameters
-      ? new Set(effective.url.allowedQueryParameters.map((n) => n.toLowerCase()))
+      ? new Set(
+          effective.url.allowedQueryParameters.map((n) => n.toLowerCase()),
+        )
       : null,
     removeHash: effective.url?.removeHash !== false,
     detectors: buildDetectors(effective.detectors),
@@ -291,7 +339,8 @@ export function mergeMaskTextSelectors(
   privacy: CompiledPrivacyPolicy | undefined,
 ): string | null {
   return (
-    [legacySelector, privacy?.maskTextSelector].filter(Boolean).join(',') || null
+    [legacySelector, privacy?.maskTextSelector].filter(Boolean).join(',') ||
+    null
   );
 }
 
@@ -422,7 +471,10 @@ export function finalizeAttribute({
   return current;
 }
 
-export function sanitizeUrl(value: string, privacy: CompiledPrivacyPolicy | undefined): string {
+export function sanitizeUrl(
+  value: string,
+  privacy: CompiledPrivacyPolicy | undefined,
+): string {
   // Empty in, empty out: resolving '' against the base would turn it into '/'.
   if (!value) return value;
   if (!privacy || !privacy.sanitizeUrls) return value;
@@ -434,7 +486,8 @@ export function sanitizeUrl(value: string, privacy: CompiledPrivacyPolicy | unde
       const lower = name.toLowerCase();
       if (
         (privacy.preset === 'strict' && !privacy.allowedQueryParameters) ||
-        (privacy.allowedQueryParameters && !privacy.allowedQueryParameters.has(lower)) ||
+        (privacy.allowedQueryParameters &&
+          !privacy.allowedQueryParameters.has(lower)) ||
         privacy.blockedQueryParameters.has(lower)
       ) {
         url.searchParams.set(name, '*');

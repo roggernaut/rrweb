@@ -2,7 +2,14 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi } from 'vitest';
-import { compilePrivacyPolicy, validateSelector, mergeBlockSelectors, detectSensitiveValue, buildDetectors, sanitizeUrl } from '../src/privacy';
+import {
+  compilePrivacyPolicy,
+  validateSelector,
+  mergeBlockSelectors,
+  detectSensitiveValue,
+  buildDetectors,
+  sanitizeUrl,
+} from '../src/privacy';
 
 describe('compilePrivacyPolicy v2', () => {
   it('legacy preset compiles to inert options', () => {
@@ -32,7 +39,8 @@ describe('compilePrivacyPolicy v2', () => {
   });
   it('compiles rules into selector lists, unmask as alias of allow', () => {
     const c = compilePrivacyPolicy({
-      version: 1, preset: 'balanced',
+      version: 1,
+      preset: 'balanced',
       rules: [
         { target: { type: 'selector', selector: '.pii' }, action: 'mask' },
         { target: { type: 'selector', selector: '.safe' }, action: 'unmask' },
@@ -46,9 +54,13 @@ describe('compilePrivacyPolicy v2', () => {
   it('drops invalid selectors individually with a warning, keeps the rest', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const c = compilePrivacyPolicy({
-      version: 1, preset: 'balanced',
+      version: 1,
+      preset: 'balanced',
       rules: [
-        { target: { type: 'selector', selector: ':::garbage' }, action: 'exclude' },
+        {
+          target: { type: 'selector', selector: ':::garbage' },
+          action: 'exclude',
+        },
         { target: { type: 'selector', selector: '.valid' }, action: 'exclude' },
       ],
     });
@@ -58,16 +70,26 @@ describe('compilePrivacyPolicy v2', () => {
     warn.mockRestore();
   });
   it('throws on bad version/preset/empty selector', () => {
-    expect(() => compilePrivacyPolicy({ version: 2 as never, preset: 'legacy' })).toThrow();
-    expect(() => compilePrivacyPolicy({ version: 1, preset: 'custom' as never })).toThrow();
     expect(() =>
-      compilePrivacyPolicy({ version: 1, preset: 'balanced',
-        rules: [{ target: { type: 'selector', selector: '' }, action: 'mask' }] }),
+      compilePrivacyPolicy({ version: 2 as never, preset: 'legacy' }),
+    ).toThrow();
+    expect(() =>
+      compilePrivacyPolicy({ version: 1, preset: 'custom' as never }),
+    ).toThrow();
+    expect(() =>
+      compilePrivacyPolicy({
+        version: 1,
+        preset: 'balanced',
+        rules: [{ target: { type: 'selector', selector: '' }, action: 'mask' }],
+      }),
     ).toThrow();
   });
   it('precomputes lowercased query parameter sets', () => {
-    const c = compilePrivacyPolicy({ version: 1, preset: 'strict',
-      url: { blockedQueryParameters: ['SessionID'] } });
+    const c = compilePrivacyPolicy({
+      version: 1,
+      preset: 'strict',
+      url: { blockedQueryParameters: ['SessionID'] },
+    });
     expect(c.blockedQueryParameters.has('sessionid')).toBe(true);
     expect(c.blockedQueryParameters.has('token')).toBe(true); // default list
   });
@@ -82,7 +104,9 @@ describe('mergeBlockSelectors', () => {
   it('joins legacy selector with compiled blockSelector', () => {
     const c = compilePrivacyPolicy({ version: 1, preset: 'balanced' });
     expect(mergeBlockSelectors('.legacy', c)).toContain('.legacy');
-    expect(mergeBlockSelectors('.legacy', c)).toContain('[data-privacy="exclude"]');
+    expect(mergeBlockSelectors('.legacy', c)).toContain(
+      '[data-privacy="exclude"]',
+    );
   });
 });
 
@@ -90,28 +114,52 @@ describe('detectSensitiveValue', () => {
   const withDetectors = compilePrivacyPolicy({
     version: 1,
     preset: 'legacy',
-    detectors: { email: true, phone: true, paymentCard: true, ssn: true, ipAddress: true },
+    detectors: {
+      email: true,
+      phone: true,
+      paymentCard: true,
+      ssn: true,
+      ipAddress: true,
+    },
   });
 
   it('detects a Luhn-valid card adjacent to other digits (review regression)', () => {
-    expect(detectSensitiveValue('call 5551234567 4111 1111 1111 1111 now', withDetectors)).toBe(true);
+    expect(
+      detectSensitiveValue(
+        'call 5551234567 4111 1111 1111 1111 now',
+        withDetectors,
+      ),
+    ).toBe(true);
   });
 
   it('detects email, ssn, ip; passes clean prose', () => {
-    expect(detectSensitiveValue('contact bob@example.com', withDetectors)).toBe(true);
+    expect(detectSensitiveValue('contact bob@example.com', withDetectors)).toBe(
+      true,
+    );
     expect(detectSensitiveValue('ssn 123-45-6789', withDetectors)).toBe(true);
     expect(detectSensitiveValue('host 192.168.0.1', withDetectors)).toBe(true);
-    expect(detectSensitiveValue('the quick brown fox', withDetectors)).toBe(false);
+    expect(detectSensitiveValue('the quick brown fox', withDetectors)).toBe(
+      false,
+    );
   });
 
   it('rejects UUIDs and version strings as cards/ssns (false-positive guard)', () => {
-    expect(detectSensitiveValue('id 550e8400-e29b-41d4-a716-446655440000', withDetectors)).toBe(false);
-    expect(detectSensitiveValue('v1.2.3.4000 build', withDetectors)).toBe(false);
+    expect(
+      detectSensitiveValue(
+        'id 550e8400-e29b-41d4-a716-446655440000',
+        withDetectors,
+      ),
+    ).toBe(false);
+    expect(detectSensitiveValue('v1.2.3.4000 build', withDetectors)).toBe(
+      false,
+    );
   });
 
   it('detects regardless of preset (works under legacy)', () => {
     expect(withDetectors.preset).toBe('legacy');
-    expect(detectSensitiveValue('4111 1111 1111 1111', withDetectors)).toBe(true);
+    expect(detectSensitiveValue('4111 1111 1111 1111', withDetectors)).toBe(
+      true,
+    );
   });
 
   it('no detectors configured -> never detects', () => {
@@ -125,13 +173,21 @@ describe('detectSensitiveValue', () => {
   });
 
   it('per-detector toggles work', () => {
-    const emailOff = buildDetectors({ email: false, phone: false, paymentCard: true, ssn: false, ipAddress: false });
+    const emailOff = buildDetectors({
+      email: false,
+      phone: false,
+      paymentCard: true,
+      ssn: false,
+      ipAddress: false,
+    });
     expect(emailOff.some((d) => d.name === 'email')).toBe(false);
     expect(emailOff.some((d) => d.name === 'payment-card')).toBe(true);
   });
 
   it('detects spaced phone format (fix regression)', () => {
-    expect(detectSensitiveValue('call 555 123 4567 now', withDetectors)).toBe(true);
+    expect(detectSensitiveValue('call 555 123 4567 now', withDetectors)).toBe(
+      true,
+    );
   });
 
   it('detects dashed phone format (fix regression)', () => {
@@ -152,19 +208,35 @@ describe('sanitizeUrl v2', () => {
   const balanced = compilePrivacyPolicy({ version: 1, preset: 'balanced' });
   const legacy = compilePrivacyPolicy(undefined);
   it('strips userinfo credentials', () => {
-    expect(sanitizeUrl('https://alice:hunter2@api.example.com/x', balanced)).toBe('https://api.example.com/x');
+    expect(
+      sanitizeUrl('https://alice:hunter2@api.example.com/x', balanced),
+    ).toBe('https://api.example.com/x');
   });
   it('masks blocked query parameters, case-insensitively', () => {
-    expect(sanitizeUrl('https://a.com/?Token=abc&ok=1', balanced)).toBe('https://a.com/?Token=*&ok=1');
+    expect(sanitizeUrl('https://a.com/?Token=abc&ok=1', balanced)).toBe(
+      'https://a.com/?Token=*&ok=1',
+    );
   });
   it('strict masks all params unless allowlisted', () => {
-    const allow = compilePrivacyPolicy({ version: 1, preset: 'strict', url: { allowedQueryParameters: ['page'] } });
-    expect(sanitizeUrl('https://a.com/?page=2&q=x', strict)).toBe('https://a.com/?page=*&q=*');
-    expect(sanitizeUrl('https://a.com/?page=2&q=x', allow)).toBe('https://a.com/?page=2&q=*');
+    const allow = compilePrivacyPolicy({
+      version: 1,
+      preset: 'strict',
+      url: { allowedQueryParameters: ['page'] },
+    });
+    expect(sanitizeUrl('https://a.com/?page=2&q=x', strict)).toBe(
+      'https://a.com/?page=*&q=*',
+    );
+    expect(sanitizeUrl('https://a.com/?page=2&q=x', allow)).toBe(
+      'https://a.com/?page=2&q=*',
+    );
   });
   it('removes hash unless disabled; legacy passes through untouched', () => {
-    expect(sanitizeUrl('https://a.com/x#frag', balanced)).toBe('https://a.com/x');
-    expect(sanitizeUrl('https://alice:pw@a.com/?token=x#f', legacy)).toBe('https://alice:pw@a.com/?token=x#f');
+    expect(sanitizeUrl('https://a.com/x#frag', balanced)).toBe(
+      'https://a.com/x',
+    );
+    expect(sanitizeUrl('https://alice:pw@a.com/?token=x#f', legacy)).toBe(
+      'https://alice:pw@a.com/?token=x#f',
+    );
   });
   it('unparseable value under non-legacy fails closed to empty string', () => {
     expect(sanitizeUrl('http://[broken', balanced)).toBe('');

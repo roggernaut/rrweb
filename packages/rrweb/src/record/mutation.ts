@@ -634,9 +634,7 @@ export default class MutationBuffer {
           // `untaintedTagName` defeats a shadowed `tagName` (e.g. a form
           // control named "tagName") instead of failing closed to "not style".
           const parent = dom.parentNode(m.target);
-          const parentTagName = dom.untaintedTagName(
-            parent as Element | null,
-          );
+          const parentTagName = dom.untaintedTagName(parent as Element | null);
           const isStyle = parentTagName === 'STYLE';
           const isScript = parentTagName === 'SCRIPT';
           let emittedValue = value;

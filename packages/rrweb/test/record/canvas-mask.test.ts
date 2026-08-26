@@ -132,7 +132,7 @@ describe('canvas content-box region scaling', () => {
     // backing store padded by 20px on every side renders in a 140x140
     // border box, while clientWidth (border box minus border) is also 140.
     canvasEl.getBoundingClientRect = () =>
-      ({ width: 140, height: 140 }) as DOMRect;
+      ({ width: 140, height: 140 } as DOMRect);
     Object.defineProperty(canvasEl, 'clientWidth', { value: 140 });
     Object.defineProperty(canvasEl, 'clientHeight', { value: 140 });
 
@@ -160,8 +160,7 @@ describe('canvas content-box region scaling', () => {
     const canvasEl = document.createElement('canvas');
     canvasEl.width = 100;
     canvasEl.height = 100;
-    canvasEl.getBoundingClientRect = () =>
-      ({ width: 0, height: 0 }) as DOMRect;
+    canvasEl.getBoundingClientRect = () => ({ width: 0, height: 0 } as DOMRect);
     document.body.appendChild(canvasEl);
 
     expect(getCanvasContentBoxSize(canvasEl)).toBeNull();

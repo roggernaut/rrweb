@@ -176,7 +176,7 @@ merged selector lists. No rule engine.
 ### 8. Hardening
 
 - Mask-decision paths are wrapped fail-closed (Mixpanel): decision variable
-  initialized to *masked*; any throw logs and masks.
+  initialized to _masked_; any throw logs and masks.
 - One untainted `tagName` accessor in `@rrweb/utils`
   (`getUntaintedAccessor('Element', el, 'tagName')`) replaces the two
   divergent one-off shadowing fixes and is used at every `tagName` read in
@@ -218,25 +218,25 @@ are resolved structurally.
 
 ## Appendix: prior art per adopted mechanism
 
-| Mechanism adopted | Vendor source (file refs as of 2026-08 clones) |
-|---|---|
-| Whole-node masking on detector hit | Highlight fork `rrweb-snapshot/src/snapshot.ts:555-578` (`obfuscateText` on `.test()` hit) |
-| No user-supplied detector regexes | All five vendors (none ship one) |
-| Card/SSN pattern set + Luhn | posthog-js `browser-common/src/utils/autocapture-utils.ts:518-638` |
-| Per-selector validation, drop + warn | Amplitude `session-replay-browser/src/config/joined-config.ts:24` (`removeInvalidSelectorsFromPrivacyConfig`) |
-| Fail-closed mask decision (init masked, catch masks) | mixpanel-js `src/recorder/session-recording.js:588` (`_getMaskFn`) |
-| Fail-closed under mask-all (catch returns masked) | Sentry fork `rrweb-snapshot/src/snapshot.ts:512-516` (`needMaskingText`) |
-| `maskInputFn` output star-replaced (fn controls length only) | Sentry fork `rrweb-snapshot/src/utils.ts:274-296` (`maskInputValue`) |
-| Forced `password: true` over user config | posthog-js `lazy-loaded-session-recorder.ts:2555` |
-| `maskAttributeFn` dropped under `maskAllElementAttributes` | posthog-js `lazy-loaded-session-recorder.ts:2621-2633` |
-| Masked attribute defaults (`title`, `placeholder`, `aria-label`) | Sentry `replay-internal/src/integration.ts:142` |
-| Inherited mask propagation, checked once per subtree | posthog-js fork `rrweb-snapshot/src/snapshot.ts:1284-1292, 327-340` (tri-state `needsMask`); Highlight fork `snapshot.ts:1142-1150` (`overwrittenPrivacySetting`) |
-| Nearest-ancestor mask/unmask tie-break | Sentry fork `rrweb-snapshot/src/snapshot.ts:505-511` |
-| CSS/script never masked | Highlight fork `snapshot.ts:565-576` (`IGNORE_TAG_NAMES`); Sentry fork `snapshot.ts:765-805` (`!isStyle` guard) |
-| Mask-all-text `strict` posture | Sentry `integration.ts:125-126`; mixpanel-js `session-recording.js:308-310` |
-| Cross-vendor mask/block class recognition | mixpanel-js `src/recorder/masking.js` (`.mp-mask, .fs-mask, .amp-mask, .rr-mask, .ph-mask`) |
-| Canvas fail-closed when masking configured | posthog-js `lazy-loaded-session-recorder.ts:2596-2610` (regions fn throw → frame dropped); Amplitude hard-off precedent `session-replay.ts:1078` |
-| Forced autocomplete `cc-*`/`current-password` masking | Sentry fork `rrweb-snapshot/src/snapshot.ts:452-468` |
+| Mechanism adopted                                                | Vendor source (file refs as of 2026-08 clones)                                                                                                                    |
+| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Whole-node masking on detector hit                               | Highlight fork `rrweb-snapshot/src/snapshot.ts:555-578` (`obfuscateText` on `.test()` hit)                                                                        |
+| No user-supplied detector regexes                                | All five vendors (none ship one)                                                                                                                                  |
+| Card/SSN pattern set + Luhn                                      | posthog-js `browser-common/src/utils/autocapture-utils.ts:518-638`                                                                                                |
+| Per-selector validation, drop + warn                             | Amplitude `session-replay-browser/src/config/joined-config.ts:24` (`removeInvalidSelectorsFromPrivacyConfig`)                                                     |
+| Fail-closed mask decision (init masked, catch masks)             | mixpanel-js `src/recorder/session-recording.js:588` (`_getMaskFn`)                                                                                                |
+| Fail-closed under mask-all (catch returns masked)                | Sentry fork `rrweb-snapshot/src/snapshot.ts:512-516` (`needMaskingText`)                                                                                          |
+| `maskInputFn` output star-replaced (fn controls length only)     | Sentry fork `rrweb-snapshot/src/utils.ts:274-296` (`maskInputValue`)                                                                                              |
+| Forced `password: true` over user config                         | posthog-js `lazy-loaded-session-recorder.ts:2555`                                                                                                                 |
+| `maskAttributeFn` dropped under `maskAllElementAttributes`       | posthog-js `lazy-loaded-session-recorder.ts:2621-2633`                                                                                                            |
+| Masked attribute defaults (`title`, `placeholder`, `aria-label`) | Sentry `replay-internal/src/integration.ts:142`                                                                                                                   |
+| Inherited mask propagation, checked once per subtree             | posthog-js fork `rrweb-snapshot/src/snapshot.ts:1284-1292, 327-340` (tri-state `needsMask`); Highlight fork `snapshot.ts:1142-1150` (`overwrittenPrivacySetting`) |
+| Nearest-ancestor mask/unmask tie-break                           | Sentry fork `rrweb-snapshot/src/snapshot.ts:505-511`                                                                                                              |
+| CSS/script never masked                                          | Highlight fork `snapshot.ts:565-576` (`IGNORE_TAG_NAMES`); Sentry fork `snapshot.ts:765-805` (`!isStyle` guard)                                                   |
+| Mask-all-text `strict` posture                                   | Sentry `integration.ts:125-126`; mixpanel-js `session-recording.js:308-310`                                                                                       |
+| Cross-vendor mask/block class recognition                        | mixpanel-js `src/recorder/masking.js` (`.mp-mask, .fs-mask, .amp-mask, .rr-mask, .ph-mask`)                                                                       |
+| Canvas fail-closed when masking configured                       | posthog-js `lazy-loaded-session-recorder.ts:2596-2610` (regions fn throw → frame dropped); Amplitude hard-off precedent `session-replay.ts:1078`                  |
+| Forced autocomplete `cc-*`/`current-password` masking            | Sentry fork `rrweb-snapshot/src/snapshot.ts:452-468`                                                                                                              |
 
 Known vendor defects deliberately **not** adopted: Highlight's unescaped-dot
 regexes; Sentry's missing style exemption on the characterData path and
@@ -247,18 +247,18 @@ selectors.
 
 ## Findings resolution map
 
-| Review finding | Resolved by section |
-|---|---|
-| canvasMasking ignored by mutation-mode capture | §7 |
-| ReDoS validator bypass | §6 (no user patterns) |
-| Failed detector candidate skips real PII | §6 (whole-node) |
-| maskInputFn ignored under presets | §4 |
-| Plugin silent no-op | §6 |
-| URL userinfo recorded | §5 |
-| Invalid selector poisons blockSelector | §2 |
-| Added nodes skip attribute masking | §5 |
-| strict destroys CSS | §3, §5 |
-| `<style>` text masked in masked subtrees | §3 |
-| Zero-width flood, mask-scale, plugin-crash, schema-drift, types-break | §6, §7, §2, §1, §8 |
-| Perf: walks, double-mask, QSA-per-tick, per-call Sets | §2, §3, §5, §7 |
-| Cleanup: legacyMask forks, gen-attr dual, CSS choke, dup helpers | §5, §8, §9 |
+| Review finding                                                        | Resolved by section   |
+| --------------------------------------------------------------------- | --------------------- |
+| canvasMasking ignored by mutation-mode capture                        | §7                    |
+| ReDoS validator bypass                                                | §6 (no user patterns) |
+| Failed detector candidate skips real PII                              | §6 (whole-node)       |
+| maskInputFn ignored under presets                                     | §4                    |
+| Plugin silent no-op                                                   | §6                    |
+| URL userinfo recorded                                                 | §5                    |
+| Invalid selector poisons blockSelector                                | §2                    |
+| Added nodes skip attribute masking                                    | §5                    |
+| strict destroys CSS                                                   | §3, §5                |
+| `<style>` text masked in masked subtrees                              | §3                    |
+| Zero-width flood, mask-scale, plugin-crash, schema-drift, types-break | §6, §7, §2, §1, §8    |
+| Perf: walks, double-mask, QSA-per-tick, per-call Sets                 | §2, §3, §5, §7        |
+| Cleanup: legacyMask forks, gen-attr dual, CSS choke, dup helpers      | §5, §8, §9            |

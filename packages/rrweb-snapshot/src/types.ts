@@ -123,7 +123,10 @@ export type PrivacyUrlOptions = {
   removeHash?: boolean;
 };
 
-export type CompiledDetector = { name: string; test: (value: string) => boolean };
+export type CompiledDetector = {
+  name: string;
+  test: (value: string) => boolean;
+};
 
 /** @internal Runtime form shared by snapshot and incremental observers. */
 export type CompiledPrivacyPolicy = {

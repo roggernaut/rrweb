@@ -1,9 +1,4 @@
-import {
-  maskInput,
-  Mirror,
-  getInputType,
-  toLowerCase,
-} from 'rrweb-snapshot';
+import { maskInput, Mirror, getInputType, toLowerCase } from 'rrweb-snapshot';
 import type { FontFaceSet } from 'css-font-loading-module';
 import {
   throttle,

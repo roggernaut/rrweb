@@ -1,9 +1,9 @@
 ---
-'rrweb-snapshot': minor
-'rrweb': minor
-'@rrweb/types': major
-'@rrweb/rrweb-plugin-privacy-detectors': minor
-'@rrweb/utils': minor
+"rrweb-snapshot": minor
+"rrweb": minor
+"@rrweb/types": major
+"@rrweb/rrweb-plugin-privacy-detectors": minor
+"@rrweb/utils": minor
 ---
 
 Privacy at Capture v2: policies now compile onto rrweb's existing masking

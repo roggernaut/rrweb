@@ -460,7 +460,9 @@ export function maskInput({
     return value;
   }
 
-  let masked = maskInputFn ? maskInputFn(value, element) : '*'.repeat(value.length);
+  let masked = maskInputFn
+    ? maskInputFn(value, element)
+    : '*'.repeat(value.length);
   if (presetWantsMask && maskInputFn) {
     // fn controls length only under balanced/strict; never trust its content.
     masked = '*'.repeat(masked.length);

@@ -59,7 +59,7 @@ describe('text masking v2', () => {
     expect(out).not.toContain('hidden');
   });
 
-  it('a user-supplied unmaskTextSelector escapes strict\'s mask-everything default', () => {
+  it("a user-supplied unmaskTextSelector escapes strict's mask-everything default", () => {
     document.body.innerHTML =
       '<div class="support-widget"><p>visible</p></div><p>hidden</p>';
     const out = JSON.stringify(
@@ -564,7 +564,7 @@ describe('finalizeAttribute', () => {
         name: 'data-x',
         value: 'a longer value',
         privacy: undefined,
-        maskAttributeFn: () => ({ nope: true }) as unknown as string,
+        maskAttributeFn: () => ({ nope: true } as unknown as string),
       }),
     ).toBe('*'.repeat('a longer value'.length));
   });
@@ -623,9 +623,13 @@ describe('attribute finalization through the serializer', () => {
     document.body.innerHTML = `<iframe src="${src}"></iframe>`;
     // jsdom hands out a blank contentDocument for every iframe; a real
     // cross-origin frame has none, which is what triggers the rr_src rename.
-    Object.defineProperty(document.querySelector('iframe')!, 'contentDocument', {
-      value: null,
-    });
+    Object.defineProperty(
+      document.querySelector('iframe')!,
+      'contentDocument',
+      {
+        value: null,
+      },
+    );
     return JSON.stringify(snapshot(document, { privacyPolicy }));
   }
 

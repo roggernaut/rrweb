@@ -22,12 +22,14 @@
 ### Task 1: Compiled policy v2 — types and `compilePrivacyPolicy`
 
 **Files:**
+
 - Modify: `packages/rrweb-snapshot/src/types.ts` (PrivacyPolicy/CompiledPrivacyPolicy region, ~lines 77-200)
 - Modify: `packages/rrweb-snapshot/src/privacy.ts`
 - Delete: `packages/rrweb-snapshot/privacy-policy.schema.json`
 - Test: `packages/rrweb-snapshot/test/privacy.test.ts`
 
 **Interfaces:**
+
 - Produces (later tasks depend on these exact shapes):
 
 ```ts
@@ -39,34 +41,47 @@ export type PrivacyRule = {
   action: PrivacyAction;
 }; // style/classification/attributes removed
 export type PrivacyDetectorOptions = Partial<{
-  email: boolean; phone: boolean; paymentCard: boolean; ssn: boolean; ipAddress: boolean;
+  email: boolean;
+  phone: boolean;
+  paymentCard: boolean;
+  ssn: boolean;
+  ipAddress: boolean;
 }>; // custom removed
 export type CompiledPrivacyPolicy = {
   policy: PrivacyPolicy;
   preset: PrivacyPreset;
-  maskTextSelector: string | null;   // 'mask' rules + [data-privacy="mask"] + vendor classes (+ '*' under strict)
+  maskTextSelector: string | null; // 'mask' rules + [data-privacy="mask"] + vendor classes (+ '*' under strict)
   unmaskTextSelector: string | null; // 'allow'/'unmask' rules + [data-privacy="allow"] + vendor unmask classes
-  blockSelector: string | null;      // 'exclude' rules + [data-privacy="exclude"] + vendor block classes
-  maskAllInputs: boolean;            // true under balanced/strict
-  maskedAttributes: string[];        // ['title','placeholder','aria-label'] under balanced/strict, else []
-  blockMedia: boolean;               // true under strict
-  sanitizeUrls: boolean;             // true under balanced/strict
-  blockedQueryParameters: Set<string>;      // precomputed, lowercased
+  blockSelector: string | null; // 'exclude' rules + [data-privacy="exclude"] + vendor block classes
+  maskAllInputs: boolean; // true under balanced/strict
+  maskedAttributes: string[]; // ['title','placeholder','aria-label'] under balanced/strict, else []
+  blockMedia: boolean; // true under strict
+  sanitizeUrls: boolean; // true under balanced/strict
+  blockedQueryParameters: Set<string>; // precomputed, lowercased
   allowedQueryParameters: Set<string> | null;
   removeHash: boolean;
-  detectors: CompiledDetector[];     // populated by Task 2; [] here
+  detectors: CompiledDetector[]; // populated by Task 2; [] here
 };
-export type CompiledDetector = { name: string; test: (value: string) => boolean };
+export type CompiledDetector = {
+  name: string;
+  test: (value: string) => boolean;
+};
 ```
 
 ```ts
 // privacy.ts
-export function compilePrivacyPolicy(policy: PrivacyPolicy | undefined): CompiledPrivacyPolicy;
-export function mergeBlockSelectors(legacy: string | null, privacy: CompiledPrivacyPolicy | undefined): string | null; // unchanged signature
+export function compilePrivacyPolicy(
+  policy: PrivacyPolicy | undefined,
+): CompiledPrivacyPolicy;
+export function mergeBlockSelectors(
+  legacy: string | null,
+  privacy: CompiledPrivacyPolicy | undefined,
+): string | null; // unchanged signature
 export function validateSelector(selector: string): boolean; // exported for reuse
 ```
 
 - Vendor-class constants compiled into defaults for every non-legacy preset:
+
   - mask: `.rr-mask, .mp-mask, .fs-mask, .amp-mask, .ph-mask, .sentry-mask, [data-sentry-mask]`
   - unmask: `.rr-unmask, .amp-unmask, .sentry-unmask, [data-sentry-unmask]`
   - block: `.rr-block, .mp-block, .fs-exclude, .amp-block, .ph-no-capture, .sentry-block`
@@ -75,7 +90,11 @@ export function validateSelector(selector: string): boolean; // exported for reu
 
 ```ts
 import { describe, it, expect, vi } from 'vitest';
-import { compilePrivacyPolicy, validateSelector, mergeBlockSelectors } from '../src/privacy';
+import {
+  compilePrivacyPolicy,
+  validateSelector,
+  mergeBlockSelectors,
+} from '../src/privacy';
 
 describe('compilePrivacyPolicy v2', () => {
   it('legacy preset compiles to inert options', () => {
@@ -105,7 +124,8 @@ describe('compilePrivacyPolicy v2', () => {
   });
   it('compiles rules into selector lists, unmask as alias of allow', () => {
     const c = compilePrivacyPolicy({
-      version: 1, preset: 'balanced',
+      version: 1,
+      preset: 'balanced',
       rules: [
         { target: { type: 'selector', selector: '.pii' }, action: 'mask' },
         { target: { type: 'selector', selector: '.safe' }, action: 'unmask' },
@@ -119,9 +139,13 @@ describe('compilePrivacyPolicy v2', () => {
   it('drops invalid selectors individually with a warning, keeps the rest', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const c = compilePrivacyPolicy({
-      version: 1, preset: 'balanced',
+      version: 1,
+      preset: 'balanced',
       rules: [
-        { target: { type: 'selector', selector: ':::garbage' }, action: 'exclude' },
+        {
+          target: { type: 'selector', selector: ':::garbage' },
+          action: 'exclude',
+        },
         { target: { type: 'selector', selector: '.valid' }, action: 'exclude' },
       ],
     });
@@ -131,16 +155,26 @@ describe('compilePrivacyPolicy v2', () => {
     warn.mockRestore();
   });
   it('throws on bad version/preset/empty selector', () => {
-    expect(() => compilePrivacyPolicy({ version: 2 as never, preset: 'legacy' })).toThrow();
-    expect(() => compilePrivacyPolicy({ version: 1, preset: 'custom' as never })).toThrow();
     expect(() =>
-      compilePrivacyPolicy({ version: 1, preset: 'balanced',
-        rules: [{ target: { type: 'selector', selector: '' }, action: 'mask' }] }),
+      compilePrivacyPolicy({ version: 2 as never, preset: 'legacy' }),
+    ).toThrow();
+    expect(() =>
+      compilePrivacyPolicy({ version: 1, preset: 'custom' as never }),
+    ).toThrow();
+    expect(() =>
+      compilePrivacyPolicy({
+        version: 1,
+        preset: 'balanced',
+        rules: [{ target: { type: 'selector', selector: '' }, action: 'mask' }],
+      }),
     ).toThrow();
   });
   it('precomputes lowercased query parameter sets', () => {
-    const c = compilePrivacyPolicy({ version: 1, preset: 'strict',
-      url: { blockedQueryParameters: ['SessionID'] } });
+    const c = compilePrivacyPolicy({
+      version: 1,
+      preset: 'strict',
+      url: { blockedQueryParameters: ['SessionID'] },
+    });
     expect(c.blockedQueryParameters.has('sessionid')).toBe(true);
     expect(c.blockedQueryParameters.has('token')).toBe(true); // default list
   });
@@ -155,7 +189,9 @@ describe('mergeBlockSelectors', () => {
   it('joins legacy selector with compiled blockSelector', () => {
     const c = compilePrivacyPolicy({ version: 1, preset: 'balanced' });
     expect(mergeBlockSelectors('.legacy', c)).toContain('.legacy');
-    expect(mergeBlockSelectors('.legacy', c)).toContain('[data-privacy="exclude"]');
+    expect(mergeBlockSelectors('.legacy', c)).toContain(
+      '[data-privacy="exclude"]',
+    );
   });
 });
 ```
@@ -183,7 +219,9 @@ export function validateSelector(selector: string): boolean {
   }
 }
 
-function joinSelectors(selectors: Array<string | null | undefined>): string | null {
+function joinSelectors(
+  selectors: Array<string | null | undefined>,
+): string | null {
   const kept: string[] = [];
   for (const s of selectors) {
     if (!s) continue;
@@ -196,18 +234,32 @@ function joinSelectors(selectors: Array<string | null | undefined>): string | nu
   return kept.join(',') || null;
 }
 
-export function compilePrivacyPolicy(policy?: PrivacyPolicy): CompiledPrivacyPolicy {
+export function compilePrivacyPolicy(
+  policy?: PrivacyPolicy,
+): CompiledPrivacyPolicy {
   const effective: PrivacyPolicy = policy || { version: 1, preset: 'legacy' };
   if (effective.version !== 1)
-    throw new Error(`Unsupported Privacy at Capture policy version: ${String(effective.version)}`);
+    throw new Error(
+      `Unsupported Privacy at Capture policy version: ${String(
+        effective.version,
+      )}`,
+    );
   if (!PRIVACY_PRESETS.has(effective.preset))
     throw new Error(`Unsupported privacy preset: ${String(effective.preset)}`);
   const preset = effective.preset;
   const nonLegacy = preset !== 'legacy';
 
-  const bySelector = { mask: [] as string[], unmask: [] as string[], exclude: [] as string[] };
+  const bySelector = {
+    mask: [] as string[],
+    unmask: [] as string[],
+    exclude: [] as string[],
+  };
   for (const rule of effective.rules || []) {
-    if (!rule.target || rule.target.type !== 'selector' || !rule.target.selector)
+    if (
+      !rule.target ||
+      rule.target.type !== 'selector' ||
+      !rule.target.selector
+    )
       throw new Error('Privacy rules require a non-empty selector target');
     const action = rule.action === 'allow' ? 'unmask' : rule.action;
     if (!(action in bySelector))
@@ -221,29 +273,50 @@ export function compilePrivacyPolicy(policy?: PrivacyPolicy): CompiledPrivacyPol
     maskTextSelector: nonLegacy
       ? preset === 'strict'
         ? '*'
-        : joinSelectors(['[data-privacy="mask"]', VENDOR_MASK_CLASSES, ...bySelector.mask])
-      : joinSelectors(bySelector.mask.length ? ['[data-privacy="mask"]', ...bySelector.mask] : []),
+        : joinSelectors([
+            '[data-privacy="mask"]',
+            VENDOR_MASK_CLASSES,
+            ...bySelector.mask,
+          ])
+      : joinSelectors(
+          bySelector.mask.length
+            ? ['[data-privacy="mask"]', ...bySelector.mask]
+            : [],
+        ),
     unmaskTextSelector: joinSelectors(
       nonLegacy
-        ? ['[data-privacy="allow"]', VENDOR_UNMASK_CLASSES, ...bySelector.unmask]
+        ? [
+            '[data-privacy="allow"]',
+            VENDOR_UNMASK_CLASSES,
+            ...bySelector.unmask,
+          ]
         : bySelector.unmask,
     ),
     blockSelector: joinSelectors(
       nonLegacy
-        ? ['[data-privacy="exclude"]', VENDOR_BLOCK_CLASSES, ...bySelector.exclude]
-        : bySelector.exclude.length ? ['[data-privacy="exclude"]', ...bySelector.exclude] : [],
+        ? [
+            '[data-privacy="exclude"]',
+            VENDOR_BLOCK_CLASSES,
+            ...bySelector.exclude,
+          ]
+        : bySelector.exclude.length
+        ? ['[data-privacy="exclude"]', ...bySelector.exclude]
+        : [],
     ),
     maskAllInputs: nonLegacy,
     maskedAttributes: nonLegacy ? [...MASKED_ATTRIBUTE_DEFAULTS] : [],
     blockMedia: preset === 'strict',
     sanitizeUrls: nonLegacy,
     blockedQueryParameters: new Set(
-      [...DEFAULT_BLOCKED_QUERY_PARAMETERS, ...(effective.url?.blockedQueryParameters || [])].map(
-        (n) => n.toLowerCase(),
-      ),
+      [
+        ...DEFAULT_BLOCKED_QUERY_PARAMETERS,
+        ...(effective.url?.blockedQueryParameters || []),
+      ].map((n) => n.toLowerCase()),
     ),
     allowedQueryParameters: effective.url?.allowedQueryParameters
-      ? new Set(effective.url.allowedQueryParameters.map((n) => n.toLowerCase()))
+      ? new Set(
+          effective.url.allowedQueryParameters.map((n) => n.toLowerCase()),
+        )
       : null,
     removeHash: effective.url?.removeHash !== false,
     detectors: [], // populated by applyPrivacyDetectors (Task 2)
@@ -262,17 +335,27 @@ Keep `mergeBlockSelectors` as-is (it reads `privacy.blockSelector`, still presen
 ### Task 2: Fixed detectors with whole-value semantics
 
 **Files:**
+
 - Modify: `packages/rrweb-snapshot/src/privacy.ts`
 - Test: `packages/rrweb-snapshot/test/privacy.test.ts`
 
 **Interfaces:**
+
 - Produces:
 
 ```ts
 export const DEFAULT_PRIVACY_DETECTORS: Required<PrivacyDetectorOptions>; // all true
-export function applyPrivacyDetectors(policy: PrivacyPolicy | undefined, options?: PrivacyDetectorOptions): PrivacyPolicy; // keeps legacy base when policy omitted
-export function buildDetectors(options: PrivacyDetectorOptions | undefined): CompiledDetector[];
-export function detectSensitiveValue(value: string, privacy: CompiledPrivacyPolicy): boolean;
+export function applyPrivacyDetectors(
+  policy: PrivacyPolicy | undefined,
+  options?: PrivacyDetectorOptions,
+): PrivacyPolicy; // keeps legacy base when policy omitted
+export function buildDetectors(
+  options: PrivacyDetectorOptions | undefined,
+): CompiledDetector[];
+export function detectSensitiveValue(
+  value: string,
+  privacy: CompiledPrivacyPolicy,
+): boolean;
 export function passesLuhn(candidate: string): boolean; // kept as-is
 ```
 
@@ -282,37 +365,72 @@ export function passesLuhn(candidate: string): boolean; // kept as-is
 - [ ] **Step 1: Write the failing tests:**
 
 ```ts
-import { compilePrivacyPolicy, detectSensitiveValue, buildDetectors } from '../src/privacy';
+import {
+  compilePrivacyPolicy,
+  detectSensitiveValue,
+  buildDetectors,
+} from '../src/privacy';
 
 const withDetectors = compilePrivacyPolicy({
-  version: 1, preset: 'legacy',
-  detectors: { email: true, phone: true, paymentCard: true, ssn: true, ipAddress: true },
+  version: 1,
+  preset: 'legacy',
+  detectors: {
+    email: true,
+    phone: true,
+    paymentCard: true,
+    ssn: true,
+    ipAddress: true,
+  },
 });
 
 describe('detectSensitiveValue', () => {
   it('detects a Luhn-valid card adjacent to other digits (review regression)', () => {
-    expect(detectSensitiveValue('call 5551234567 4111 1111 1111 1111 now', withDetectors)).toBe(true);
+    expect(
+      detectSensitiveValue(
+        'call 5551234567 4111 1111 1111 1111 now',
+        withDetectors,
+      ),
+    ).toBe(true);
   });
   it('detects email, ssn, ip; passes clean prose', () => {
-    expect(detectSensitiveValue('contact bob@example.com', withDetectors)).toBe(true);
+    expect(detectSensitiveValue('contact bob@example.com', withDetectors)).toBe(
+      true,
+    );
     expect(detectSensitiveValue('ssn 123-45-6789', withDetectors)).toBe(true);
     expect(detectSensitiveValue('host 192.168.0.1', withDetectors)).toBe(true);
-    expect(detectSensitiveValue('the quick brown fox', withDetectors)).toBe(false);
+    expect(detectSensitiveValue('the quick brown fox', withDetectors)).toBe(
+      false,
+    );
   });
   it('rejects UUIDs and version strings as cards/ssns (false-positive guard)', () => {
-    expect(detectSensitiveValue('id 550e8400-e29b-41d4-a716-446655440000', withDetectors)).toBe(false);
-    expect(detectSensitiveValue('v1.2.3.4000 build', withDetectors)).toBe(false);
+    expect(
+      detectSensitiveValue(
+        'id 550e8400-e29b-41d4-a716-446655440000',
+        withDetectors,
+      ),
+    ).toBe(false);
+    expect(detectSensitiveValue('v1.2.3.4000 build', withDetectors)).toBe(
+      false,
+    );
   });
   it('detects regardless of preset (works under legacy)', () => {
     expect(withDetectors.preset).toBe('legacy');
-    expect(detectSensitiveValue('4111 1111 1111 1111', withDetectors)).toBe(true);
+    expect(detectSensitiveValue('4111 1111 1111 1111', withDetectors)).toBe(
+      true,
+    );
   });
   it('no detectors configured -> never detects', () => {
     const none = compilePrivacyPolicy({ version: 1, preset: 'strict' });
     expect(detectSensitiveValue('bob@example.com', none)).toBe(false);
   });
   it('per-detector toggles work', () => {
-    const emailOff = buildDetectors({ email: false, phone: false, paymentCard: true, ssn: false, ipAddress: false });
+    const emailOff = buildDetectors({
+      email: false,
+      phone: false,
+      paymentCard: true,
+      ssn: false,
+      ipAddress: false,
+    });
     expect(emailOff.some((d) => d.name === 'email')).toBe(false);
     expect(emailOff.some((d) => d.name === 'payment-card')).toBe(true);
   });
@@ -332,7 +450,9 @@ const PHONE_PATTERN = /(?:^|\s)\+?\d[\d ().-]{7,18}\d(?:$|\s)/;
 const IPV4_PATTERN = /\b(?:\d{1,3}\.){3}\d{1,3}\b/;
 const MAX_SCAN_LENGTH = 10_000;
 
-export function buildDetectors(options: PrivacyDetectorOptions | undefined): CompiledDetector[] {
+export function buildDetectors(
+  options: PrivacyDetectorOptions | undefined,
+): CompiledDetector[] {
   const opts = options || {};
   const detectors: CompiledDetector[] = [];
   if (opts.email)
@@ -355,7 +475,8 @@ export function buildDetectors(options: PrivacyDetectorOptions | undefined): Com
         return !!m && passesLuhn(m[1]);
       },
     });
-  if (opts.ssn) detectors.push({ name: 'ssn', test: (v) => SSN_PATTERN.test(v) });
+  if (opts.ssn)
+    detectors.push({ name: 'ssn', test: (v) => SSN_PATTERN.test(v) });
   if (opts.ipAddress)
     detectors.push({
       name: 'ip-address',
@@ -367,7 +488,10 @@ export function buildDetectors(options: PrivacyDetectorOptions | undefined): Com
   return detectors;
 }
 
-export function detectSensitiveValue(value: string, privacy: CompiledPrivacyPolicy): boolean {
+export function detectSensitiveValue(
+  value: string,
+  privacy: CompiledPrivacyPolicy,
+): boolean {
   if (!privacy.detectors.length || !value) return false;
   // Fail closed on absurd inputs instead of scanning them.
   if (value.length > MAX_SCAN_LENGTH) return true;
@@ -386,10 +510,12 @@ Card adjacency note (why the review bug disappears): `CARD_CANDIDATE.exec` finds
 ### Task 3: `sanitizeUrl` v2 — userinfo stripping and precomputed sets
 
 **Files:**
+
 - Modify: `packages/rrweb-snapshot/src/privacy.ts` (`sanitizeUrl`)
 - Test: `packages/rrweb-snapshot/test/privacy.test.ts`
 
 **Interfaces:**
+
 - Produces: `sanitizeUrl(value: string, privacy: CompiledPrivacyPolicy | undefined): string` (same signature; behavior changes).
 - Consumes: `blockedQueryParameters`/`allowedQueryParameters`/`removeHash`/`sanitizeUrls` from Task 1, `detectSensitiveValue` from Task 2.
 
@@ -401,19 +527,35 @@ describe('sanitizeUrl v2', () => {
   const balanced = compilePrivacyPolicy({ version: 1, preset: 'balanced' });
   const legacy = compilePrivacyPolicy(undefined);
   it('strips userinfo credentials', () => {
-    expect(sanitizeUrl('https://alice:hunter2@api.example.com/x', balanced)).toBe('https://api.example.com/x');
+    expect(
+      sanitizeUrl('https://alice:hunter2@api.example.com/x', balanced),
+    ).toBe('https://api.example.com/x');
   });
   it('masks blocked query parameters, case-insensitively', () => {
-    expect(sanitizeUrl('https://a.com/?Token=abc&ok=1', balanced)).toBe('https://a.com/?Token=*&ok=1');
+    expect(sanitizeUrl('https://a.com/?Token=abc&ok=1', balanced)).toBe(
+      'https://a.com/?Token=*&ok=1',
+    );
   });
   it('strict masks all params unless allowlisted', () => {
-    const allow = compilePrivacyPolicy({ version: 1, preset: 'strict', url: { allowedQueryParameters: ['page'] } });
-    expect(sanitizeUrl('https://a.com/?page=2&q=x', strict)).toBe('https://a.com/?page=*&q=*');
-    expect(sanitizeUrl('https://a.com/?page=2&q=x', allow)).toBe('https://a.com/?page=2&q=*');
+    const allow = compilePrivacyPolicy({
+      version: 1,
+      preset: 'strict',
+      url: { allowedQueryParameters: ['page'] },
+    });
+    expect(sanitizeUrl('https://a.com/?page=2&q=x', strict)).toBe(
+      'https://a.com/?page=*&q=*',
+    );
+    expect(sanitizeUrl('https://a.com/?page=2&q=x', allow)).toBe(
+      'https://a.com/?page=2&q=*',
+    );
   });
   it('removes hash unless disabled; legacy passes through untouched', () => {
-    expect(sanitizeUrl('https://a.com/x#frag', balanced)).toBe('https://a.com/x');
-    expect(sanitizeUrl('https://alice:pw@a.com/?token=x#f', legacy)).toBe('https://alice:pw@a.com/?token=x#f');
+    expect(sanitizeUrl('https://a.com/x#frag', balanced)).toBe(
+      'https://a.com/x',
+    );
+    expect(sanitizeUrl('https://alice:pw@a.com/?token=x#f', legacy)).toBe(
+      'https://alice:pw@a.com/?token=x#f',
+    );
   });
   it('unparseable value under non-legacy fails closed to empty string', () => {
     expect(sanitizeUrl('http://[broken', balanced)).toBe('');
@@ -426,7 +568,10 @@ describe('sanitizeUrl v2', () => {
 - [ ] **Step 3: Implement:**
 
 ```ts
-export function sanitizeUrl(value: string, privacy: CompiledPrivacyPolicy | undefined): string {
+export function sanitizeUrl(
+  value: string,
+  privacy: CompiledPrivacyPolicy | undefined,
+): string {
   if (!privacy || !privacy.sanitizeUrls) return value;
   try {
     const url = new URL(value, 'https://rrweb.invalid');
@@ -436,7 +581,8 @@ export function sanitizeUrl(value: string, privacy: CompiledPrivacyPolicy | unde
       const lower = name.toLowerCase();
       if (
         (privacy.preset === 'strict' && !privacy.allowedQueryParameters) ||
-        (privacy.allowedQueryParameters && !privacy.allowedQueryParameters.has(lower)) ||
+        (privacy.allowedQueryParameters &&
+          !privacy.allowedQueryParameters.has(lower)) ||
         privacy.blockedQueryParameters.has(lower)
       ) {
         url.searchParams.set(name, '*');
@@ -462,11 +608,13 @@ export function sanitizeUrl(value: string, privacy: CompiledPrivacyPolicy | unde
 ### Task 4: Core text masking — unmask selector, style exemption, detector hook
 
 **Files:**
+
 - Modify: `packages/rrweb-snapshot/src/snapshot.ts` (serializeTextNode ~lines 520-600; needsMask computation ~lines 1080-1160; `snapshot()` options plumbing)
 - Modify: `packages/rrweb-snapshot/src/utils.ts` (extend the existing mask-check helper)
 - Test: `packages/rrweb-snapshot/test/privacy-integration.test.ts` (create)
 
 **Interfaces:**
+
 - Consumes: `CompiledPrivacyPolicy` (Task 1), `detectSensitiveValue` (Task 2).
 - Produces: `needsMaskingText(node, maskTextClass, maskTextSelector, unmaskTextSelector, checkAncestors): boolean` in `utils.ts` — nearest-ancestor-wins, fail-closed. All serialization options gain `unmaskTextSelector: string | null` threaded exactly like `maskTextSelector` (serializeNodeWithId opts, serializeTextNode, snapshot()).
 - Deletes: the `maskTextWithPrivacy`/`shouldMaskInputWithPrivacy`/`maskInputWithPrivacy` privacy branch inside `serializeTextNode`; `maskTextWithPrivacy` itself is removed from `privacy.ts` (its remaining call sites are removed in Tasks 5-6).
@@ -478,7 +626,10 @@ import { describe, it, expect } from 'vitest';
 import snapshot from '../src/snapshot';
 import { compilePrivacyPolicy } from '../src/privacy';
 
-function serialize(html: string, privacy: ReturnType<typeof compilePrivacyPolicy>) {
+function serialize(
+  html: string,
+  privacy: ReturnType<typeof compilePrivacyPolicy>,
+) {
   document.body.innerHTML = html;
   return JSON.stringify(
     snapshot(document, {
@@ -494,10 +645,15 @@ function serialize(html: string, privacy: ReturnType<typeof compilePrivacyPolicy
 describe('text masking v2', () => {
   const strict = compilePrivacyPolicy({ version: 1, preset: 'strict' });
   it('strict masks page text', () => {
-    expect(serialize('<p>hello world</p>', strict)).not.toContain('hello world');
+    expect(serialize('<p>hello world</p>', strict)).not.toContain(
+      'hello world',
+    );
   });
   it('never masks <style> text, even under strict inside masked subtrees', () => {
-    const out = serialize('<div><style>body{color:red}</style><p>secret</p></div>', strict);
+    const out = serialize(
+      '<div><style>body{color:red}</style><p>secret</p></div>',
+      strict,
+    );
     expect(out).toContain('body{color:red}');
     expect(out).not.toContain('secret');
   });
@@ -511,14 +667,21 @@ describe('text masking v2', () => {
   });
   it('detectors mask the whole text node under legacy when configured', () => {
     const withDet = compilePrivacyPolicy({
-      version: 1, preset: 'legacy', detectors: { paymentCard: true, phone: true },
+      version: 1,
+      preset: 'legacy',
+      detectors: { paymentCard: true, phone: true },
     });
-    const out = serialize('<p>call 5551234567 4111 1111 1111 1111 now</p>', withDet);
+    const out = serialize(
+      '<p>call 5551234567 4111 1111 1111 1111 now</p>',
+      withDet,
+    );
     expect(out).not.toContain('4111 1111 1111 1111');
   });
   it('legacy without detectors leaves text untouched', () => {
     const legacy = compilePrivacyPolicy(undefined);
-    expect(serialize('<p>bob@example.com</p>', legacy)).toContain('bob@example.com');
+    expect(serialize('<p>bob@example.com</p>', legacy)).toContain(
+      'bob@example.com',
+    );
   });
 });
 ```
@@ -537,11 +700,14 @@ export function needsMaskingText(
 ): boolean {
   try {
     const el: HTMLElement | null =
-      node.nodeType === node.ELEMENT_NODE ? (node as HTMLElement) : node.parentElement;
+      node.nodeType === node.ELEMENT_NODE
+        ? (node as HTMLElement)
+        : node.parentElement;
     if (el === null) return false;
     let current: HTMLElement | null = el;
     while (current) {
-      if (unmaskTextSelector && current.matches(unmaskTextSelector)) return false;
+      if (unmaskTextSelector && current.matches(unmaskTextSelector))
+        return false;
       if (classMatchesMaskTextClass(current, maskTextClass)) return true; // reuse existing class check
       if (maskTextSelector && current.matches(maskTextSelector)) return true;
       if (!checkAncestors) break;
@@ -557,8 +723,14 @@ export function needsMaskingText(
 Nearest-ancestor-wins falls out of walking upward and returning on first hit. In `serializeTextNode`: restore the single pre-feature shape — `if (!isStyle && !isScript && textContent && needsMask) { textContent = maskTextFn ? maskTextFn(textContent, parentEl) : textContent.replace(/[\S]/g, '*'); }` — and delete the `if (privacy)` branch entirely. Then add the detector hook after it:
 
 ```ts
-if (!isStyle && !isScript && textContent && !needsMask && privacy &&
-    detectSensitiveValue(textContent, privacy)) {
+if (
+  !isStyle &&
+  !isScript &&
+  textContent &&
+  !needsMask &&
+  privacy &&
+  detectSensitiveValue(textContent, privacy)
+) {
   textContent = textContent.replace(/[\S]/g, '*');
 }
 ```
@@ -573,20 +745,32 @@ Thread `unmaskTextSelector` through the same option paths `maskTextSelector` alr
 ### Task 5: Input masking composition
 
 **Files:**
+
 - Modify: `packages/rrweb-snapshot/src/utils.ts` (`maskInputValue`, `getInputType`)
 - Modify: `packages/rrweb-snapshot/src/privacy.ts` (`isProtectedInput` → exported, reusing `getInputType`)
 - Modify: `packages/rrweb-snapshot/src/snapshot.ts`, `packages/rrweb/src/record/mutation.ts` (~583-690), `packages/rrweb/src/record/observer.ts` (~425-445)
 - Test: `packages/rrweb-snapshot/test/privacy-integration.test.ts`
 
 **Interfaces:**
+
 - Produces (single entry point; the four legacyMask forks collapse into it):
 
 ```ts
 export function maskInput({
-  element, tagName, type, value, maskInputOptions, maskInputFn, privacy,
+  element,
+  tagName,
+  type,
+  value,
+  maskInputOptions,
+  maskInputFn,
+  privacy,
 }: {
-  element: HTMLElement; tagName: string; type: string | null; value: string;
-  maskInputOptions: MaskInputOptions; maskInputFn?: MaskInputFn;
+  element: HTMLElement;
+  tagName: string;
+  type: string | null;
+  value: string;
+  maskInputOptions: MaskInputOptions;
+  maskInputFn?: MaskInputFn;
   privacy: CompiledPrivacyPolicy | undefined;
 }): string;
 export function isProtectedInput(element: HTMLElement): boolean; // password/hidden/data-rr-is-password/cc-* autocomplete
@@ -607,29 +791,63 @@ describe('maskInput v2', () => {
     return document.querySelector('input') as HTMLInputElement;
   };
   it('balanced masks all inputs shape-free (stars, not digits)', () => {
-    const out = maskInput({ element: input(), tagName: 'input', type: 'text',
-      value: '4111 1111 1111 1111', maskInputOptions: {}, privacy: balanced });
+    const out = maskInput({
+      element: input(),
+      tagName: 'input',
+      type: 'text',
+      value: '4111 1111 1111 1111',
+      maskInputOptions: {},
+      privacy: balanced,
+    });
     expect(out).toBe('*'.repeat(19));
   });
   it('balanced + maskInputFn: fn controls length only, never content', () => {
-    const out = maskInput({ element: input(), tagName: 'input', type: 'text',
-      value: 'secret', maskInputOptions: {},
-      maskInputFn: () => '[redacted]', privacy: balanced });
+    const out = maskInput({
+      element: input(),
+      tagName: 'input',
+      type: 'text',
+      value: 'secret',
+      maskInputOptions: {},
+      maskInputFn: () => '[redacted]',
+      privacy: balanced,
+    });
     expect(out).toBe('*'.repeat('[redacted]'.length));
   });
   it('legacy + maskInputFn trusted verbatim when legacy options mask', () => {
-    const out = maskInput({ element: input(), tagName: 'input', type: 'text',
-      value: 'secret', maskInputOptions: { text: true },
-      maskInputFn: () => '[redacted]', privacy: legacy });
+    const out = maskInput({
+      element: input(),
+      tagName: 'input',
+      type: 'text',
+      value: 'secret',
+      maskInputOptions: { text: true },
+      maskInputFn: () => '[redacted]',
+      privacy: legacy,
+    });
     expect(out).toBe('[redacted]');
   });
   it('legacy without options passes value through', () => {
-    expect(maskInput({ element: input(), tagName: 'input', type: 'text',
-      value: 'plain', maskInputOptions: {}, privacy: legacy })).toBe('plain');
+    expect(
+      maskInput({
+        element: input(),
+        tagName: 'input',
+        type: 'text',
+        value: 'plain',
+        maskInputOptions: {},
+        privacy: legacy,
+      }),
+    ).toBe('plain');
   });
   it('protected inputs always mask, even legacy with no options', () => {
-    expect(maskInput({ element: input('type="password"'), tagName: 'input', type: 'password',
-      value: 'pw', maskInputOptions: {}, privacy: legacy })).toBe('**');
+    expect(
+      maskInput({
+        element: input('type="password"'),
+        tagName: 'input',
+        type: 'password',
+        value: 'pw',
+        maskInputOptions: {},
+        privacy: legacy,
+      }),
+    ).toBe('**');
     expect(isProtectedInput(input('autocomplete="cc-number"'))).toBe(true);
   });
 });
@@ -639,16 +857,28 @@ describe('maskInput v2', () => {
 - [ ] **Step 3: Implement** `maskInput` in `utils.ts` wrapping the existing `maskInputValue` legacy logic:
 
 ```ts
-export function maskInput(args: {/* as Interfaces */}): string {
-  const { element, tagName, type, value, maskInputOptions, maskInputFn, privacy } = args;
+export function maskInput(args: {
+  /* as Interfaces */
+}): string {
+  const {
+    element,
+    tagName,
+    type,
+    value,
+    maskInputOptions,
+    maskInputFn,
+    privacy,
+  } = args;
   if (isProtectedInput(element)) return '*'.repeat(value.length);
   const legacyWantsMask = Boolean(
     maskInputOptions[tagName.toLowerCase() as keyof MaskInputOptions] ||
-    (type && maskInputOptions[type.toLowerCase() as keyof MaskInputOptions]),
+      (type && maskInputOptions[type.toLowerCase() as keyof MaskInputOptions]),
   );
   const presetWantsMask = !!privacy && privacy.maskAllInputs;
   if (!legacyWantsMask && !presetWantsMask) return value;
-  let masked = maskInputFn ? maskInputFn(value, element) : '*'.repeat(value.length);
+  let masked = maskInputFn
+    ? maskInputFn(value, element)
+    : '*'.repeat(value.length);
   if (presetWantsMask && maskInputFn) masked = '*'.repeat(masked.length); // fn controls length only
   if (presetWantsMask && !maskInputFn) masked = '*'.repeat(value.length);
   return masked;
@@ -665,21 +895,32 @@ Move `isProtectedInput` from `privacy.ts` into `utils.ts` built on `getInputType
 ### Task 6: Attribute finalization — one pass, one helper
 
 **Files:**
+
 - Modify: `packages/rrweb-snapshot/src/privacy.ts` (`protectSerializedAttribute`, `maskAttributeWithPrivacy` deleted, `SENSITIVE_ATTRIBUTES` trimmed)
 - Modify: `packages/rrweb-snapshot/src/snapshot.ts` (attribute loop ~lines 620-900)
 - Modify: `packages/rrweb/src/record/mutation.ts` (pushAdd ~329-370; emit attribute loop ~510-530; delete `generatedAttributes` WeakMap ~152/526/559/809)
 - Test: `packages/rrweb-snapshot/test/privacy-integration.test.ts`, `packages/rrweb/test/record/privacy.test.ts` (adapt existing)
 
 **Interfaces:**
+
 - Produces (replaces both `maskAttributeWithPrivacy` and old `protectSerializedAttribute`):
 
 ```ts
 export function finalizeAttribute({
-  element, name, value, privacy, maskAllElementAttributes, maskAttributeFn, isGenerated,
+  element,
+  name,
+  value,
+  privacy,
+  maskAllElementAttributes,
+  maskAttributeFn,
+  isGenerated,
 }: {
-  element: Element; name: string; value: string | null;
+  element: Element;
+  name: string;
+  value: string | null;
   privacy: CompiledPrivacyPolicy | undefined;
-  maskAllElementAttributes?: boolean; maskAttributeFn?: MaskAttributeFn;
+  maskAllElementAttributes?: boolean;
+  maskAttributeFn?: MaskAttributeFn;
   isGenerated?: boolean;
 }): string | null;
 ```
@@ -692,23 +933,74 @@ export function finalizeAttribute({
 ```ts
 describe('finalizeAttribute', () => {
   const strict = compilePrivacyPolicy({ version: 1, preset: 'strict' });
-  const el = () => { document.body.innerHTML = '<img title="Bob" style="color:red" src="https://u:p@a.com/i.png?token=t">'; return document.querySelector('img')!; };
+  const el = () => {
+    document.body.innerHTML =
+      '<img title="Bob" style="color:red" src="https://u:p@a.com/i.png?token=t">';
+    return document.querySelector('img')!;
+  };
   it('never masks style, even under strict', () => {
-    expect(finalizeAttribute({ element: el(), name: 'style', value: 'color:red', privacy: strict })).toBe('color:red');
+    expect(
+      finalizeAttribute({
+        element: el(),
+        name: 'style',
+        value: 'color:red',
+        privacy: strict,
+      }),
+    ).toBe('color:red');
   });
   it('masks listed attributes under strict/balanced', () => {
-    expect(finalizeAttribute({ element: el(), name: 'title', value: 'Bob', privacy: strict })).toBe('***');
+    expect(
+      finalizeAttribute({
+        element: el(),
+        name: 'title',
+        value: 'Bob',
+        privacy: strict,
+      }),
+    ).toBe('***');
   });
   it('strict nulls media sources; URLs sanitized elsewhere', () => {
-    expect(finalizeAttribute({ element: el(), name: 'src', value: 'https://a.com/i.png', privacy: strict })).toBeNull();
+    expect(
+      finalizeAttribute({
+        element: el(),
+        name: 'src',
+        value: 'https://a.com/i.png',
+        privacy: strict,
+      }),
+    ).toBeNull();
   });
   it('maskAllElementAttributes stars everything except generated', () => {
-    expect(finalizeAttribute({ element: el(), name: 'title', value: 'Bob', privacy: undefined, maskAllElementAttributes: true })).toBe('***');
-    expect(finalizeAttribute({ element: el(), name: 'rr_open_mode', value: 'modal', privacy: undefined, maskAllElementAttributes: true, isGenerated: true })).toBe('modal');
+    expect(
+      finalizeAttribute({
+        element: el(),
+        name: 'title',
+        value: 'Bob',
+        privacy: undefined,
+        maskAllElementAttributes: true,
+      }),
+    ).toBe('***');
+    expect(
+      finalizeAttribute({
+        element: el(),
+        name: 'rr_open_mode',
+        value: 'modal',
+        privacy: undefined,
+        maskAllElementAttributes: true,
+        isGenerated: true,
+      }),
+    ).toBe('modal');
   });
   it('maskAttributeFn throw fails closed to stars; fn ignored under maskAll', () => {
-    expect(finalizeAttribute({ element: el(), name: 'title', value: 'Bob', privacy: undefined,
-      maskAttributeFn: () => { throw new Error('boom'); } })).toBe('***');
+    expect(
+      finalizeAttribute({
+        element: el(),
+        name: 'title',
+        value: 'Bob',
+        privacy: undefined,
+        maskAttributeFn: () => {
+          throw new Error('boom');
+        },
+      }),
+    ).toBe('***');
   });
 });
 ```
@@ -725,6 +1017,7 @@ Plus a recorder-level test in `packages/rrweb/test/record/privacy.test.ts` (adap
 ### Task 7: Delete CSS masking call sites
 
 **Files:**
+
 - Modify: `packages/rrweb/src/record/observer.ts` (delete `maskCssForRecord` + `stylesheetOwnerElement` ~597-616 and the maskTextWithPrivacy calls at ~650, 730, 762, 830, 995)
 - Modify: `packages/rrweb/src/record/stylesheet-manager.ts` (delete `maskAdoptedRule` ~97-106 and its call at ~80)
 - Modify: `packages/rrweb/src/record/mutation.ts` (delete styleDiff masking ~763-786)
@@ -743,12 +1036,14 @@ Plus a recorder-level test in `packages/rrweb/test/record/privacy.test.ts` (adap
 ### Task 8: Canvas fail-closed + region scaling
 
 **Files:**
+
 - Modify: `packages/rrweb/src/record/index.ts` (canvas wiring ~120-130)
 - Modify: `packages/rrweb/src/record/observers/canvas/canvas-manager.ts` (constructor ~85-100; `getCanvas`/`search` ~190-215)
 - Modify: `packages/rrweb/src/record/observers/canvas/canvas-mask.ts` (~40-70)
 - Test: `packages/rrweb/test/record/canvas-mask.test.ts` (adapt existing canvas tests)
 
 **Interfaces:**
+
 - record/index.ts rule (encode as a pure helper so it is unit-testable):
 
 ```ts
@@ -758,7 +1053,9 @@ export function resolveCanvasSampling(
 ): number | 'all' | undefined {
   if (!canvasMaskingConfigured) return requestedSampling;
   if (typeof requestedSampling === 'number') return requestedSampling;
-  console.warn('[rrweb] canvasMasking requires FPS canvas capture; forcing sampling.canvas = 4');
+  console.warn(
+    '[rrweb] canvasMasking requires FPS canvas capture; forcing sampling.canvas = 4',
+  );
   return 4;
 }
 ```
@@ -792,6 +1089,7 @@ Plus in the existing canvas mask test file: a region-scaling case with a padded 
 ### Task 9: Wiring hardening — plugin fallback, untainted tagName, plugin package
 
 **Files:**
+
 - Modify: `packages/rrweb/src/record/index.ts` (~109-130)
 - Modify: `packages/utils/src/index.ts` (add `untaintedTagName`)
 - Modify: `packages/rrweb/src/record/mutation.ts` (~663-665 raw tagName reads), `packages/rrweb-snapshot/src/snapshot.ts` (~533-539 inline guard), `packages/rrweb-snapshot/src/privacy.ts` (delete `nativeElementTagName`, `parentElementAcrossShadowRoot` — no remaining callers after Tasks 4-6)
@@ -799,6 +1097,7 @@ Plus in the existing canvas mask test file: a region-scaling case with a padded 
 - Test: `packages/plugins/rrweb-plugin-privacy-detectors/test/index.test.ts`, `packages/rrweb/test/record/privacy.test.ts`
 
 **Interfaces:**
+
 - `@rrweb/utils` produces: `export function untaintedTagName(element: Element | null | undefined): string` — returns `''` for null; uses the element's own `tagName` when it is a string, else the untainted `Element.prototype` getter via the existing `getUntaintedAccessor` machinery; uppercased. Every privacy-relevant `element.tagName` read in `mutation.ts`/`snapshot.ts` touched by this feature goes through it.
 - record/index.ts plugin fallback:
 
@@ -808,7 +1107,10 @@ try {
   privacy = compilePrivacyPolicy(portablePrivacyPolicy);
 } catch (error) {
   if (portablePrivacyPolicy !== privacyPolicy) {
-    console.error('[rrweb] plugin-transformed privacy policy failed to compile; using the user policy', error);
+    console.error(
+      '[rrweb] plugin-transformed privacy policy failed to compile; using the user policy',
+      error,
+    );
     privacy = compilePrivacyPolicy(privacyPolicy); // user's own invalid policy still throws (programmer error)
   } else {
     throw error;
@@ -832,7 +1134,10 @@ it('plugin with no user policy yields a legacy policy whose compiled detectors a
 });
 // rrweb record suite
 it('a plugin returning a malformed policy falls back to the user policy instead of throwing', () => {
-  const badPlugin = { name: 'bad@1', applyPrivacyPolicy: () => ({ nonsense: true }) };
+  const badPlugin = {
+    name: 'bad@1',
+    applyPrivacyPolicy: () => ({ nonsense: true }),
+  };
   expect(() =>
     record({ emit: () => {}, plugins: [badPlugin as never] }),
   ).not.toThrow();
@@ -853,6 +1158,7 @@ it('untaintedTagName survives <form><input name="tagName">', () => {
 ### Task 10: Types package, changeset, docs
 
 **Files:**
+
 - Modify: `packages/types/src/index.ts` (mirror Task 1 type removals for the public `@rrweb/types` copies; keep the `ImageBitmapDataURLWorkerParams` union but document it)
 - Modify: `guide.md` (privacy section ~lines 270-300), `packages/plugins/rrweb-plugin-privacy-detectors/README.md`
 - Create: `.changeset/privacy-v2-simplification.md`
@@ -896,10 +1202,12 @@ path; selector and config errors fail closed. BREAKING (@rrweb/types):
 ```ts
 it('legacy snapshot performs no privacy selector matching', () => {
   const spy = vi.spyOn(Element.prototype, 'matches');
-  document.body.innerHTML = '<div>'.repeat(200) + 'deep text' + '</div>'.repeat(200);
+  document.body.innerHTML =
+    '<div>'.repeat(200) + 'deep text' + '</div>'.repeat(200);
   snapshot(document, { privacy: compilePrivacyPolicy(undefined) });
-  const privacyCalls = spy.mock.calls.filter(([sel]) =>
-    typeof sel === 'string' && sel.includes('data-privacy'));
+  const privacyCalls = spy.mock.calls.filter(
+    ([sel]) => typeof sel === 'string' && sel.includes('data-privacy'),
+  );
   expect(privacyCalls.length).toBe(0);
   spy.mockRestore();
 });

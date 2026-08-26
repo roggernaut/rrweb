@@ -591,7 +591,8 @@ function serializeTextNode(
   // inside a <form>). `untaintedTagName` handles both: '' for a non-element
   // parent, the real tag name even when shadowed.
   const parent = dom.parentNode(n);
-  const parentTagName = dom.untaintedTagName(parent as Element | null) || undefined;
+  const parentTagName =
+    dom.untaintedTagName(parent as Element | null) || undefined;
   let textContent: string | null = '';
   const isStyle = parentTagName === 'STYLE' ? true : undefined;
   const isScript = parentTagName === 'SCRIPT' ? true : undefined;
