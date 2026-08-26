@@ -180,11 +180,12 @@ The `record` function accepts the following options.
 | ignoreCSSAttributes      | null               | array of CSS attributes that should be ignored                                                                                                                                                |
 | maskTextClass            | 'rr-mask'          | Use a string or RegExp to configure which elements should be masked, refer to the [privacy](#privacy) chapter                                                                                 |
 | maskTextSelector         | null               | Use a string to configure which selector should be masked, refer to the [privacy](#privacy) chapter                                                                                           |
+| unmaskTextSelector       | null               | Use a string to configure which selector's text should never be masked, even under `strict` or a policy `mask` rule; merged with any policy `unmask`/`allow` rules, refer to the [privacy](#privacy) chapter |
 | maskAllInputs            | false              | mask all input content as \*                                                                                                                                                                  |
 | maskInputOptions         | { password: true } | mask some kinds of input \*<br />refer to the [list](https://github.com/rrweb-io/rrweb/blob/588164aa12f1d94576f89ae0210b98f6e971c895/packages/rrweb-snapshot/src/types.ts#L77-L95)            |
 | maskInputFn              | -                  | customize mask input content recording logic                                                                                                                                                  |
 | maskTextFn               | -                  | customize mask text content recording logic                                                                                                                                                   |
-| privacyPolicy            | -                  | apply a versioned `strict`, `balanced`, `custom`, or `legacy` privacy policy before values are emitted                                                                                        |
+| privacyPolicy            | -                  | apply a versioned `strict`, `balanced`, or `legacy` privacy policy before values are emitted, refer to the [privacy](#privacy) chapter                                                        |
 | slimDOMOptions           | {}                 | remove unnecessary parts of the DOM <br />refer to the [list](https://github.com/rrweb-io/rrweb/blob/588164aa12f1d94576f89ae0210b98f6e971c895/packages/rrweb-snapshot/src/types.ts#L97-L108)  |
 | dataURLOptions           | {}                 | Canvas image format and quality ,This parameter will be passed to the OffscreenCanvas.convertToBlob(),Using this parameter effectively reduces the size of the recorded data                  |
 | inlineStylesheet         | true               | Deprecated since 2.0.0. Still supported, but planned to be superseded by future `captureAssets` asset recording APIs.                                                                         |
@@ -205,23 +206,8 @@ The `record` function accepts the following options.
 
 #### Privacy
 
-Use the vendor-neutral `data-privacy` attribute to declare capture privacy in
-application markup. rrweb recognizes it without recorder-specific
-configuration:
-
-```html
-<section data-privacy="exclude">Never capture this subtree</section>
-<section data-privacy="mask">Mask content in this subtree</section>
-<span data-privacy="allow">This content may be captured</span>
-```
-
-The values are case-sensitive. A declaration applies to descendants until a
-nearer declaration overrides it. An `exclude` declaration cannot be reopened,
-and protected credential and payment inputs remain masked under `allow`.
-Unknown values make no decision, so the element inherits from its nearest
-valid ancestor or the recorder defaults.
-
-The existing rrweb controls remain available as compatibility options:
+The existing rrweb masking options are always available and are exactly what
+you get by default (the `legacy` preset, below):
 
 - An element with the class name `.rr-block` will not be recorded. Instead, it will replay as a placeholder with the same dimension.
 - An element with the class name `.rr-ignore` will not record its input events.
@@ -229,16 +215,10 @@ The existing rrweb controls remain available as compatibility options:
 - `input[type="password"]` will be masked by default.
 - Mask options to mask the content in input elements.
 
-For a consistent policy across text, inputs, attributes, URLs, snapshots, and
-mutations, pass a versioned `privacyPolicy`:
-
-The machine-readable contract is published as
-`rrweb-snapshot/privacy-policy.schema.json` for SDK type generation and policy
-validation outside JavaScript.
+For a consistent policy across text, inputs, attributes, and URLs, pass a
+versioned `privacyPolicy`:
 
 ```js
-import { getRecordPrivacyDetectorsPlugin } from '@rrweb/rrweb-plugin-privacy-detectors';
-
 record({
   emit(event) {
     // store event
@@ -249,7 +229,7 @@ record({
     rules: [
       {
         target: { type: 'selector', selector: '.public-customer-name' },
-        action: 'allow',
+        action: 'unmask', // alias: 'allow'
       },
       {
         target: { type: 'selector', selector: '.private' },
@@ -264,44 +244,115 @@ record({
       blockedQueryParameters: ['token', 'session'],
     },
   },
-  plugins: [
-    // Highlight-style fuzzy PII matching; omit this plugin to record
-    // unmatched page text unchanged.
-    getRecordPrivacyDetectorsPlugin(),
-  ],
 });
 ```
 
-The presets have the following behavior:
+`preset` compiles to the following, on top of the `rules` above:
 
-- `strict` masks page text and form values, removes media sources, sanitizes
-  URL parameters, and disables canvas recording. Use a custom or balanced
-  policy with the canvas adapter below when the application can identify safe
-  regions precisely.
-- `balanced` masks form values while preserving normal page text. Heuristic
-  PII matching (email, phone, Luhn-valid payment card, SSN-like, and IPv4) is
-  **not** implied; opt in with `@rrweb/rrweb-plugin-privacy-detectors` or
-  `applyPrivacyDetectors`.
-- `custom` applies explicit rules and configured detectors. Password, hidden,
-  payment, and one-time-code inputs remain protected.
-- `legacy` uses the existing rrweb masking options without additional policy
-  behavior.
+| preset               | behavior                                                                                                                                                                                                                                                                                                                                                                                        |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `legacy` (default)   | Inert: only the existing masking options above apply. `rules` still work (below), but the `data-privacy` attribute and cross-vendor class recognition described below are off.                                                                                                                                                                                                               |
+| `balanced`           | Masks every input value (like `maskAllInputs: true`); masks the `title`, `placeholder`, and `aria-label` attributes on every element; sanitizes URLs -- strips `username`/`password` (userinfo), removes the value of any query parameter in a default sensitive list (`access_token`, `auth`, `code`, `key`, `password`, `secret`, `session`, `token`) plus any configured `url.blockedQueryParameters`, and removes the hash unless `url.removeHash: false`. Query parameter names stay visible. Page text is untouched. |
+| `strict`             | Everything `balanced` does, plus: all page text is masked; media element sources (`<img>`, `<video>`, `<audio>`, `<iframe>`, `<embed>`, `<object>`, `<source>`) are dropped instead of captured; canvas recording is disabled outright, even with a `canvasMasking` adapter configured; and URL sanitization blocks *every* query parameter's value unless you also set `url.allowedQueryParameters` to an explicit allow-list.                                                            |
 
-`data-privacy` declarations and policy rules use the same `exclude`, `mask`, and
-`allow` actions. Explicit `allow` decisions can override preset defaults and
-heuristic detection, but cannot unmask protected credential or payment inputs.
-At the same selector distance, the safer action wins: `exclude` over `mask`
-over `allow`. Existing masking options are still applied when a policy does not
-make an explicit decision. Omitting `privacyPolicy` preserves existing behavior
-while still honoring `data-privacy` declarations.
+CSS is never masked, on any preset or code path: `style`/`_cssText`
+attributes and `<style>` element text are exempt from every masking branch,
+including live `characterData` mutations.
+
+Rules (`rules: [{ target: { type: 'selector', selector }, action }]`) accept
+`mask`, `unmask` (an alias of `allow`), or `exclude`, and work under every
+preset, including `legacy`. For text, the nearest matching ancestor decides,
+walking from the node up to the document root; if the very same element
+matches both a mask and an unmask selector, unmask wins there. `exclude`
+removes a subtree from capture entirely (it replays as a placeholder), which
+is why an `exclude` decision can't be reopened by a nested `mask` or `unmask`.
+Protected inputs -- password, hidden, and autocomplete `cc-*` /
+`current-password` / `new-password` / `one-time-code` fields -- always stay
+masked, regardless of any rule or preset.
+
+Under `balanced` and `strict`, rrweb also recognizes the vendor-neutral
+`data-privacy` attribute and common cross-vendor class names directly in
+markup, no extra configuration required:
+
+```html
+<section data-privacy="exclude">Never capture this subtree</section>
+<section data-privacy="mask">Mask content in this subtree</section>
+<span data-privacy="allow">This content may be captured</span>
+```
+
+- Mask: `.rr-mask`, `.mp-mask`, `.fs-mask`, `.amp-mask`, `.ph-mask`, `.sentry-mask`, `[data-sentry-mask]`
+- Unmask: `.rr-unmask`, `.amp-unmask`, `.sentry-unmask`, `[data-sentry-unmask]`
+- Block: `.rr-block`, `.mp-block`, `.fs-exclude`, `.amp-block`, `.ph-no-capture`, `.sentry-block`
+
+(`.rr-mask` and `.rr-block` also work under `legacy`, through the existing
+`maskTextClass`/`blockClass` options above -- the rest of this list is new in
+`balanced`/`strict`.) `data-privacy` values are case-sensitive; an unknown
+value makes no decision and the element inherits from its nearest valid
+ancestor.
+
+`unmaskTextSelector` is a `record()`-level escape hatch for text: a plain CSS
+selector (merged with any policy `unmask`/`allow` rule selectors) that stays
+unmasked even under `strict`'s mask-everything default or a `mask` rule. It
+only affects text masking -- it cannot unmask input values, the
+`title`/`placeholder`/`aria-label` attributes, or a sanitized URL, and it
+cannot override a protected input or an `exclude`.
+
+```js
+record({
+  privacyPolicy: { version: 1, preset: 'strict' },
+  unmaskTextSelector: '.support-widget',
+});
+```
+
+Heuristic PII detection (email, phone, Luhn-valid payment card, SSN-like,
+IPv4) is never implied by a preset. Opt in with
+`@rrweb/rrweb-plugin-privacy-detectors` (or its `applyPrivacyDetectors`
+helper), which masks the whole page text node when a detector matches --
+there is no character-range masking and no support for custom detector
+patterns. Detection currently only scans page text nodes at snapshot time; it
+does not scan input values, attribute values, or later live text mutations.
+
+```js
+import { getRecordPrivacyDetectorsPlugin } from '@rrweb/rrweb-plugin-privacy-detectors';
+
+record({
+  emit(event) {
+    // store event
+  },
+  plugins: [getRecordPrivacyDetectorsPlugin()],
+});
+```
+
+Once loaded, detectors run independently of the active preset -- including
+`legacy` -- on top of whatever masking that preset already applies.
+
+For unusual attribute-bearing applications, `maskAllElementAttributes` is the
+coarse fail-closed option and `maskAttributeFn(name, value, element)` is the
+targeted escape hatch. `maskAllElementAttributes` and `maskAttributeFn` are
+mutually exclusive: if both are supplied, `maskAllElementAttributes` wins and
+`maskAttributeFn` is ignored, with a one-time console warning. A throwing
+`maskAttributeFn` fails closed to stars rather than leaking the original
+value. Under `legacy`, `maskAttributeFn`'s return value is used as-is; under
+`balanced`/`strict` the compiled policy still runs on top of it (URL
+sanitization, `title`/`placeholder`/`aria-label` masking, ...) and can only
+narrow what the callback chose to keep, never restore something the policy
+would otherwise mask. `style`/`_cssText` are exempt from all of this.
+Likewise, under `legacy`, `maskInputFn`'s return value is trusted verbatim;
+under `balanced`/`strict`, `maskInputFn` output is star-replaced -- the
+callback controls length, never content.
 
 Canvas applications can provide capture-time regions when using FPS canvas
 sampling. Coordinates are CSS pixels relative to the canvas. Return `[]` when
 the frame is safe unchanged, or `null`/`undefined` when regions cannot be
-computed; rrweb skips unanswerable frames. Invalid rectangles and thrown errors
-also fail closed. Masking occurs before encoding, and configuring the adapter
-suppresses the separate `rr_dataURL` full-snapshot path so an unmasked still
-cannot bypass it.
+computed; rrweb skips unanswerable frames. Invalid rectangles and thrown
+errors also fail closed. Configuring `canvasMasking` at all forces
+`sampling.canvas` onto the FPS/OffscreenCanvas capture path (defaulting to
+`4` if you haven't already set a number), since that's the only capture path
+that renders full frames through the masking adapter before they reach the
+encoding worker -- the raw command-stream capture mode
+(`sampling.canvas: 'all'`) replays canvas API calls verbatim and has no way to
+redact anything. Configuring the adapter also suppresses the separate
+`rr_dataURL` full-snapshot path, so an unmasked still can't bypass it.
 
 ```js
 record({
@@ -314,12 +365,6 @@ record({
   },
 });
 ```
-
-For unusual attribute-bearing applications, `maskAllElementAttributes` is the
-coarse fail-closed option and `maskAttributeFn(name, value, element)` is the
-targeted escape hatch. The coarse option wins if both are supplied. Callback
-errors are masked rather than exposing the original value, and neither option
-can weaken password protection or a `privacyPolicy` decision.
 
 #### Checkout
 

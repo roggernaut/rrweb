@@ -85,6 +85,7 @@ function record<T = eventWithTime>(
     ignoreSelector = null,
     maskTextClass = 'rr-mask',
     maskTextSelector: legacyMaskTextSelector = null,
+    unmaskTextSelector: legacyUnmaskTextSelector = null,
     inlineStylesheet = true,
     maskAllInputs,
     maskInputOptions: _maskInputOptions,
@@ -154,9 +155,12 @@ function record<T = eventWithTime>(
     legacyMaskTextSelector,
     privacy,
   );
-  const unmaskTextSelector = mergeUnmaskTextSelectors(null, privacy);
+  const unmaskTextSelector = mergeUnmaskTextSelectors(
+    legacyUnmaskTextSelector,
+    privacy,
+  );
   // Strict remains fail-closed for the whole canvas. Region providers are
-  // available to balanced/custom/legacy policies, where the application owns
+  // available to balanced/legacy policies, where the application owns
   // the completeness of those regions.
   const recordCanvas =
     requestedRecordCanvas && privacy?.policy.preset !== 'strict';

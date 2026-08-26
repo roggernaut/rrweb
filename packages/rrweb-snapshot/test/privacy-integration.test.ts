@@ -59,6 +59,19 @@ describe('text masking v2', () => {
     expect(out).not.toContain('hidden');
   });
 
+  it('a user-supplied unmaskTextSelector escapes strict\'s mask-everything default', () => {
+    document.body.innerHTML =
+      '<div class="support-widget"><p>visible</p></div><p>hidden</p>';
+    const out = JSON.stringify(
+      snapshot(document, {
+        privacyPolicy: strict,
+        unmaskTextSelector: '.support-widget',
+      }),
+    );
+    expect(out).toContain('visible');
+    expect(out).not.toContain('hidden');
+  });
+
   it('detectors mask the whole text node under legacy when configured', () => {
     const withDetectors: PrivacyPolicy = {
       version: 1,
