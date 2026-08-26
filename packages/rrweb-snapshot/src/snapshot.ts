@@ -34,7 +34,13 @@ import {
   absolutifyURLs,
   markCssSplits,
 } from './snapshot-utils';
-import { compilePrivacyPolicy, mergeBlockSelectors } from './privacy';
+import {
+  compilePrivacyPolicy,
+  detectSensitiveValue,
+  mergeBlockSelectors,
+  mergeMaskTextSelectors,
+  mergeUnmaskTextSelectors,
+} from './privacy';
 import dom from '@rrweb/utils';
 
 let _id = 1;
@@ -265,47 +271,93 @@ export function classMatchesRegex(
   return classMatchesRegex(dom.parentNode(node), regex, checkAncestors);
 }
 
+/**
+ * `'*'` (compiled from the `strict` preset) is a mask-everything default rather
+ * than an explicit per-element rule: it must lose to an `unmaskTextSelector`
+ * ancestor, and it must not shadow a nearer explicit mask ancestor. So it is
+ * split out of the selector list and only applied once the ancestor walk has
+ * found nothing explicit.
+ */
+const maskAllSelectorCache = new Map<
+  string,
+  { maskAll: boolean; selector: string | null }
+>();
+
+function splitMaskAllSelector(maskTextSelector: string): {
+  maskAll: boolean;
+  selector: string | null;
+} {
+  const cached = maskAllSelectorCache.get(maskTextSelector);
+  if (cached) return cached;
+  let maskAll = false;
+  const kept: string[] = [];
+  for (const part of maskTextSelector.split(',')) {
+    if (part.trim() === '*') maskAll = true;
+    else kept.push(part);
+  }
+  const parsed = {
+    maskAll,
+    selector: maskAll ? kept.join(',') || null : maskTextSelector,
+  };
+  if (maskAllSelectorCache.size < 100)
+    maskAllSelectorCache.set(maskTextSelector, parsed);
+  return parsed;
+}
+
+function classMatchesMaskTextClass(
+  el: Element,
+  maskTextClass: string | RegExp,
+): boolean {
+  if (typeof maskTextClass === 'string')
+    return el.classList.contains(maskTextClass);
+  for (let index = el.classList.length; index--; ) {
+    if (maskTextClass.test(el.classList[index])) return true;
+  }
+  return false;
+}
+
 export function needMaskingText(
   node: Node,
   maskTextClass: string | RegExp,
   maskTextSelector: string | null,
+  unmaskTextSelector: string | null,
   checkAncestors: boolean,
 ): boolean {
-  let el: Element;
-  if (isElement(node)) {
-    el = node;
-    if (!dom.childNodes(el).length) {
-      // optimisation: we can avoid any of the below checks on leaf elements
-      // as masking is applied to child text nodes only
-      return false;
-    }
-  } else if (dom.parentElement(node) === null) {
-    // should warn? maybe a text node isn't attached to a parent node yet?
-    return false;
-  } else {
-    el = dom.parentElement(node)!;
-  }
   try {
-    if (typeof maskTextClass === 'string') {
-      if (checkAncestors) {
-        if (el.closest(`.${maskTextClass}`)) return true;
-      } else {
-        if (el.classList.contains(maskTextClass)) return true;
+    let el: Element;
+    if (isElement(node)) {
+      el = node;
+      if (!dom.childNodes(el).length) {
+        // optimisation: we can avoid any of the below checks on leaf elements
+        // as masking is applied to child text nodes only
+        return false;
       }
+    } else if (dom.parentElement(node) === null) {
+      // should warn? maybe a text node isn't attached to a parent node yet?
+      return false;
     } else {
-      if (classMatchesRegex(el, maskTextClass, checkAncestors)) return true;
+      el = dom.parentElement(node)!;
     }
-    if (maskTextSelector) {
-      if (checkAncestors) {
-        if (el.closest(maskTextSelector)) return true;
-      } else {
-        if (el.matches(maskTextSelector)) return true;
-      }
+    const { maskAll, selector } = maskTextSelector
+      ? splitMaskAllSelector(maskTextSelector)
+      : { maskAll: false, selector: null };
+    // fast path: nothing can overrule a mask-everything policy
+    if (maskAll && !unmaskTextSelector) return true;
+    let current: Element | null = el;
+    while (current) {
+      // nearest ancestor wins: the first explicit decision going upwards
+      if (unmaskTextSelector && current.matches(unmaskTextSelector))
+        return false;
+      if (classMatchesMaskTextClass(current, maskTextClass)) return true;
+      if (selector && current.matches(selector)) return true;
+      if (!checkAncestors) break;
+      current = dom.parentElement(current);
     }
+    return maskAll;
   } catch (e) {
-    //
+    // fail closed: an error in the mask decision masks
+    return true;
   }
-  return false;
 }
 
 // https://stackoverflow.com/a/36155560
@@ -521,7 +573,7 @@ function serializeTextNode(
     privacy?: CompiledPrivacyPolicy;
   },
 ): serializedNode {
-  const { needsMask, maskTextFn, rootId, cssCaptured } = options;
+  const { needsMask, maskTextFn, rootId, cssCaptured, privacy } = options;
   // The parent node may not be a html element which has a tagName attribute.
   // Named form controls can also shadow `tagName` (e.g. <input name="tagName">).
   // So just let it be undefined which is ok in this use case.
@@ -545,12 +597,22 @@ function serializeTextNode(
       textContent = absolutifyURLs(textContent, getHref(options.doc));
     }
   }
-  if (!isScript && textContent) {
-    if (!isStyle && needsMask) {
-      textContent = maskTextFn
-        ? maskTextFn(textContent, dom.parentElement(n))
-        : textContent.replace(/[\S]/g, '*');
-    }
+  if (!isStyle && !isScript && textContent && needsMask) {
+    textContent = maskTextFn
+      ? maskTextFn(textContent, dom.parentElement(n))
+      : textContent.replace(/[\S]/g, '*');
+  }
+  // Detectors are policy-independent and mask the whole text node when they
+  // find anything sensitive. CSS and scripts are never scanned or masked.
+  if (
+    !isStyle &&
+    !isScript &&
+    textContent &&
+    !needsMask &&
+    privacy &&
+    detectSensitiveValue(textContent, privacy)
+  ) {
+    textContent = textContent.replace(/[\S]/g, '*');
   }
 
   return {
@@ -998,6 +1060,7 @@ export function serializeNodeWithId(
     blockSelector: string | null;
     maskTextClass: string | RegExp;
     maskTextSelector: string | null;
+    unmaskTextSelector: string | null;
     skipChild: boolean;
     inlineStylesheet: boolean;
     newlyAddedElement?: boolean;
@@ -1036,6 +1099,7 @@ export function serializeNodeWithId(
     blockSelector,
     maskTextClass,
     maskTextSelector,
+    unmaskTextSelector,
     skipChild = false,
     inlineStylesheet = true,
     maskInputOptions = {},
@@ -1061,13 +1125,19 @@ export function serializeNodeWithId(
   let { needsMask } = options;
   let { preserveWhiteSpace = true } = options;
 
-  if (!needsMask) {
-    // perf: if needsMask = true, children won't also need to check
-    const checkAncestors = needsMask === undefined; // if false, we've already checked ancestors
+  // perf: if needsMask = true, children won't also need to check — unless an
+  // unmaskTextSelector is configured, in which case a descendant can still
+  // escape a masked (or mask-everything) ancestor and must check for itself.
+  if (!needsMask || unmaskTextSelector) {
+    // if false, we've already checked ancestors (unless unmasking is in play,
+    // where the nearest-ancestor decision has to be recomputed per node)
+    const checkAncestors =
+      needsMask === undefined || Boolean(unmaskTextSelector);
     needsMask = needMaskingText(
       n as Element,
       maskTextClass,
       maskTextSelector,
+      unmaskTextSelector,
       checkAncestors,
     );
   }
@@ -1155,6 +1225,7 @@ export function serializeNodeWithId(
       needsMask,
       maskTextClass,
       maskTextSelector,
+      unmaskTextSelector,
       skipChild,
       inlineStylesheet,
       maskInputOptions,
@@ -1235,6 +1306,7 @@ export function serializeNodeWithId(
             needsMask,
             maskTextClass,
             maskTextSelector,
+            unmaskTextSelector,
             skipChild: false,
             inlineStylesheet,
             maskInputOptions,
@@ -1291,6 +1363,7 @@ export function serializeNodeWithId(
             needsMask,
             maskTextClass,
             maskTextSelector,
+            unmaskTextSelector,
             skipChild: false,
             inlineStylesheet,
             maskInputOptions,
@@ -1336,6 +1409,7 @@ function snapshot(
     blockSelector?: string | null;
     maskTextClass?: string | RegExp;
     maskTextSelector?: string | null;
+    unmaskTextSelector?: string | null;
     inlineStylesheet?: boolean;
     maskAllInputs?: boolean | MaskInputOptions;
     maskTextFn?: MaskTextFn;
@@ -1368,7 +1442,8 @@ function snapshot(
     blockClass = 'rr-block',
     blockSelector: legacyBlockSelector = null,
     maskTextClass = 'rr-mask',
-    maskTextSelector = null,
+    maskTextSelector: legacyMaskTextSelector = null,
+    unmaskTextSelector: legacyUnmaskTextSelector = null,
     inlineStylesheet = true,
     inlineImages = false,
     recordCanvas = false,
@@ -1391,6 +1466,14 @@ function snapshot(
   } = options || {};
   const privacy = compilePrivacyPolicy(privacyPolicy);
   const blockSelector = mergeBlockSelectors(legacyBlockSelector, privacy);
+  const maskTextSelector = mergeMaskTextSelectors(
+    legacyMaskTextSelector,
+    privacy,
+  );
+  const unmaskTextSelector = mergeUnmaskTextSelectors(
+    legacyUnmaskTextSelector,
+    privacy,
+  );
   const maskInputOptions: MaskInputOptions =
     maskAllInputs === true
       ? {
@@ -1425,6 +1508,7 @@ function snapshot(
     blockSelector,
     maskTextClass,
     maskTextSelector,
+    unmaskTextSelector,
     skipChild: false,
     inlineStylesheet,
     maskInputOptions,

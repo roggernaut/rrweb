@@ -5,6 +5,8 @@ import {
   createMirror,
   compilePrivacyPolicy,
   mergeBlockSelectors,
+  mergeMaskTextSelectors,
+  mergeUnmaskTextSelectors,
   sanitizeUrl,
 } from 'rrweb-snapshot';
 import { initObservers, mutationBuffers } from './observer';
@@ -78,7 +80,7 @@ function record<T = eventWithTime>(
     ignoreClass = 'rr-ignore',
     ignoreSelector = null,
     maskTextClass = 'rr-mask',
-    maskTextSelector = null,
+    maskTextSelector: legacyMaskTextSelector = null,
     inlineStylesheet = true,
     maskAllInputs,
     maskInputOptions: _maskInputOptions,
@@ -118,6 +120,11 @@ function record<T = eventWithTime>(
   );
   const privacy = compilePrivacyPolicy(portablePrivacyPolicy);
   const blockSelector = mergeBlockSelectors(legacyBlockSelector, privacy);
+  const maskTextSelector = mergeMaskTextSelectors(
+    legacyMaskTextSelector,
+    privacy,
+  );
+  const unmaskTextSelector = mergeUnmaskTextSelectors(null, privacy);
   // Strict remains fail-closed for the whole canvas. Region providers are
   // available to balanced/custom/legacy policies, where the application owns
   // the completeness of those regions.
@@ -344,6 +351,7 @@ function record<T = eventWithTime>(
       blockSelector,
       maskTextClass,
       maskTextSelector,
+      unmaskTextSelector,
       inlineStylesheet,
       maskInputOptions,
       dataURLOptions,
@@ -394,6 +402,7 @@ function record<T = eventWithTime>(
       blockSelector,
       maskTextClass,
       maskTextSelector,
+      unmaskTextSelector,
       inlineStylesheet,
       maskAllInputs: maskInputOptions,
       maskTextFn,
@@ -549,6 +558,7 @@ function record<T = eventWithTime>(
           ignoreSelector,
           maskTextClass,
           maskTextSelector,
+          unmaskTextSelector,
           maskInputOptions,
           maskAllElementAttributes,
           maskAttributeFn,

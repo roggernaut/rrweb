@@ -201,6 +201,25 @@ export function mergeBlockSelectors(
   );
 }
 
+export function mergeMaskTextSelectors(
+  legacySelector: string | null,
+  privacy: CompiledPrivacyPolicy | undefined,
+): string | null {
+  return (
+    [legacySelector, privacy?.maskTextSelector].filter(Boolean).join(',') || null
+  );
+}
+
+export function mergeUnmaskTextSelectors(
+  legacySelector: string | null,
+  privacy: CompiledPrivacyPolicy | undefined,
+): string | null {
+  return (
+    [legacySelector, privacy?.unmaskTextSelector].filter(Boolean).join(',') ||
+    null
+  );
+}
+
 export function passesLuhn(candidate: string): boolean {
   const digits = candidate.replace(/[ -]/g, '');
   if (!/^\d{13,19}$/.test(digits) || /^(\d)\1+$/.test(digits)) return false;
