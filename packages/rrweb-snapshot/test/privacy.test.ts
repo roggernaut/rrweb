@@ -258,7 +258,10 @@ describe('merge helpers validate the record()-level selector', () => {
   it('does not tear a selector whose commas are nested', () => {
     // a naive split(',') would produce ':is(.a' and '.b)' -- rejoining
     // deduplicated halves of those would corrupt the selector
-    const merged = mergeMaskTextSelectors(':is(.a,.b),[data-x="p,q"]', balanced);
+    const merged = mergeMaskTextSelectors(
+      ':is(.a,.b),[data-x="p,q"]',
+      balanced,
+    );
     expect(merged).toContain(':is(.a,.b)');
     expect(merged).toContain('[data-x="p,q"]');
     expect(() => document.querySelector(merged!)).not.toThrow();

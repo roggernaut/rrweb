@@ -465,10 +465,7 @@ function stars(value: string): string {
  * Whether `element` sits inside an unmask subtree. A selector that throws
  * grants no escape: the caller stays on its masking path (fail closed).
  */
-function isUnmasked(
-  element: Element,
-  privacy: CompiledPrivacyPolicy,
-): boolean {
+function isUnmasked(element: Element, privacy: CompiledPrivacyPolicy): boolean {
   if (!privacy.unmaskTextSelector) return false;
   try {
     return !!element.closest(privacy.unmaskTextSelector);
