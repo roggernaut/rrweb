@@ -21,7 +21,12 @@ const MASKED_ATTRIBUTE_DEFAULTS = ['title', 'placeholder', 'aria-label'];
  */
 const CSS_ATTRIBUTES = new Set(['style', '_csstext']);
 
-/** Attributes whose value is a URL and therefore goes through `sanitizeUrl`. */
+/**
+ * Attributes whose value is a URL and therefore goes through `sanitizeUrl`.
+ * `rr_src` is the name the serializer gives a cross-origin `<iframe src>` it
+ * cannot see into; the rename happens before finalization, so the renamed
+ * attribute has to be recognised here or it would escape the policy entirely.
+ */
 const URL_ATTRIBUTES = new Set([
   'action',
   'background',
@@ -29,6 +34,7 @@ const URL_ATTRIBUTES = new Set([
   'formaction',
   'href',
   'poster',
+  'rr_src',
   'src',
   'xlink:href',
 ]);
@@ -38,6 +44,7 @@ const MEDIA_SOURCE_ATTRIBUTES = new Set([
   'background',
   'data',
   'poster',
+  'rr_src',
   'src',
   'srcset',
 ]);
@@ -286,18 +293,23 @@ function tagNameOf(element: Element): string {
  * snapshot and the mutation path. Called exactly once per attribute, at the
  * end of serialization, so no earlier stage needs to know about privacy.
  *
- * Decision order (first match wins):
+ * Decision order:
  *  1. `isGenerated` -- the serializer wrote this value itself (rr_width,
  *     rr_scrollTop, ...), so it is safe by construction and never masked.
  *     `rr_dataURL` is deliberately NOT flagged generated: it holds real pixels.
+ *     Returns early.
  *  2. `maskAllElementAttributes` -- stars. It is the coarse kill switch and
  *     takes precedence over `maskAttributeFn`, which is then ignored with a
- *     one-time warning.
+ *     one-time warning. Returns early.
  *  3. `maskAttributeFn` -- run in try/catch; a throwing callback fails closed
- *     to stars rather than leaking the raw value.
- *  4. the compiled policy -- strict drops media sources, URL attributes are
- *     sanitized, `privacy.maskedAttributes` are starred, and form `value`
- *     attributes are starred under strict.
+ *     to stars rather than leaking the raw value. Does NOT return early: this
+ *     is a pipeline, not an escape hatch. Its output is the input to (4).
+ *  4. the compiled policy, the final authority -- strict drops media sources,
+ *     URL attributes are sanitized, `privacy.maskedAttributes` are starred, and
+ *     form `value` attributes are starred under strict. Under `legacy` this
+ *     block is the identity, so a callback's output survives verbatim; under
+ *     balanced/strict the policy applies on top of it and can only narrow what
+ *     the callback chose to keep.
  *
  * `style`/`_cssText` are exempt from every branch: masked CSS breaks the
  * replay and reveals nothing.
@@ -335,15 +347,20 @@ export function finalizeAttribute({
     return stars(value);
   }
 
+  let current = value;
   if (maskAttributeFn) {
     try {
-      return maskAttributeFn(name, value, element);
+      const masked = maskAttributeFn(name, value, element);
+      // A callback that returns a non-string fails closed rather than putting
+      // whatever it produced into the recording.
+      current = typeof masked === 'string' ? masked : stars(value);
     } catch {
       return stars(value);
     }
+    if (!current) return current;
   }
 
-  if (!privacy) return value;
+  if (!privacy) return current;
 
   const tagName = tagNameOf(element);
   if (
@@ -353,16 +370,16 @@ export function finalizeAttribute({
   ) {
     return null;
   }
-  if (URL_ATTRIBUTES.has(normalizedName)) return sanitizeUrl(value, privacy);
-  if (privacy.maskedAttributes.includes(normalizedName)) return stars(value);
+  if (URL_ATTRIBUTES.has(normalizedName)) return sanitizeUrl(current, privacy);
+  if (privacy.maskedAttributes.includes(normalizedName)) return stars(current);
   if (
     normalizedName === 'value' &&
     privacy.preset === 'strict' &&
     FORM_VALUE_TAGS.has(tagName)
   ) {
-    return stars(value);
+    return stars(current);
   }
-  return value;
+  return current;
 }
 
 export function sanitizeUrl(value: string, privacy: CompiledPrivacyPolicy | undefined): string {

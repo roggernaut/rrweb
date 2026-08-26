@@ -383,7 +383,9 @@ describe('finalizeAttribute', () => {
     ).toBe('***');
   });
 
-  it('maskAttributeFn output wins over the policy', () => {
+  it('feeds maskAttributeFn output into the policy, which is the final authority', () => {
+    // The callback is a pipeline stage, not an escape hatch: under balanced or
+    // strict the policy applies on top of whatever it returned.
     expect(
       finalizeAttribute({
         element: el(),
@@ -392,7 +394,58 @@ describe('finalizeAttribute', () => {
         privacy: strict,
         maskAttributeFn: (name, value) => `[${name}:${value.length}]`,
       }),
-    ).toBe('[title:3]');
+    ).toBe('*'.repeat('[title:3]'.length));
+    expect(
+      finalizeAttribute({
+        element: el(),
+        name: 'title',
+        value: 'Bob',
+        privacy: balanced,
+        maskAttributeFn: () => '[MASKED]',
+      }),
+    ).toBe('*'.repeat('[MASKED]'.length));
+    // Under legacy the policy block is the identity, so the callback's output
+    // survives verbatim.
+    expect(
+      finalizeAttribute({
+        element: el(),
+        name: 'title',
+        value: 'Bob',
+        privacy: legacy,
+        maskAttributeFn: () => '[MASKED]',
+      }),
+    ).toBe('[MASKED]');
+    // ...and an attribute the policy does not touch keeps the fn's output on
+    // every preset.
+    expect(
+      finalizeAttribute({
+        element: el(),
+        name: 'data-x',
+        value: 'Bob',
+        privacy: strict,
+        maskAttributeFn: () => '[MASKED]',
+      }),
+    ).toBe('[MASKED]');
+  });
+
+  it('applies the strict media-source and URL rules to the renamed rr_src', () => {
+    const iframe = () => el('<iframe src="https://x.com/"></iframe>', 'iframe');
+    expect(
+      finalizeAttribute({
+        element: iframe(),
+        name: 'rr_src',
+        value: 'https://u:p@x.com/?token=t',
+        privacy: strict,
+      }),
+    ).toBeNull();
+    expect(
+      finalizeAttribute({
+        element: iframe(),
+        name: 'rr_src',
+        value: 'https://u:p@x.com/?token=t',
+        privacy: balanced,
+      }),
+    ).toBe('https://x.com/?token=*');
   });
 
   it('passes through null/empty values and untouched attributes', () => {
@@ -412,5 +465,45 @@ describe('finalizeAttribute', () => {
         privacy: strict,
       }),
     ).toBe('plain');
+  });
+});
+
+describe('attribute finalization through the serializer', () => {
+  /**
+   * A cross-origin `<iframe>` rrweb cannot see into has its `src` renamed to
+   * `rr_src` *before* finalization runs, so the renamed name has to carry the
+   * same policy weight as `src` -- otherwise userinfo and query tokens ride
+   * out of the recording verbatim.
+   */
+  function serializeOpaqueIframe(
+    src: string,
+    privacyPolicy: PrivacyPolicy,
+  ): string {
+    document.body.innerHTML = `<iframe src="${src}"></iframe>`;
+    // jsdom hands out a blank contentDocument for every iframe; a real
+    // cross-origin frame has none, which is what triggers the rr_src rename.
+    Object.defineProperty(document.querySelector('iframe')!, 'contentDocument', {
+      value: null,
+    });
+    return JSON.stringify(snapshot(document, { privacyPolicy }));
+  }
+
+  it('sanitizes the renamed rr_src of a cross-origin iframe under balanced', () => {
+    const out = serializeOpaqueIframe('https://u:p@x.com/?token=t', {
+      version: 1,
+      preset: 'balanced',
+    });
+    expect(out).toContain('"rr_src":"https://x.com/?token=*"');
+    expect(out).not.toContain('u:p@x.com');
+    expect(out).not.toContain('token=t');
+  });
+
+  it('drops the renamed rr_src of a cross-origin iframe under strict', () => {
+    const out = serializeOpaqueIframe('https://u:p@x.com/?token=t', {
+      version: 1,
+      preset: 'strict',
+    });
+    expect(out).toContain('"rr_src":null');
+    expect(out).not.toContain('x.com');
   });
 });
