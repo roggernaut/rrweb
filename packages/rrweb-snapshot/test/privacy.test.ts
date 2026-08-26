@@ -124,4 +124,12 @@ describe('detectSensitiveValue', () => {
     expect(emailOff.some((d) => d.name === 'email')).toBe(false);
     expect(emailOff.some((d) => d.name === 'payment-card')).toBe(true);
   });
+
+  it('detects spaced phone format (fix regression)', () => {
+    expect(detectSensitiveValue('call 555 123 4567 now', withDetectors)).toBe(true);
+  });
+
+  it('detects dashed phone format (fix regression)', () => {
+    expect(detectSensitiveValue('555-123-4567', withDetectors)).toBe(true);
+  });
 });

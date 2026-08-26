@@ -42,7 +42,7 @@ const CARD_CANDIDATE = /(?:^|[^0-9-])((?:\d[ -]?){12,18}\d)(?:$|[^0-9-])/;
 const SSN_PATTERN = /\b(?!000|666|9\d{2})\d{3}-?(?!00)\d{2}-?(?!0000)\d{4}\b/;
 const EMAIL_PATTERN =
   /[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[a-zA-Z0-9-]{1,63}(?:\.[a-zA-Z0-9-]{1,63})+/;
-const PHONE_PATTERN = /(?:^|\s)\+?\d[\d().\-]{7,18}\d(?:$|\s)/;
+const PHONE_PATTERN = /(?:^|\s)\+?\d[\d ().-]{7,13}\d(?:$|\s)/;
 const IPV4_PATTERN = /\b(?:\d{1,3}\.){3}\d{1,3}\b/;
 const MAX_SCAN_LENGTH = 10_000;
 
