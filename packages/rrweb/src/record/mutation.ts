@@ -314,7 +314,9 @@ export default class MutationBuffer {
       }
       let cssCaptured = false;
       if (n.nodeType === Node.TEXT_NODE) {
-        const parentTag = (parent as Element).tagName;
+        // `parent` can be an arbitrary element (e.g. a <form>), whose
+        // `tagName` may be shadowed by a same-named descendant control.
+        const parentTag = dom.untaintedTagName(parent as Element | null);
         if (parentTag === 'TEXTAREA') {
           // genTextAreaValueMutation already called via parent
           return;
@@ -479,7 +481,7 @@ export default class MutationBuffer {
         .map((text) => {
           const n = text.node;
           const parent = dom.parentNode(n);
-          if (parent && (parent as Element).tagName === 'TEXTAREA') {
+          if (dom.untaintedTagName(parent as Element | null) === 'TEXTAREA') {
             // the node is being ignored as it isn't in the mirror, so shift mutation to attributes on parent textarea
             this.genTextAreaValueMutation(parent as HTMLTextAreaElement);
           }
@@ -581,6 +583,12 @@ export default class MutationBuffer {
       (cn) => dom.textContent(cn) || '',
     ).join('');
     const type = getInputType(textarea);
+    // `textarea.tagName` is safe unshadowed here: every caller only reaches
+    // this method after already comparing that same object's `.tagName` to
+    // the string literal `'TEXTAREA'` (see the childList/pushAdd/text-mutation
+    // call sites above, all now routed through `untaintedTagName`). A
+    // shadowed `tagName` fails that string comparison, so nothing shadowed
+    // ever reaches this call with a stale/wrong reference.
     item.attributes.value = maskInput({
       element: textarea,
       maskInputOptions: this.maskInputOptions,
@@ -664,7 +672,7 @@ export default class MutationBuffer {
 
         let item = this.attributeMap.get(m.target);
         if (
-          target.tagName === 'IFRAME' &&
+          targetTagName === 'IFRAME' &&
           attributeName === 'src' &&
           !this.keepIframeSrcFn(value as string)
         ) {
@@ -691,17 +699,17 @@ export default class MutationBuffer {
         // This is used to ensure we do not unmask value when using e.g. a "Show password" type button
         if (
           attributeName === 'type' &&
-          target.tagName === 'INPUT' &&
+          targetTagName === 'INPUT' &&
           (m.oldValue || '').toLowerCase() === 'password'
         ) {
           target.setAttribute('data-rr-is-password', 'true');
         }
 
-        if (!ignoreAttribute(target.tagName, attributeName, value)) {
+        if (!ignoreAttribute(targetTagName, attributeName, value)) {
           // overwrite attribute if the mutations was triggered in same time
           item.attributes[attributeName] = transformAttribute(
             this.doc,
-            toLowerCase(target.tagName),
+            toLowerCase(targetTagName),
             toLowerCase(attributeName),
             value,
           );
@@ -743,7 +751,7 @@ export default class MutationBuffer {
                 item.styleDiff[pname] = false; // delete
               }
             }
-          } else if (attributeName === 'open' && target.tagName === 'DIALOG') {
+          } else if (attributeName === 'open' && targetTagName === 'DIALOG') {
             if (target.matches('dialog:modal')) {
               item.attributes['rr_open_mode'] = 'modal';
             } else {
@@ -762,7 +770,7 @@ export default class MutationBuffer {
         if (isBlocked(m.target, this.blockClass, this.blockSelector, true))
           return;
 
-        if ((m.target as Element).tagName === 'TEXTAREA') {
+        if (dom.untaintedTagName(m.target as Element) === 'TEXTAREA') {
           // children would be ignored in genAdds as they aren't in the mirror
           this.genTextAreaValueMutation(m.target as HTMLTextAreaElement);
           return; // any removedNodes won't have been in mirror either
