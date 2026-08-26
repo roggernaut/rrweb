@@ -33,6 +33,7 @@ import {
   type scrollCallback,
   type canvasMutationParam,
   type adoptedStyleSheetParam,
+  type SamplingStrategy,
 } from '@rrweb/types';
 import type { CrossOriginIframeMessageEventContent } from '../types';
 import { IframeManager } from './iframe-manager';
@@ -40,8 +41,6 @@ import { ShadowDomManager } from './shadow-dom-manager';
 import { CanvasManager } from './observers/canvas/canvas-manager';
 import { isCanvasMaskingConfigured } from './observers/canvas/canvas-mask';
 import { resolveCanvasSampling } from './canvas-sampling';
-
-export { resolveCanvasSampling } from './canvas-sampling';
 import { StylesheetManager } from './stylesheet-manager';
 import ProcessedNodeManager from './processed-node-manager';
 import {
@@ -96,7 +95,7 @@ function record<T = eventWithTime>(
     maskAttributeFn,
     hooks,
     packFn,
-    sampling = {},
+    sampling: requestedSampling = {},
     dataURLOptions = {},
     canvasMasking,
     mousemoveWait,
@@ -171,14 +170,25 @@ function record<T = eventWithTime>(
   // which renders full frames through the masking provider before they
   // reach the encoding worker. The mutation-mode command stream
   // (`sampling.canvas === 'all'`) replays raw canvas API calls verbatim and
-  // cannot be masked at all. Whenever canvasMasking is configured at all
-  // (structurally, regardless of any dynamic `isConfigured()` toggle -
-  // sampling mode can't be switched mid-session), force numeric FPS
-  // sampling so the unmasked command stream can never run alongside it.
-  sampling.canvas = resolveCanvasSampling(
-    sampling.canvas,
-    Boolean(canvasMasking),
-  );
+  // cannot be masked at all. So whenever masking is actually in force,
+  // numeric FPS sampling is forced so the unmasked command stream can never
+  // run alongside it.
+  //
+  // "In force" means the same thing here as it does for snapshot pixel
+  // suppression: `isCanvasMaskingConfigured`, which is present-and-not-
+  // switched-off (and fails closed to `true` if the switch itself throws).
+  // A provider whose `isConfigured()` returns false is masking nothing, so
+  // mutation-mode capture is legitimate and must not be coerced.
+  //
+  // `sampling` is the caller's own object; overriding `canvas` in place
+  // would mutate the options they passed in, so work on a copy.
+  const sampling: SamplingStrategy = {
+    ...requestedSampling,
+    canvas: resolveCanvasSampling(
+      requestedSampling.canvas,
+      isCanvasMaskingConfigured(canvasMasking),
+    ),
+  };
 
   registerErrorHandler(errorHandler);
 
@@ -427,7 +437,10 @@ function record<T = eventWithTime>(
       {
         type: EventType.Meta,
         data: {
-          href: sanitizeUrl(window.location.href, privacy),
+          // `sanitizeUrl` drops an unparseable URL (null) so an attribute is
+          // omitted rather than emptied; a Meta event's `href` is a required
+          // string, and an empty one there is inert (nothing re-resolves it).
+          href: sanitizeUrl(window.location.href, privacy) ?? '',
           width: getWindowWidth(),
           height: getWindowHeight(),
         },

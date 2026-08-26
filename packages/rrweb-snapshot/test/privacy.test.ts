@@ -1,15 +1,18 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   compilePrivacyPolicy,
   validateSelector,
   mergeBlockSelectors,
+  mergeMaskTextSelectors,
+  mergeUnmaskTextSelectors,
   detectSensitiveValue,
   buildDetectors,
   sanitizeUrl,
 } from '../src/privacy';
+import snapshot from '../src/snapshot';
 
 describe('compilePrivacyPolicy v2', () => {
   it('legacy preset compiles to inert options', () => {
@@ -50,6 +53,18 @@ describe('compilePrivacyPolicy v2', () => {
     expect(c.maskTextSelector).toContain('.pii');
     expect(c.unmaskTextSelector).toContain('.safe');
     expect(c.blockSelector).toContain('.gone');
+  });
+  it('recognizes only real vendor unmask tokens plus rrweb’s own', () => {
+    // Amplitude is the only vendor shipping an unmask class. Sentry's
+    // `unmask` default is `[]` -- there is no `.sentry-unmask` convention to
+    // be compatible with, so claiming one would be fiction.
+    const c = compilePrivacyPolicy({ version: 1, preset: 'balanced' });
+    expect(c.unmaskTextSelector).toContain('.rr-unmask');
+    expect(c.unmaskTextSelector).toContain('.amp-unmask');
+    expect(c.unmaskTextSelector).not.toContain('sentry-unmask');
+    // the mask/block lists stay full cross-vendor compat
+    expect(c.maskTextSelector).toContain('.sentry-mask');
+    expect(c.blockSelector).toContain('.sentry-block');
   });
   it('drops invalid selectors individually with a warning, keeps the rest', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -107,6 +122,61 @@ describe('mergeBlockSelectors', () => {
     expect(mergeBlockSelectors('.legacy', c)).toContain(
       '[data-privacy="exclude"]',
     );
+  });
+});
+
+/**
+ * The `record()`-level selector options used to be concatenated onto the
+ * compiled policy without ever being probed. One malformed selector then made
+ * every downstream `matches()` throw, and the runtime catch-to-mask starred
+ * the entire page. They now go through the same drop-and-warn validation as
+ * policy rule selectors.
+ */
+describe('merge helpers validate the record()-level selector', () => {
+  const balanced = compilePrivacyPolicy({ version: 1, preset: 'balanced' });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+    vi.restoreAllMocks();
+  });
+
+  it.each([
+    ['mergeMaskTextSelectors', mergeMaskTextSelectors],
+    ['mergeUnmaskTextSelectors', mergeUnmaskTextSelectors],
+    ['mergeBlockSelectors', mergeBlockSelectors],
+  ])('%s drops an invalid legacy half with a warning', (_name, merge) => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const merged = merge(':::garbage', balanced);
+    expect(merged).not.toContain(':::garbage');
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('dropping invalid selector'),
+    );
+  });
+
+  it('keeps the valid half of a partly-malformed legacy selector', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    // ':::garbage,.valid' is a single invalid selector string, so it is
+    // dropped whole; the caller keeps the compiled policy's own selectors.
+    const merged = mergeMaskTextSelectors(':::garbage,.valid', balanced);
+    expect(merged).toBe(balanced.maskTextSelector);
+    expect(warn).toHaveBeenCalled();
+  });
+
+  it('a malformed record()-level maskTextSelector no longer stars the page', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    document.body.innerHTML =
+      '<p>keep this text</p><p class="valid">also kept</p>';
+
+    const out = JSON.stringify(
+      snapshot(document, {
+        privacyPolicy: { version: 1, preset: 'balanced' },
+        maskTextSelector: mergeMaskTextSelectors(':::garbage,.valid', balanced),
+      }),
+    );
+
+    expect(out).toContain('keep this text');
+    expect(out).not.toContain('****');
+    expect(warn).toHaveBeenCalled();
   });
 });
 
@@ -238,8 +308,10 @@ describe('sanitizeUrl v2', () => {
       'https://alice:pw@a.com/?token=x#f',
     );
   });
-  it('unparseable value under non-legacy fails closed to empty string', () => {
-    expect(sanitizeUrl('http://[broken', balanced)).toBe('');
+  it('unparseable value under non-legacy fails closed by dropping the attribute', () => {
+    // null, not '': an empty `src`/`href` re-resolves to the document URL at
+    // replay and gets requested. Dropping matches the blockMedia semantics.
+    expect(sanitizeUrl('http://[broken', balanced)).toBeNull();
   });
   it('empty in, empty out -- never resolved into a path', () => {
     expect(sanitizeUrl('', balanced)).toBe('');

@@ -737,6 +737,13 @@ export default class MutationBuffer {
         }
 
         if (!ignoreAttribute(targetTagName, attributeName, value)) {
+          // A real page mutation is now writing this attribute name, so any
+          // "recorder generated, exempt from masking" flag left on it by an
+          // earlier write in the same flush no longer describes this value.
+          // Clear it (PostHog's `.delete(attributeName)` precedent) or a page
+          // that literally sets e.g. `rr_open_mode` would inherit the
+          // exemption and record its value unmasked.
+          item.generatedAttributes?.delete(attributeName);
           // overwrite attribute if the mutations was triggered in same time
           item.attributes[attributeName] = transformAttribute(
             this.doc,

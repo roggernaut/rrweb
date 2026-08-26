@@ -195,3 +195,82 @@ describe('record() privacy detectors on live updates', () => {
     expect(JSON.stringify(inputEvents)).not.toContain('bob@example.com');
   });
 });
+
+/**
+ * `rr_open_mode` is written by the recorder itself when a <dialog> opens, and
+ * carries a "generated, exempt from masking" flag for that flush. If the page
+ * then writes an attribute of the same literal name, the flag no longer
+ * describes the value being recorded and must be cleared, or page data would
+ * ride the exemption out unmasked.
+ */
+describe('record() generated-attribute flag vs. a real page write', () => {
+  /**
+   * jsdom's selector engine has no `:modal` pseudo-class and throws on it, so
+   * the one call the <dialog> branch makes is shimmed on the element itself.
+   * Everything else delegates to the real implementation.
+   */
+  function shimModalMatches(el: Element) {
+    const real = Element.prototype.matches;
+    el.matches = ((selector: string) =>
+      selector === 'dialog:modal'
+        ? false
+        : real.call(el, selector)) as Element['matches'];
+  }
+
+  function attributeMutations(events: eventWithTime[]) {
+    return events.flatMap((event) =>
+      event.type === EventType.IncrementalSnapshot &&
+      event.data.source === IncrementalSource.Mutation
+        ? event.data.attributes
+        : [],
+    );
+  }
+
+  it('exempts the recorder-written rr_open_mode', async () => {
+    document.body.innerHTML = '<dialog>hi</dialog>';
+    const dialog = document.querySelector('dialog')!;
+    shimModalMatches(dialog);
+
+    const events: eventWithTime[] = [];
+    const stop = record({
+      emit: (event) => events.push(event),
+      maskAllElementAttributes: true,
+    });
+    try {
+      dialog.setAttribute('open', '');
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    } finally {
+      stop?.();
+    }
+
+    const written = attributeMutations(events).map(
+      (a) => a.attributes.rr_open_mode,
+    );
+    expect(written).toContain('non-modal');
+  });
+
+  it('does not exempt a page write of the same attribute name in that flush', async () => {
+    document.body.innerHTML = '<dialog>hi</dialog>';
+    const dialog = document.querySelector('dialog')!;
+    shimModalMatches(dialog);
+
+    const events: eventWithTime[] = [];
+    const stop = record({
+      emit: (event) => events.push(event),
+      maskAllElementAttributes: true,
+    });
+    try {
+      dialog.setAttribute('open', '');
+      dialog.setAttribute('rr_open_mode', 'page-authored');
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    } finally {
+      stop?.();
+    }
+
+    const written = attributeMutations(events).map(
+      (a) => a.attributes.rr_open_mode,
+    );
+    expect(written).toContain('*'.repeat('page-authored'.length));
+    expect(JSON.stringify(written)).not.toContain('page-authored');
+  });
+});

@@ -9,8 +9,10 @@ import { untaintedTagName } from '@rrweb/utils';
 
 const VENDOR_MASK_CLASSES =
   '.rr-mask,.mp-mask,.fs-mask,.amp-mask,.ph-mask,.sentry-mask,[data-sentry-mask]';
-const VENDOR_UNMASK_CLASSES =
-  '.rr-unmask,.amp-unmask,.sentry-unmask,[data-sentry-unmask]';
+// Amplitude is the only vendor that ships an unmask class (`.amp-unmask`);
+// Sentry's `unmask` default is `[]`, so there is no `.sentry-unmask` to be
+// compatible with. `.rr-unmask` is rrweb's own convention, not vendor compat.
+const VENDOR_UNMASK_CLASSES = '.rr-unmask,.amp-unmask';
 const VENDOR_BLOCK_CLASSES =
   '.rr-block,.mp-block,.fs-exclude,.amp-block,.ph-no-capture,.sentry-block';
 const PRIVACY_PRESETS = new Set(['strict', 'balanced', 'legacy']);
@@ -21,6 +23,25 @@ const MASKED_ATTRIBUTE_DEFAULTS = ['title', 'placeholder', 'aria-label'];
  * protecting anything, so no branch of `finalizeAttribute` may touch them.
  */
 const CSS_ATTRIBUTES = new Set(['style', '_csstext']);
+
+/**
+ * The only attribute names the serializer's `isGenerated` flag may exempt from
+ * masking. The flag says "rrweb wrote this value", but a flag alone is a
+ * single point of failure: a mis-set flag on a page-authored attribute would
+ * leak it verbatim. PostHog gates the same exemption on a fixed name
+ * allowlist, so both must agree.
+ *
+ * Deliberately excluded: `rr_dataURL` and `rr_src`, whose values are real page
+ * pixels and a real page URL respectively.
+ */
+const RENDERING_METADATA_ATTRIBUTES = new Set([
+  'rr_width',
+  'rr_height',
+  'rr_scrollleft',
+  'rr_scrolltop',
+  'rr_mediastate',
+  'rr_open_mode',
+]);
 
 /**
  * Attributes whose value is a URL and therefore goes through `sanitizeUrl`.
@@ -328,33 +349,34 @@ export function compilePrivacyPolicy(
   };
 }
 
+/**
+ * The `record()`-level selector options go through the same `validateSelector`
+ * drop-and-warn path as policy rule selectors. Merging an unvalidated selector
+ * would make every later `matches()` call throw, and the runtime catch-to-mask
+ * would then star the whole page off one typo. That catch stays as the
+ * backstop for a selector that validates but throws while matching; this just
+ * stops a syntactically broken selector from ever reaching it. The compiled
+ * halves are already validated, so re-probing them is only a cheap no-op.
+ */
 export function mergeBlockSelectors(
   legacySelector: string | null,
   privacy: CompiledPrivacyPolicy | undefined,
 ): string | null {
-  return (
-    [legacySelector, privacy?.blockSelector].filter(Boolean).join(',') || null
-  );
+  return joinSelectors([legacySelector, privacy?.blockSelector]);
 }
 
 export function mergeMaskTextSelectors(
   legacySelector: string | null,
   privacy: CompiledPrivacyPolicy | undefined,
 ): string | null {
-  return (
-    [legacySelector, privacy?.maskTextSelector].filter(Boolean).join(',') ||
-    null
-  );
+  return joinSelectors([legacySelector, privacy?.maskTextSelector]);
 }
 
 export function mergeUnmaskTextSelectors(
   legacySelector: string | null,
   privacy: CompiledPrivacyPolicy | undefined,
 ): string | null {
-  return (
-    [legacySelector, privacy?.unmaskTextSelector].filter(Boolean).join(',') ||
-    null
-  );
+  return joinSelectors([legacySelector, privacy?.unmaskTextSelector]);
 }
 
 export function passesLuhn(candidate: string): boolean {
@@ -379,6 +401,22 @@ let maskAttributeConflictWarned = false;
 
 function stars(value: string): string {
   return '*'.repeat(value.length);
+}
+
+/**
+ * Whether `element` sits inside an unmask subtree. A selector that throws
+ * grants no escape: the caller stays on its masking path (fail closed).
+ */
+function isUnmasked(
+  element: Element,
+  privacy: CompiledPrivacyPolicy,
+): boolean {
+  if (!privacy.unmaskTextSelector) return false;
+  try {
+    return !!element.closest(privacy.unmaskTextSelector);
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -425,9 +463,12 @@ export function finalizeAttribute({
   isGenerated?: boolean;
 }): string | null {
   if (value === null || value === '') return value;
-  if (isGenerated) return value;
 
   const normalizedName = name.toLowerCase();
+  // Two gates, not one: the serializer must have written this value AND the
+  // name must be known rendering metadata. Either alone is not enough.
+  if (isGenerated && RENDERING_METADATA_ATTRIBUTES.has(normalizedName))
+    return value;
   if (CSS_ATTRIBUTES.has(normalizedName)) return value;
 
   if (maskAllElementAttributes) {
@@ -463,7 +504,13 @@ export function finalizeAttribute({
     return null;
   }
   if (URL_ATTRIBUTES.has(normalizedName)) return sanitizeUrl(current, privacy);
-  if (privacy.maskedAttributes.includes(normalizedName)) return stars(current);
+  if (privacy.maskedAttributes.includes(normalizedName)) {
+    // An unmask ancestor is an explicit "this subtree is safe" statement and
+    // escapes the preset's masked-attribute defaults, matching Sentry's
+    // `maskAttribute` precedent. It cannot reach the branches above: a URL is
+    // still sanitized and a blocked media source is still dropped.
+    return isUnmasked(element, privacy) ? current : stars(current);
+  }
   if (
     normalizedName === 'value' &&
     privacy.preset === 'strict' &&
@@ -474,10 +521,16 @@ export function finalizeAttribute({
   return current;
 }
 
+/**
+ * Returns `null` when the value cannot be parsed: the attribute is dropped
+ * entirely, the same proven semantics as the `blockMedia` branch. Returning
+ * `''` instead would leave e.g. `src=""` in the recording, which a replaying
+ * browser re-resolves to the document URL and then actually requests.
+ */
 export function sanitizeUrl(
   value: string,
   privacy: CompiledPrivacyPolicy | undefined,
-): string {
+): string | null {
   // Empty in, empty out: resolving '' against the base would turn it into '/'.
   if (!value) return value;
   if (!privacy || !privacy.sanitizeUrls) return value;
@@ -501,6 +554,9 @@ export function sanitizeUrl(
       return `${url.pathname}${url.search}${url.hash}`;
     return url.toString();
   } catch {
-    return ''; // fail closed: an unparseable URL is not recorded
+    // Fail closed: an unparseable URL is not recorded at all. Dropping the
+    // attribute (null) rather than emptying it avoids the self-referential
+    // request an empty `src`/`href` would trigger at replay.
+    return null;
   }
 }

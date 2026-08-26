@@ -263,7 +263,8 @@ Rules (`rules: [{ target: { type: 'selector', selector }, action }]`) accept
 `mask`, `unmask` (an alias of `allow`), or `exclude`, and work under every
 preset, including `legacy`. For text, the nearest matching ancestor decides,
 walking from the node up to the document root; if the very same element
-matches both a mask and an unmask selector, unmask wins there. `exclude`
+matches both a mask and an unmask selector, **mask** wins there (the same
+tie-break Sentry, Amplitude and Mixpanel use). `exclude`
 removes a subtree from capture entirely (it replays as a placeholder), which
 is why an `exclude` decision can't be reopened by a nested `mask` or `unmask`.
 Protected inputs -- password, hidden, and autocomplete `cc-*` /
@@ -286,8 +287,16 @@ markup, no extra configuration required:
 ```
 
 - Mask: `.rr-mask`, `.mp-mask`, `.fs-mask`, `.amp-mask`, `.ph-mask`, `.sentry-mask`, `[data-sentry-mask]`
-- Unmask: `.rr-unmask`, `.amp-unmask`, `.sentry-unmask`, `[data-sentry-unmask]`
+- Unmask: `.amp-unmask`, `.rr-unmask`
 - Block: `.rr-block`, `.mp-block`, `.fs-exclude`, `.amp-block`, `.ph-no-capture`, `.sentry-block`
+
+The mask and block lists are cross-vendor compatibility: markup already
+annotated for Mixpanel, FullStory, Amplitude, PostHog or Sentry keeps
+working. The unmask list is deliberately much shorter, because unmask
+conventions barely exist in the wild: `.amp-unmask` is Amplitude's, and
+`.rr-unmask` is rrweb's own. Other vendors either ship no unmask class at all
+or default their unmask list to empty, so there is nothing to be compatible
+with.
 
 (`.rr-mask` and `.rr-block` also work under `legacy`, through the existing
 `maskTextClass`/`blockClass` options above -- the rest of this list is new in
@@ -305,15 +314,20 @@ ancestor.
 `unmaskTextSelector` is a `record()`-level escape hatch for text: a plain CSS
 selector (merged with any policy `unmask`/`allow` rule selectors) that stays
 unmasked even under `strict`'s mask-everything default or a `mask` rule. It
-only affects text masking -- it cannot unmask input values, the
-`title`/`placeholder`/`aria-label` attributes, or a sanitized URL, and it
-cannot override a protected input or an `exclude`.
+covers text and the preset's masked attributes (`title`, `placeholder`,
+`aria-label`) on elements inside the matched subtree. It cannot unmask input
+values or a sanitized URL, and it cannot override a protected input, a
+dropped media source under `strict`, or an `exclude`.
 
-An invalid `maskTextSelector` or `unmaskTextSelector` -- either this
-`record()`-level string option or a policy rule's selector -- fails closed:
-rather than being silently ignored (as if it had never been set), it causes
-the affected text to be masked. Prefer a selector you've verified with
-`document.querySelector` over trusting this as a validation mechanism.
+An invalid `maskTextSelector`, `unmaskTextSelector` or `blockSelector` --
+either the `record()`-level string option or a policy rule's selector -- is
+validated at setup and **dropped with a `console.warn`**, so one malformed
+selector cannot take the others down with it. Recording continues with the
+remaining selectors; a dropped `mask`/`exclude` selector therefore protects
+nothing, so watch for that warning rather than treating it as cosmetic.
+A selector that passes validation but throws while matching (a hostile
+`matches` override, a detached document) still fails closed and masks the
+affected text.
 
 ```js
 record({

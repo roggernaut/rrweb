@@ -357,11 +357,18 @@ export function needMaskingText(
     }
     let current: Element | null = el;
     while (current) {
-      // nearest ancestor wins: the first explicit decision going upwards
+      // Nearest ancestor wins: the first explicit decision going upwards.
+      // Within a single element both sides are evaluated before the level
+      // returns, and a mask source (class or selector) beats the unmask
+      // selector -- Sentry (`maskDistance <= unmaskDistance`), Amplitude and
+      // Mixpanel all resolve a same-element tie to masking.
+      if (
+        classMatchesMaskTextClass(current, maskTextClass) ||
+        (selector && current.matches(selector))
+      )
+        return true;
       if (unmaskTextSelector && current.matches(unmaskTextSelector))
         return false;
-      if (classMatchesMaskTextClass(current, maskTextClass)) return true;
-      if (selector && current.matches(selector)) return true;
       if (!checkAncestors) break;
       current = dom.parentElement(current);
     }

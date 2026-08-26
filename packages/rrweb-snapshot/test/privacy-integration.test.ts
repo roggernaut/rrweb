@@ -59,6 +59,48 @@ describe('text masking v2', () => {
     expect(out).not.toContain('hidden');
   });
 
+  /**
+   * Different levels: nearest ancestor wins (covered above). Same element:
+   * mask wins. Sentry resolves the tie with `maskDistance <= unmaskDistance`,
+   * and Amplitude and Mixpanel both check their mask list first -- an element
+   * carrying both markers is masked everywhere, so rrweb matches.
+   */
+  it('same element matching both mask and unmask is masked, not unmasked', () => {
+    const out = serialize(
+      '<div class="rr-unmask rr-mask"><p>tie broken</p></div>',
+      strict,
+    );
+    expect(out).not.toContain('tie broken');
+  });
+
+  it('same-element tie is masked for the data-privacy variant too', () => {
+    const out = serialize(
+      '<div data-privacy="allow" class="rr-mask"><p>tie broken</p></div>',
+      strict,
+    );
+    expect(out).not.toContain('tie broken');
+  });
+
+  it('same-element tie is masked under balanced, where nothing else masks', () => {
+    const out = serialize(
+      '<div class="rr-unmask rr-mask"><p>tie broken</p></div><p>untouched</p>',
+      { version: 1, preset: 'balanced' },
+    );
+    expect(out).not.toContain('tie broken');
+    // balanced does not mask page text at large -- only the tied element
+    expect(out).toContain('untouched');
+  });
+
+  it('a mask tie on an ancestor still loses to a nearer unmask descendant', () => {
+    // the same-element rule must not leak into the cross-level rule
+    const out = serialize(
+      '<div class="rr-unmask rr-mask"><div class="rr-unmask"><p>visible</p></div><p>hidden</p></div>',
+      strict,
+    );
+    expect(out).toContain('visible');
+    expect(out).not.toContain('hidden');
+  });
+
   it("a user-supplied unmaskTextSelector escapes strict's mask-everything default", () => {
     document.body.innerHTML =
       '<div class="support-widget"><p>visible</p></div><p>hidden</p>';
@@ -415,6 +457,122 @@ describe('finalizeAttribute', () => {
         isGenerated: true,
       }),
     ).toBe('100px');
+  });
+
+  /**
+   * The `isGenerated` flag alone is one point of failure: a mis-set flag on a
+   * page-authored attribute would leak it verbatim. The exemption is gated on
+   * a fixed rendering-metadata name allowlist as well, so both must agree.
+   */
+  it('the isGenerated flag alone does not exempt a page attribute name', () => {
+    expect(
+      finalizeAttribute({
+        element: el(),
+        name: 'title',
+        value: 'Bob',
+        privacy: undefined,
+        maskAllElementAttributes: true,
+        isGenerated: true,
+      }),
+    ).toBe('***');
+    // ... and the policy path is reached too, not just the kill switch
+    expect(
+      finalizeAttribute({
+        element: el(),
+        name: 'title',
+        value: 'Bob',
+        privacy: balanced,
+        isGenerated: true,
+      }),
+    ).toBe('***');
+  });
+
+  it('rr_dataURL is not on the allowlist even when flagged generated', () => {
+    // it holds real page pixels, unlike rr_width/rr_scrollTop/...
+    expect(
+      finalizeAttribute({
+        element: el(),
+        name: 'rr_dataURL',
+        value: 'data:image/png;base64,AAA',
+        privacy: strict,
+        maskAllElementAttributes: true,
+        isGenerated: true,
+      }),
+    ).toBe('*'.repeat('data:image/png;base64,AAA'.length));
+  });
+
+  it('every rendering-metadata name the serializer generates is exempt', () => {
+    for (const name of [
+      'rr_width',
+      'rr_height',
+      'rr_scrollLeft',
+      'rr_scrollTop',
+      'rr_mediaState',
+      'rr_open_mode',
+    ]) {
+      expect(
+        finalizeAttribute({
+          element: el(),
+          name,
+          value: 'v',
+          privacy: strict,
+          maskAllElementAttributes: true,
+          isGenerated: true,
+        }),
+      ).toBe('v');
+    }
+  });
+
+  /**
+   * An unmask ancestor is an explicit "this subtree is safe" statement, and
+   * escapes the preset's masked-attribute defaults -- Sentry's
+   * `maskAttribute` consults its unmask selector the same way.
+   */
+  it('an unmask ancestor escapes the masked-attribute defaults', () => {
+    expect(
+      finalizeAttribute({
+        element: el('<img title="Bob" class="rr-unmask">'),
+        name: 'title',
+        value: 'Bob',
+        privacy: balanced,
+      }),
+    ).toBe('Bob');
+    expect(
+      finalizeAttribute({
+        element: el('<div class="rr-unmask"><img title="Bob"></div>'),
+        name: 'title',
+        value: 'Bob',
+        privacy: balanced,
+      }),
+    ).toBe('Bob');
+    // no unmask ancestor -> unchanged behavior
+    expect(
+      finalizeAttribute({
+        element: el('<img title="Bob">'),
+        name: 'title',
+        value: 'Bob',
+        privacy: balanced,
+      }),
+    ).toBe('***');
+  });
+
+  it('the unmask escape cannot reopen a URL or a blocked media source', () => {
+    expect(
+      finalizeAttribute({
+        element: el('<img class="rr-unmask" src="https://a.com/?token=t">'),
+        name: 'src',
+        value: 'https://a.com/?token=t',
+        privacy: balanced,
+      }),
+    ).toBe('https://a.com/?token=*');
+    expect(
+      finalizeAttribute({
+        element: el('<img class="rr-unmask" src="https://a.com/i.png">'),
+        name: 'src',
+        value: 'https://a.com/i.png',
+        privacy: strict,
+      }),
+    ).toBeNull();
   });
 
   // NOTE: must be the first test in this file that combines maskAll + fn --
