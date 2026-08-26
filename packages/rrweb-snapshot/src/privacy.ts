@@ -357,7 +357,6 @@ export function finalizeAttribute({
     } catch {
       return stars(value);
     }
-    if (!current) return current;
   }
 
   if (!privacy) return current;
@@ -383,6 +382,8 @@ export function finalizeAttribute({
 }
 
 export function sanitizeUrl(value: string, privacy: CompiledPrivacyPolicy | undefined): string {
+  // Empty in, empty out: resolving '' against the base would turn it into '/'.
+  if (!value) return value;
   if (!privacy || !privacy.sanitizeUrls) return value;
   try {
     const url = new URL(value, 'https://rrweb.invalid');

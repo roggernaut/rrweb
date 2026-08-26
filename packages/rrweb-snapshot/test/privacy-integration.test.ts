@@ -428,6 +428,71 @@ describe('finalizeAttribute', () => {
     ).toBe('[MASKED]');
   });
 
+  it('drops a media source the fn emptied, rather than recording src=""', () => {
+    // '' must not short-circuit the policy: rebuild.ts treats null (attribute
+    // removed) and '' (setAttribute(name, '')) differently, so an emptied
+    // <img src> under strict has to come out null, not ''.
+    expect(
+      finalizeAttribute({
+        element: el(),
+        name: 'src',
+        value: 'https://a.com/i.png',
+        privacy: strict,
+        maskAttributeFn: () => '',
+      }),
+    ).toBeNull();
+    expect(
+      finalizeAttribute({
+        element: el('<iframe src="https://x.com/"></iframe>', 'iframe'),
+        name: 'rr_src',
+        value: 'https://x.com/',
+        privacy: strict,
+        maskAttributeFn: () => '',
+      }),
+    ).toBeNull();
+    // On the branches that do not drop it, an emptied value stays empty
+    // instead of being resolved into a path by sanitizeUrl.
+    expect(
+      finalizeAttribute({
+        element: el('<a href="#"></a>', 'a'),
+        name: 'href',
+        value: 'https://x.com/',
+        privacy: balanced,
+        maskAttributeFn: () => '',
+      }),
+    ).toBe('');
+    expect(
+      finalizeAttribute({
+        element: el(),
+        name: 'title',
+        value: 'Bob',
+        privacy: strict,
+        maskAttributeFn: () => '',
+      }),
+    ).toBe('');
+  });
+
+  it('fails closed when maskAttributeFn returns a non-string', () => {
+    expect(
+      finalizeAttribute({
+        element: el(),
+        name: 'data-x',
+        value: 'Bob',
+        privacy: legacy,
+        maskAttributeFn: () => undefined as unknown as string,
+      }),
+    ).toBe('***');
+    expect(
+      finalizeAttribute({
+        element: el(),
+        name: 'data-x',
+        value: 'a longer value',
+        privacy: undefined,
+        maskAttributeFn: () => ({ nope: true }) as unknown as string,
+      }),
+    ).toBe('*'.repeat('a longer value'.length));
+  });
+
   it('applies the strict media-source and URL rules to the renamed rr_src', () => {
     const iframe = () => el('<iframe src="https://x.com/"></iframe>', 'iframe');
     expect(

@@ -156,4 +156,9 @@ describe('sanitizeUrl v2', () => {
   it('unparseable value under non-legacy fails closed to empty string', () => {
     expect(sanitizeUrl('http://[broken', balanced)).toBe('');
   });
+  it('empty in, empty out -- never resolved into a path', () => {
+    expect(sanitizeUrl('', balanced)).toBe('');
+    expect(sanitizeUrl('', strict)).toBe('');
+    expect(sanitizeUrl('', legacy)).toBe('');
+  });
 });
