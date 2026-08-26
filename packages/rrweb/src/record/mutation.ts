@@ -10,6 +10,7 @@ import {
   maskInput,
   finalizeAttributes,
   resolveTextValue,
+  resolveUnmaskTextSelector,
   FORM_VALUE_TAGS,
   isProtectedTypeLike,
   Mirror,
@@ -186,6 +187,21 @@ export default class MutationBuffer {
   private blockSelector: observerParam['blockSelector'];
   private maskTextClass: observerParam['maskTextClass'];
   private maskTextSelector: observerParam['maskTextSelector'];
+  /** Derived lazily and invalidated (never assigned) per flush: `emit()` also runs outside `processMutations`, via `unfreeze()`/`unlock()`. */
+  private unmaskProbe: { probed: boolean; value: string | null } = {
+    probed: false,
+    value: null,
+  };
+  private get effectiveUnmaskTextSelector(): string | null {
+    if (!this.unmaskProbe.probed) {
+      this.unmaskProbe.value = resolveUnmaskTextSelector(
+        this.doc,
+        this.privacy?.unmaskTextSelector ?? null,
+      );
+      this.unmaskProbe.probed = true;
+    }
+    return this.unmaskProbe.value;
+  }
   private splitMaskTextSelectorCache: MaskTextSelector | null = null;
   /** Always derived, never assigned: an unset field would fail open to "no mask selectors". */
   private get splitMaskTextSelector(): MaskTextSelector {
@@ -193,6 +209,8 @@ export default class MutationBuffer {
       this.maskTextSelector,
     ));
   }
+  /** `needMaskingText` results memoised for one synchronous flush; not shared across flushes. */
+  private maskDecisionCache = new Map<Node, boolean>();
   private inlineStylesheet: observerParam['inlineStylesheet'];
   private maskInputOptions: observerParam['maskInputOptions'];
   private maskTextFn: observerParam['maskTextFn'];
@@ -250,6 +268,7 @@ export default class MutationBuffer {
     });
     // Everything derived from the options above is re-derived on next use.
     this.splitMaskTextSelectorCache = null;
+    this.unmaskProbe.probed = false;
   }
 
   public freeze() {
@@ -284,8 +303,30 @@ export default class MutationBuffer {
   }
 
   public processMutations = (mutations: mutationRecord[]) => {
-    mutations.forEach(this.processMutation); // adds mutations to the buffer
-    this.emit(); // clears buffer if not locked/frozen
+    this.unmaskProbe.probed = false;
+    this.maskDecisionCache.clear();
+    try {
+      mutations.forEach(this.processMutation); // adds mutations to the buffer
+      this.emit(); // clears buffer if not locked/frozen
+    } finally {
+      this.maskDecisionCache.clear();
+      this.unmaskProbe.probed = false;
+    }
+  };
+
+  private needMaskingTextForCharacterData = (node: Node): boolean => {
+    const key: Node = dom.parentElement(node) || node;
+    const cached = this.maskDecisionCache.get(key);
+    if (cached !== undefined) return cached;
+    const decision = needMaskingText(
+      node,
+      this.maskTextClass,
+      this.splitMaskTextSelector,
+      this.effectiveUnmaskTextSelector,
+      true, // checkAncestors
+    );
+    this.maskDecisionCache.set(key, decision);
+    return decision;
   };
 
   public emit = () => {
@@ -348,7 +389,7 @@ export default class MutationBuffer {
         blockSelector: this.blockSelector,
         maskTextClass: this.maskTextClass,
         maskTextSelector: this.splitMaskTextSelector,
-        unmaskTextSelector: this.privacy?.unmaskTextSelector ?? null,
+        unmaskTextSelector: this.effectiveUnmaskTextSelector,
         skipChild: true,
         newlyAddedElement: true,
         inlineStylesheet: this.inlineStylesheet,
@@ -609,13 +650,7 @@ export default class MutationBuffer {
               ? resolveTextValue({
                   value,
                   parent: closestElementOfNode(m.target),
-                  needsMask: needMaskingText(
-                    m.target,
-                    this.maskTextClass,
-                    this.splitMaskTextSelector,
-                    this.privacy?.unmaskTextSelector ?? null,
-                    true, // checkAncestors
-                  ),
+                  needsMask: this.needMaskingTextForCharacterData(m.target),
                   maskTextFn: this.maskTextFn,
                   exemptScript: false,
                 })
