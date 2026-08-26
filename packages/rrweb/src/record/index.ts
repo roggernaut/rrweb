@@ -158,6 +158,13 @@ function record<T = eventWithTime>(
     legacyUnmaskTextSelector,
     privacy,
   );
+  // One unmask selector, honored everywhere. The mutation path's
+  // `finalizeAttribute` reads the compiled policy's own `unmaskTextSelector`,
+  // so the `record()`-level string option is written back onto it -- without
+  // this it would only affect text masking, never the masked-attribute
+  // escape. `snapshot()` does the same for the full-snapshot path.
+  if (unmaskTextSelector !== privacy.unmaskTextSelector)
+    privacy = { ...privacy, unmaskTextSelector };
   // Strict remains fail-closed for the whole canvas. Region providers are
   // available to balanced/legacy policies, where the application owns
   // the completeness of those regions.

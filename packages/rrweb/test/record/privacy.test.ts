@@ -274,3 +274,61 @@ describe('record() generated-attribute flag vs. a real page write', () => {
     expect(JSON.stringify(written)).not.toContain('page-authored');
   });
 });
+
+/**
+ * The mutation path's `finalizeAttribute` reads the compiled policy's own
+ * `unmaskTextSelector`, so `record()` writes the merged record()-level option
+ * back onto the policy. Without that, the option would only affect text.
+ */
+describe('record() unmaskTextSelector reaches masked attributes', () => {
+  async function titlesAfterMutation(
+    html: string,
+    options: Parameters<typeof record>[0],
+  ) {
+    document.body.innerHTML = html;
+    const events: eventWithTime[] = [];
+    const stop = record({ ...options, emit: (event) => events.push(event) });
+    try {
+      document.querySelectorAll('img').forEach((img, index) => {
+        img.setAttribute('title', `updated-${index}`);
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    } finally {
+      stop?.();
+    }
+    return events.flatMap((event) =>
+      event.type === EventType.IncrementalSnapshot &&
+      event.data.source === IncrementalSource.Mutation
+        ? event.data.attributes.map((a) => a.attributes.title)
+        : [],
+    );
+  }
+
+  it('keeps a masked attribute inside a record()-level unmask subtree', async () => {
+    const titles = await titlesAfterMutation(
+      '<div class="support-widget"><img title="a"></div>',
+      {
+        privacyPolicy: { version: 1, preset: 'balanced' },
+        unmaskTextSelector: '.support-widget',
+      },
+    );
+    expect(titles).toContain('updated-0');
+  });
+
+  it('still masks the same attribute with no unmask subtree', async () => {
+    const titles = await titlesAfterMutation('<img title="a">', {
+      privacyPolicy: { version: 1, preset: 'balanced' },
+      unmaskTextSelector: '.support-widget',
+    });
+    expect(titles).toContain('*'.repeat('updated-0'.length));
+    expect(titles).not.toContain('updated-0');
+  });
+
+  it('the vendor unmask class keeps working alongside it', async () => {
+    const titles = await titlesAfterMutation(
+      '<div class="rr-unmask"><img title="a"></div>',
+      { privacyPolicy: { version: 1, preset: 'balanced' } },
+    );
+    expect(titles).toContain('updated-0');
+  });
+});

@@ -556,6 +556,42 @@ describe('finalizeAttribute', () => {
     ).toBe('***');
   });
 
+  /**
+   * `finalizeAttribute` reads the *compiled policy's* `unmaskTextSelector`,
+   * so the `record()`-level string option has to be written back onto the
+   * policy by `snapshot()`/`record()`. Without that write-back the option
+   * would silently only affect text, and the documented attribute escape
+   * would not exist for it.
+   */
+  it('honors a record()-level unmaskTextSelector, not just policy selectors', () => {
+    document.body.innerHTML =
+      '<div class="support-widget"><img title="Bob"></div>' +
+      '<div class="rr-unmask"><img title="Alice"></div>' +
+      '<div class="policy-safe"><img title="Carol"></div>' +
+      '<img title="Dave">';
+
+    const out = JSON.stringify(
+      snapshot(document, {
+        privacyPolicy: {
+          version: 1,
+          preset: 'balanced',
+          rules: [
+            {
+              target: { type: 'selector', selector: '.policy-safe' },
+              action: 'allow',
+            },
+          ],
+        },
+        unmaskTextSelector: '.support-widget',
+      }),
+    );
+
+    expect(out).toContain('"Bob"'); // record()-level option
+    expect(out).toContain('"Alice"'); // vendor class
+    expect(out).toContain('"Carol"'); // policy rule
+    expect(out).not.toContain('"Dave"'); // no escape -> still starred
+  });
+
   it('the unmask escape cannot reopen a URL or a blocked media source', () => {
     expect(
       finalizeAttribute({

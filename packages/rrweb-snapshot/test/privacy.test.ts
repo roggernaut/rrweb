@@ -162,6 +162,33 @@ describe('merge helpers validate the record()-level selector', () => {
     expect(warn).toHaveBeenCalled();
   });
 
+  /**
+   * `record()` merges the policy's selectors into the options it hands to
+   * `snapshot()`, which compiles the same policy and merges a second time.
+   * Without deduplication every fragment would be repeated on each pass.
+   */
+  it('is idempotent: re-merging an already-merged selector adds nothing', () => {
+    const once = mergeUnmaskTextSelectors(null, balanced);
+    const twice = mergeUnmaskTextSelectors(once, balanced);
+    expect(twice).toBe(once);
+    expect(mergeUnmaskTextSelectors(twice, balanced)).toBe(once);
+  });
+
+  it('deduplicates a fragment the legacy half repeats from the policy', () => {
+    const merged = mergeMaskTextSelectors('.rr-mask,.mine', balanced);
+    expect(merged!.split(',').filter((p) => p === '.rr-mask')).toHaveLength(1);
+    expect(merged).toContain('.mine');
+  });
+
+  it('does not tear a selector whose commas are nested', () => {
+    // a naive split(',') would produce ':is(.a' and '.b)' -- rejoining
+    // deduplicated halves of those would corrupt the selector
+    const merged = mergeMaskTextSelectors(':is(.a,.b),[data-x="p,q"]', balanced);
+    expect(merged).toContain(':is(.a,.b)');
+    expect(merged).toContain('[data-x="p,q"]');
+    expect(() => document.querySelector(merged!)).not.toThrow();
+  });
+
   it('a malformed record()-level maskTextSelector no longer stars the page', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     document.body.innerHTML =

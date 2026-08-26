@@ -704,6 +704,14 @@ export type CanvasMasking = {
   /**
    * Optional dynamic switch. When omitted, supplying `canvasMasking` means it
    * is configured. Throwing is treated as configured so snapshots fail closed.
+   *
+   * **Must be stable as of the `record()` call.** It is consulted once at
+   * setup to choose the canvas capture mode, because the mode cannot be
+   * switched mid-session: `false` at that moment leaves `sampling.canvas` in
+   * mutation mode, and a later flip to `true` will mask snapshot pixels but
+   * cannot retroactively move capture onto the maskable FPS path. If the
+   * answer is not known yet at `record()` time, return `true` (fail closed)
+   * or set `sampling.canvas` to a number yourself.
    */
   isConfigured?: () => boolean;
 };

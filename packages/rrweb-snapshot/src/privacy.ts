@@ -245,19 +245,61 @@ export function resolveUnmaskTextSelector(
   }
 }
 
+/**
+ * Split a selector list on its *top-level* commas only. A naive `split(',')`
+ * tears `:is(a,b)` and `[data-x="a,b"]` in half, and rejoining deduplicated
+ * halves would then corrupt them.
+ */
+function splitSelectorList(selector: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let quote: string | null = null;
+  let start = 0;
+  for (let index = 0; index < selector.length; index += 1) {
+    const char = selector[index];
+    if (quote) {
+      if (char === '\\') index += 1;
+      else if (char === quote) quote = null;
+      continue;
+    }
+    if (char === '"' || char === "'") quote = char;
+    else if (char === '(' || char === '[') depth += 1;
+    else if (char === ')' || char === ']') depth -= 1;
+    else if (char === ',' && depth === 0) {
+      parts.push(selector.slice(start, index));
+      start = index + 1;
+    }
+  }
+  parts.push(selector.slice(start));
+  return parts;
+}
+
+/**
+ * Validates each incoming selector as a whole (a list containing one broken
+ * compound is dropped entirely, warning as it goes), then merges the surviving
+ * lists into one deduplicated list.
+ *
+ * Deduplication is what makes this idempotent, and it has to be:
+ * `record()` merges the policy's selectors into the options it hands to
+ * `snapshot()`, which compiles the same policy again and merges a second
+ * time. Without a `Set` every fragment would be repeated on each pass.
+ */
 function joinSelectors(
   selectors: Array<string | null | undefined>,
 ): string | null {
-  const kept: string[] = [];
+  const kept = new Set<string>();
   for (const s of selectors) {
     if (!s) continue;
     if (!validateSelector(s)) {
       console.warn(`[rrweb privacy] dropping invalid selector: ${s}`);
       continue;
     }
-    kept.push(s);
+    for (const part of splitSelectorList(s)) {
+      const trimmed = part.trim();
+      if (trimmed) kept.add(trimmed);
+    }
   }
-  return kept.join(',') || null;
+  return [...kept].join(',') || null;
 }
 
 export function compilePrivacyPolicy(
@@ -425,10 +467,12 @@ function isUnmasked(
  * end of serialization, so no earlier stage needs to know about privacy.
  *
  * Decision order:
- *  1. `isGenerated` -- the serializer wrote this value itself (rr_width,
- *     rr_scrollTop, ...), so it is safe by construction and never masked.
- *     `rr_dataURL` is deliberately NOT flagged generated: it holds real pixels.
- *     Returns early.
+ *  1. `isGenerated` AND a name in `RENDERING_METADATA_ATTRIBUTES` -- the
+ *     serializer wrote this value itself (rr_width, rr_scrollTop, ...), so it
+ *     is safe by construction and never masked. Both gates are required: the
+ *     flag alone would let a single mis-set call site leak a page attribute
+ *     verbatim. `rr_dataURL` and `rr_src` are deliberately off the allowlist
+ *     -- they hold real page pixels and a real page URL. Returns early.
  *  2. `maskAllElementAttributes` -- stars. It is the coarse kill switch and
  *     takes precedence over `maskAttributeFn`, which is then ignored with a
  *     one-time warning. Returns early.
@@ -436,11 +480,13 @@ function isUnmasked(
  *     to stars rather than leaking the raw value. Does NOT return early: this
  *     is a pipeline, not an escape hatch. Its output is the input to (4).
  *  4. the compiled policy, the final authority -- strict drops media sources,
- *     URL attributes are sanitized, `privacy.maskedAttributes` are starred, and
- *     form `value` attributes are starred under strict. Under `legacy` this
- *     block is the identity, so a callback's output survives verbatim; under
- *     balanced/strict the policy applies on top of it and can only narrow what
- *     the callback chose to keep.
+ *     URL attributes are sanitized, `privacy.maskedAttributes` are starred
+ *     unless the element sits inside `privacy.unmaskTextSelector` (the unmask
+ *     escape, which runs *after* the media-drop and URL branches and so can
+ *     never reopen either), and form `value` attributes are starred under
+ *     strict. Under `legacy` this block is the identity, so a callback's
+ *     output survives verbatim; under balanced/strict the policy applies on
+ *     top of it and can only narrow what the callback chose to keep.
  *
  * `style`/`_cssText` are exempt from every branch: masked CSS breaks the
  * replay and reveals nothing.

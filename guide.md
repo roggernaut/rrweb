@@ -315,7 +315,9 @@ ancestor.
 selector (merged with any policy `unmask`/`allow` rule selectors) that stays
 unmasked even under `strict`'s mask-everything default or a `mask` rule. It
 covers text and the preset's masked attributes (`title`, `placeholder`,
-`aria-label`) on elements inside the matched subtree. It cannot unmask input
+`aria-label`) on elements inside the matched subtree -- this option, a policy
+`unmask`/`allow` rule and a recognized vendor unmask class are merged into one
+selector and behave identically. It cannot unmask input
 values or a sanitized URL, and it cannot override a protected input, a
 dropped media source under `strict`, or an `exclude`.
 

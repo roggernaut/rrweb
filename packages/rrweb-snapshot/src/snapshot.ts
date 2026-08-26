@@ -1505,15 +1505,28 @@ function snapshot(
     keepIframeSrcFn = () => false,
     privacyPolicy,
   } = options || {};
-  const privacy = compilePrivacyPolicy(privacyPolicy);
+  let privacy = compilePrivacyPolicy(privacyPolicy);
   const blockSelector = mergeBlockSelectors(legacyBlockSelector, privacy);
   const maskTextSelector = mergeMaskTextSelectors(
     legacyMaskTextSelector,
     privacy,
   );
+  // One unmask selector, honored everywhere. `finalizeAttribute` reads the
+  // *compiled policy's* `unmaskTextSelector`, so the `record()`-level string
+  // option has to be written back onto the policy or it would only ever
+  // affect text masking and silently skip the masked-attribute escape.
+  const mergedUnmaskTextSelector = mergeUnmaskTextSelectors(
+    legacyUnmaskTextSelector,
+    privacy,
+  );
+  if (mergedUnmaskTextSelector !== privacy.unmaskTextSelector)
+    privacy = { ...privacy, unmaskTextSelector: mergedUnmaskTextSelector };
+  // The policy above keeps the *unresolved* selector: `resolveUnmaskTextSelector`
+  // is a presence probe scoped to this document, and the same policy object is
+  // threaded into nested iframe documents, where a match may well exist.
   const unmaskTextSelector = resolveUnmaskTextSelector(
     n,
-    mergeUnmaskTextSelectors(legacyUnmaskTextSelector, privacy),
+    mergedUnmaskTextSelector,
   );
   const maskInputOptions: MaskInputOptions =
     maskAllInputs === true

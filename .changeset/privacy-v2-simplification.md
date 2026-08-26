@@ -56,9 +56,14 @@ Additional breaking/behavior notes:
   removed: no vendor defines them (Sentry's `unmask` default is `[]`). The
   mask and block class lists are unchanged.
 - The preset's masked attributes (`title`, `placeholder`, `aria-label`) now
-  honor the unmask selector: an element inside an unmask subtree keeps them.
-  URL sanitization and `strict`'s media-source dropping are not escapable
-  this way.
+  honor the unmask selector -- whether it came from a policy `unmask`/`allow`
+  rule, a recognized vendor class, or the `record()`-level
+  `unmaskTextSelector` option, which is merged into the compiled policy so all
+  three behave identically on both the snapshot and the mutation path. URL
+  sanitization and `strict`'s media-source dropping are not escapable this
+  way.
+- Merged selector lists are now deduplicated, so the record()/snapshot()
+  double-merge no longer repeats every fragment.
 - The serializer's internal "generated attribute" masking exemption now
   requires the attribute name to be known rendering metadata (`rr_width`,
   `rr_height`, `rr_scrollLeft`, `rr_scrollTop`, `rr_mediaState`,

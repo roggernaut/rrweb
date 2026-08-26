@@ -28,10 +28,8 @@ const PRIVACY_SELECTOR_FRAGMENTS = [
   'ph-mask',
   'ph-no-capture',
   'sentry-mask',
-  'sentry-unmask',
   'sentry-block',
   'data-sentry-mask',
-  'data-sentry-unmask',
 ];
 
 function buildDeepDom() {
