@@ -1,7 +1,11 @@
+/**
+ * @vitest-environment jsdom
+ */
 import { describe, expect, it } from 'vitest';
 import type { CanvasMaskRegion, CanvasMasking } from '@rrweb/types';
 import {
   computeFrameMaskRegions,
+  getCanvasContentBoxSize,
   isCanvasMaskingConfigured,
   SKIP_FRAME,
 } from '../../src/record/observers/canvas/canvas-mask';
@@ -112,5 +116,56 @@ describe('canvas privacy masking', () => {
         maskRegions: () => [],
       }),
     ).toBe(true);
+  });
+});
+
+describe('canvas content-box region scaling', () => {
+  it('uses the content box, not clientWidth, so padding does not skew the scale', () => {
+    const canvasEl = document.createElement('canvas');
+    canvasEl.width = 100;
+    canvasEl.height = 100;
+    canvasEl.style.padding = '20px';
+    document.body.appendChild(canvasEl);
+
+    // jsdom performs no layout, so getBoundingClientRect/clientWidth are
+    // stubbed to reflect what a real browser would report: a 100x100
+    // backing store padded by 20px on every side renders in a 140x140
+    // border box, while clientWidth (border box minus border) is also 140.
+    canvasEl.getBoundingClientRect = () =>
+      ({ width: 140, height: 140 }) as DOMRect;
+    Object.defineProperty(canvasEl, 'clientWidth', { value: 140 });
+    Object.defineProperty(canvasEl, 'clientHeight', { value: 140 });
+
+    const contentBox = getCanvasContentBoxSize(canvasEl);
+    expect(contentBox).toEqual({ width: 100, height: 100 });
+
+    // Regions expressed in content-box CSS pixels must come back unscaled
+    // (scale 1) once the content box is used, even though naively using
+    // clientWidth (140) would have shrunk every coordinate incorrectly.
+    expect(
+      computeFrameMaskRegions(
+        { maskRegions: () => [region] },
+        canvasEl,
+        canvasEl.width,
+        canvasEl.height,
+        contentBox!.width,
+        contentBox!.height,
+      ),
+    ).toEqual([region]);
+
+    document.body.removeChild(canvasEl);
+  });
+
+  it('reports no content box (fail closed) when the content box has zero area', () => {
+    const canvasEl = document.createElement('canvas');
+    canvasEl.width = 100;
+    canvasEl.height = 100;
+    canvasEl.getBoundingClientRect = () =>
+      ({ width: 0, height: 0 }) as DOMRect;
+    document.body.appendChild(canvasEl);
+
+    expect(getCanvasContentBoxSize(canvasEl)).toBeNull();
+
+    document.body.removeChild(canvasEl);
   });
 });

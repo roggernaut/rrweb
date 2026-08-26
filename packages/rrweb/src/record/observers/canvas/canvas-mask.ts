@@ -51,6 +51,59 @@ export function computeFrameMaskRegions(
     });
 }
 
+/**
+ * The canvas backing store maps onto the element's content box (the CSS
+ * width/height it is drawn at), not its border box. `clientWidth` includes
+ * padding, so a padded canvas would otherwise skew the scale factor used to
+ * translate application-provided mask regions into backing-store pixels.
+ *
+ * Returns `null` (never a fallback size) when the content box cannot be
+ * measured or has zero area, so callers fail closed instead of silently
+ * reinterpreting CSS-pixel regions as backing-store pixels.
+ */
+export function getCanvasContentBoxSize(
+  canvas: HTMLCanvasElement,
+): { width: number; height: number } | null {
+  let rect: { width: number; height: number };
+  try {
+    rect = canvas.getBoundingClientRect();
+  } catch {
+    return null;
+  }
+  if (!rect || !Number.isFinite(rect.width) || !Number.isFinite(rect.height))
+    return null;
+
+  let style: CSSStyleDeclaration;
+  try {
+    style = getComputedStyle(canvas);
+  } catch {
+    return null;
+  }
+  if (!style) return null;
+
+  const px = (value: string): number => {
+    const parsed = parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  const width =
+    rect.width -
+    px(style.paddingLeft) -
+    px(style.paddingRight) -
+    px(style.borderLeftWidth) -
+    px(style.borderRightWidth);
+  const height =
+    rect.height -
+    px(style.paddingTop) -
+    px(style.paddingBottom) -
+    px(style.borderTopWidth) -
+    px(style.borderBottomWidth);
+
+  if (!(width > 0) || !(height > 0)) return null;
+
+  return { width, height };
+}
+
 export function isCanvasMaskingConfigured(
   masking: CanvasMasking | undefined,
 ): boolean {

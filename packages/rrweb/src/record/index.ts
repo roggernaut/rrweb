@@ -38,6 +38,9 @@ import { IframeManager } from './iframe-manager';
 import { ShadowDomManager } from './shadow-dom-manager';
 import { CanvasManager } from './observers/canvas/canvas-manager';
 import { isCanvasMaskingConfigured } from './observers/canvas/canvas-mask';
+import { resolveCanvasSampling } from './canvas-sampling';
+
+export { resolveCanvasSampling } from './canvas-sampling';
 import { StylesheetManager } from './stylesheet-manager';
 import ProcessedNodeManager from './processed-node-manager';
 import {
@@ -133,6 +136,18 @@ function record<T = eventWithTime>(
   const canvasMaskingConfigured = canvasMasking
     ? () => isCanvasMaskingConfigured(canvasMasking)
     : undefined;
+  // A canvas can only be masked on the FPS/OffscreenCanvas capture path,
+  // which renders full frames through the masking provider before they
+  // reach the encoding worker. The mutation-mode command stream
+  // (`sampling.canvas === 'all'`) replays raw canvas API calls verbatim and
+  // cannot be masked at all. Whenever canvasMasking is configured at all
+  // (structurally, regardless of any dynamic `isConfigured()` toggle -
+  // sampling mode can't be switched mid-session), force numeric FPS
+  // sampling so the unmasked command stream can never run alongside it.
+  sampling.canvas = resolveCanvasSampling(
+    sampling.canvas,
+    Boolean(canvasMasking),
+  );
 
   registerErrorHandler(errorHandler);
 
