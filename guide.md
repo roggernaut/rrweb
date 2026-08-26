@@ -290,6 +290,13 @@ markup, no extra configuration required:
 value makes no decision and the element inherits from its nearest valid
 ancestor.
 
+> Under `legacy`, `data-privacy="mask"`/`data-privacy="exclude"` are each
+> only recognized once you also supply at least one selector-based `mask`/
+> `exclude` rule (of that same action) in `rules`; `data-privacy="allow"` is
+> never recognized under `legacy`, with or without rules. This asymmetry is a
+> corner of the current implementation, not something to design around --
+> switch to `balanced`/`strict` for unconditional `data-privacy` support.
+
 `unmaskTextSelector` is a `record()`-level escape hatch for text: a plain CSS
 selector (merged with any policy `unmask`/`allow` rule selectors) that stays
 unmasked even under `strict`'s mask-everything default or a `mask` rule. It
@@ -307,10 +314,15 @@ record({
 Heuristic PII detection (email, phone, Luhn-valid payment card, SSN-like,
 IPv4) is never implied by a preset. Opt in with
 `@rrweb/rrweb-plugin-privacy-detectors` (or its `applyPrivacyDetectors`
-helper), which masks the whole page text node when a detector matches --
-there is no character-range masking and no support for custom detector
-patterns. Detection currently only scans page text nodes at snapshot time; it
-does not scan input values, attribute values, or later live text mutations.
+helper), which masks the whole value when a detector matches -- there is no
+character-range masking and no support for custom detector patterns.
+Detection scans page text nodes and form input values, both at
+snapshot time and on later live updates (text mutations and input events).
+It only applies to values that would otherwise be recorded unmasked -- text
+or inputs already masked by a preset, selector, or legacy option keep that
+masking (including a trusted legacy `maskTextFn`/`maskInputFn` output).
+Attribute values are not scanned; use the presets' masked-attribute defaults
+or policy rules for those.
 
 ```js
 import { getRecordPrivacyDetectorsPlugin } from '@rrweb/rrweb-plugin-privacy-detectors';
