@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi } from 'vitest';
-import { compilePrivacyPolicy, validateSelector, mergeBlockSelectors } from '../src/privacy';
+import { compilePrivacyPolicy, validateSelector, mergeBlockSelectors, detectSensitiveValue, buildDetectors } from '../src/privacy';
 
 describe('compilePrivacyPolicy v2', () => {
   it('legacy preset compiles to inert options', () => {
@@ -83,5 +83,45 @@ describe('mergeBlockSelectors', () => {
     const c = compilePrivacyPolicy({ version: 1, preset: 'balanced' });
     expect(mergeBlockSelectors('.legacy', c)).toContain('.legacy');
     expect(mergeBlockSelectors('.legacy', c)).toContain('[data-privacy="exclude"]');
+  });
+});
+
+describe('detectSensitiveValue', () => {
+  const withDetectors = compilePrivacyPolicy({
+    version: 1,
+    preset: 'legacy',
+    detectors: { email: true, phone: true, paymentCard: true, ssn: true, ipAddress: true },
+  });
+
+  it('detects a Luhn-valid card adjacent to other digits (review regression)', () => {
+    expect(detectSensitiveValue('call 5551234567 4111 1111 1111 1111 now', withDetectors)).toBe(true);
+  });
+
+  it('detects email, ssn, ip; passes clean prose', () => {
+    expect(detectSensitiveValue('contact bob@example.com', withDetectors)).toBe(true);
+    expect(detectSensitiveValue('ssn 123-45-6789', withDetectors)).toBe(true);
+    expect(detectSensitiveValue('host 192.168.0.1', withDetectors)).toBe(true);
+    expect(detectSensitiveValue('the quick brown fox', withDetectors)).toBe(false);
+  });
+
+  it('rejects UUIDs and version strings as cards/ssns (false-positive guard)', () => {
+    expect(detectSensitiveValue('id 550e8400-e29b-41d4-a716-446655440000', withDetectors)).toBe(false);
+    expect(detectSensitiveValue('v1.2.3.4000 build', withDetectors)).toBe(false);
+  });
+
+  it('detects regardless of preset (works under legacy)', () => {
+    expect(withDetectors.preset).toBe('legacy');
+    expect(detectSensitiveValue('4111 1111 1111 1111', withDetectors)).toBe(true);
+  });
+
+  it('no detectors configured -> never detects', () => {
+    const none = compilePrivacyPolicy({ version: 1, preset: 'strict' });
+    expect(detectSensitiveValue('bob@example.com', none)).toBe(false);
+  });
+
+  it('per-detector toggles work', () => {
+    const emailOff = buildDetectors({ email: false, phone: false, paymentCard: true, ssn: false, ipAddress: false });
+    expect(emailOff.some((d) => d.name === 'email')).toBe(false);
+    expect(emailOff.some((d) => d.name === 'payment-card')).toBe(true);
   });
 });

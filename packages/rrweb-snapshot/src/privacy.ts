@@ -1,4 +1,5 @@
 import type {
+  CompiledDetector,
   CompiledPrivacyPolicy,
   PrivacyDetectorOptions,
   PrivacyPolicy,
@@ -36,6 +37,15 @@ const DEFAULT_BLOCKED_QUERY_PARAMETERS = [
   'token',
 ];
 
+// Detector patterns (from posthog-js autocapture-utils.ts)
+const CARD_CANDIDATE = /(?:^|[^0-9-])((?:\d[ -]?){12,18}\d)(?:$|[^0-9-])/;
+const SSN_PATTERN = /\b(?!000|666|9\d{2})\d{3}-?(?!00)\d{2}-?(?!0000)\d{4}\b/;
+const EMAIL_PATTERN =
+  /[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[a-zA-Z0-9-]{1,63}(?:\.[a-zA-Z0-9-]{1,63})+/;
+const PHONE_PATTERN = /(?:^|\s)\+?\d[\d().\-]{7,18}\d(?:$|\s)/;
+const IPV4_PATTERN = /\b(?:\d{1,3}\.){3}\d{1,3}\b/;
+const MAX_SCAN_LENGTH = 10_000;
+
 export const DEFAULT_PRIVACY_DETECTORS: Required<PrivacyDetectorOptions> = {
   email: true,
   phone: true,
@@ -51,9 +61,9 @@ export const DEFAULT_PRIVACY_DETECTORS: Required<PrivacyDetectorOptions> = {
  */
 export function applyPrivacyDetectors(
   policy: PrivacyPolicy | undefined,
-  options?: Partial<typeof DEFAULT_PRIVACY_DETECTORS>,
+  options?: PrivacyDetectorOptions,
 ): PrivacyPolicy {
-  const base: PrivacyPolicy = policy || { version: 1, preset: 'balanced' };
+  const base: PrivacyPolicy = policy || { version: 1, preset: 'legacy' };
   return {
     ...base,
     detectors: {
@@ -62,6 +72,48 @@ export function applyPrivacyDetectors(
       ...base.detectors,
     },
   };
+}
+
+export function buildDetectors(options: PrivacyDetectorOptions | undefined): CompiledDetector[] {
+  const opts = options || {};
+  const detectors: CompiledDetector[] = [];
+  if (opts.email)
+    detectors.push({ name: 'email', test: (v) => EMAIL_PATTERN.test(v) });
+  if (opts.phone)
+    detectors.push({
+      name: 'phone',
+      test: (v) => {
+        const m = PHONE_PATTERN.exec(v);
+        if (!m) return false;
+        const digits = m[0].replace(/\D/g, '');
+        return digits.length >= 10 && digits.length <= 15;
+      },
+    });
+  if (opts.paymentCard)
+    detectors.push({
+      name: 'payment-card',
+      test: (v) => {
+        const m = CARD_CANDIDATE.exec(v);
+        return !!m && passesLuhn(m[1]);
+      },
+    });
+  if (opts.ssn) detectors.push({ name: 'ssn', test: (v) => SSN_PATTERN.test(v) });
+  if (opts.ipAddress)
+    detectors.push({
+      name: 'ip-address',
+      test: (v) => {
+        const m = IPV4_PATTERN.exec(v);
+        return !!m && m[0].split('.').every((p) => Number(p) <= 255);
+      },
+    });
+  return detectors;
+}
+
+export function detectSensitiveValue(value: string, privacy: CompiledPrivacyPolicy): boolean {
+  if (!privacy.detectors.length || !value) return false;
+  // Fail closed on absurd inputs instead of scanning them.
+  if (value.length > MAX_SCAN_LENGTH) return true;
+  return privacy.detectors.some((d) => d.test(value));
 }
 
 export function validateSelector(selector: string): boolean {
@@ -136,7 +188,7 @@ export function compilePrivacyPolicy(policy?: PrivacyPolicy): CompiledPrivacyPol
       ? new Set(effective.url.allowedQueryParameters.map((n) => n.toLowerCase()))
       : null,
     removeHash: effective.url?.removeHash !== false,
-    detectors: [], // populated by applyPrivacyDetectors (Task 2)
+    detectors: buildDetectors(effective.detectors),
   };
 }
 
