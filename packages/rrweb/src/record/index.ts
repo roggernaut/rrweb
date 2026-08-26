@@ -3,6 +3,8 @@ import {
   slimDOMDefaults,
   type MaskInputOptions,
   createMirror,
+  compilePrivacyPolicy,
+  type CompiledPrivacyPolicy,
   resolvePrivacyContext,
 } from 'rrweb-snapshot';
 import { initObservers, mutationBuffers } from './observer';
@@ -114,8 +116,29 @@ function record<T = eventWithTime>(
     privacyPolicy,
   } = options;
 
-  const { privacy, blockSelector, maskTextSelector } = resolvePrivacyContext({
+  const portablePrivacyPolicy = (plugins || []).reduce(
+    (policy, plugin) =>
+      plugin.applyPrivacyPolicy
+        ? (plugin.applyPrivacyPolicy(policy) as typeof privacyPolicy)
+        : policy,
     privacyPolicy,
+  );
+  let compiledPrivacy: CompiledPrivacyPolicy;
+  try {
+    compiledPrivacy = compilePrivacyPolicy(portablePrivacyPolicy);
+  } catch (error) {
+    if (portablePrivacyPolicy !== privacyPolicy) {
+      console.error(
+        '[rrweb] plugin-transformed privacy policy failed to compile; using the user policy',
+        error,
+      );
+      compiledPrivacy = compilePrivacyPolicy(privacyPolicy);
+    } else {
+      throw error;
+    }
+  }
+  const { privacy, blockSelector, maskTextSelector } = resolvePrivacyContext({
+    privacy: compiledPrivacy,
     blockSelector: manualBlockSelector,
     maskTextSelector: manualMaskTextSelector,
     unmaskTextSelector: manualUnmaskTextSelector,

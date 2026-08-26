@@ -617,6 +617,7 @@ export default class MutationBuffer {
                     true, // checkAncestors
                   ),
                   maskTextFn: this.maskTextFn,
+                  privacy: this.privacy,
                   exemptScript: false,
                 })
               : value,

@@ -25,6 +25,7 @@ import './replay/styles/style.css';
 export type { recordOptions, ReplayPlugin } from './types';
 export type {
   PrivacyAction,
+  PrivacyDetectorOptions,
   PrivacyPolicy,
   PrivacyPreset,
   PrivacyRule,
