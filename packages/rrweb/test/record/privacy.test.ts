@@ -83,3 +83,114 @@ describe('record() and a <form> whose tagName is shadowed', () => {
     expect(mutationEmitted).toBe(true);
   });
 });
+
+describe('record() privacy detectors on live updates', () => {
+  const withEmailDetector = {
+    version: 1,
+    preset: 'legacy',
+    detectors: { email: true },
+  } as const;
+
+  it('masks a characterData mutation whose new text trips a detector', async () => {
+    document.body.innerHTML = '<p>hello</p>';
+    const textNode = document.querySelector('p')!.firstChild as Text;
+
+    const events: eventWithTime[] = [];
+    const stop = record({
+      emit: (event) => events.push(event),
+      privacyPolicy: withEmailDetector,
+    });
+    try {
+      textNode.data = 'contact bob@example.com';
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    } finally {
+      stop?.();
+    }
+
+    const textMutations = events.flatMap((event) =>
+      event.type === EventType.IncrementalSnapshot &&
+      event.data.source === IncrementalSource.Mutation
+        ? event.data.texts
+        : [],
+    );
+    expect(textMutations.length).toBeGreaterThan(0);
+    expect(JSON.stringify(textMutations)).not.toContain('bob@example.com');
+  });
+
+  it('leaves a characterData mutation with clean text untouched under legacy', async () => {
+    document.body.innerHTML = '<p>hello</p>';
+    const textNode = document.querySelector('p')!.firstChild as Text;
+
+    const events: eventWithTime[] = [];
+    const stop = record({
+      emit: (event) => events.push(event),
+      privacyPolicy: withEmailDetector,
+    });
+    try {
+      textNode.data = 'still plain text';
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    } finally {
+      stop?.();
+    }
+
+    const textMutations = events.flatMap((event) =>
+      event.type === EventType.IncrementalSnapshot &&
+      event.data.source === IncrementalSource.Mutation
+        ? event.data.texts
+        : [],
+    );
+    expect(JSON.stringify(textMutations)).toContain('still plain text');
+  });
+
+  it('never scans <style> text mutations, even with detectors on', async () => {
+    document.body.innerHTML = '<style>body{color:red}</style>';
+    const textNode = document.querySelector('style')!.firstChild as Text;
+
+    const events: eventWithTime[] = [];
+    const stop = record({
+      emit: (event) => events.push(event),
+      privacyPolicy: withEmailDetector,
+    });
+    try {
+      // an email-shaped token inside CSS content must never star the sheet
+      textNode.data = '/* bob@example.com */ body{color:blue}';
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    } finally {
+      stop?.();
+    }
+
+    const textMutations = events.flatMap((event) =>
+      event.type === EventType.IncrementalSnapshot &&
+      event.data.source === IncrementalSource.Mutation
+        ? event.data.texts
+        : [],
+    );
+    expect(JSON.stringify(textMutations)).toContain('body{color:blue}');
+  });
+
+  it('masks a live input event whose value trips a detector', async () => {
+    document.body.innerHTML = '<input type="text">';
+    const input = document.querySelector('input')!;
+
+    const events: eventWithTime[] = [];
+    const stop = record({
+      emit: (event) => events.push(event),
+      privacyPolicy: withEmailDetector,
+    });
+    try {
+      input.value = 'bob@example.com';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    } finally {
+      stop?.();
+    }
+
+    const inputEvents = events.filter(
+      (event) =>
+        event.type === EventType.IncrementalSnapshot &&
+        event.data.source === IncrementalSource.Input,
+    );
+    expect(inputEvents.length).toBeGreaterThan(0);
+    expect(JSON.stringify(inputEvents)).not.toContain('bob@example.com');
+  });
+});

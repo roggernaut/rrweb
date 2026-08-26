@@ -1,10 +1,11 @@
 # @rrweb/rrweb-plugin-privacy-detectors
 
 Opt-in Highlight-style heuristic PII matching for rrweb Privacy at Capture:
-whole-value masking of page text nodes at snapshot time when a detector
+whole-value masking of page text nodes and form input values when a detector
 matches (email, phone, Luhn-valid payment card, SSN-like, IPv4). Detection
-does not currently scan input values, attribute values, or later live text
-mutations.
+covers the full snapshot and later live updates (text mutations and input
+events). Attribute values are not scanned -- attribute masking is handled by
+the privacy presets and policy rules instead.
 
 No privacy preset implies detection on its own. `balanced` and `strict` mask
 form values and honor `data-privacy` / policy rules, but neither one scans
@@ -42,8 +43,12 @@ record({
 If `privacyPolicy` is omitted, the plugin keeps the `legacy` preset (existing
 `maskTextFn` / `maskInputOptions` behavior) -- and still detects: detection is
 independent of preset, so a bare `record({ plugins: [getRecordPrivacyDetectorsPlugin()] })`
-with no `privacyPolicy` at all masks any page text node a detector matches at
-snapshot time, on top of whatever `maskTextFn` / `maskInputOptions` already do.
+with no `privacyPolicy` at all masks any page text node or input value a
+detector matches, at snapshot time and on live updates, on top of whatever
+`maskTextFn` / `maskInputOptions` already do. Detectors only inspect values
+that would otherwise be recorded unmasked: where a legacy option already
+masks (e.g. a trusted `maskTextFn`/`maskInputFn` composition), that output
+is kept as-is.
 
 For snapshot-only use (no recorder):
 

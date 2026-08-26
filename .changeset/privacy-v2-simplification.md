@@ -20,9 +20,11 @@ Additional breaking/behavior notes:
 - `<style>` text inside masked subtrees is no longer masked on any path,
   including `characterData` mutations -- this is deliberate: CSS is never
   masked.
-- Heuristic detection now masks whole text nodes at snapshot time -- there is
-  no more character-range `'xxxx'`-shape masking. (It does not scan input
-  values, attribute values, or later live text mutations.)
+- Heuristic detection now masks whole values -- there is no more
+  character-range `'xxxx'`-shape masking. It scans page text nodes and form
+  input values, both at snapshot time and on live updates (`characterData`
+  mutations and input events), whenever the value would otherwise be recorded
+  unmasked. Attribute values are not scanned.
 - `maskInputFn`/`maskAttributeFn` outputs are constrained under
   `balanced`/`strict`: `maskInputFn` output is star-replaced (the callback
   controls length, never content), and `maskAttributeFn` output is

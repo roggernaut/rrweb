@@ -29,6 +29,7 @@ import type {
   elementNode,
 } from '@rrweb/types';
 import dom from '@rrweb/utils';
+import { detectSensitiveValue } from './privacy';
 
 export function isElement(n: Node): n is Element {
   return n.nodeType === n.ELEMENT_NODE;
@@ -449,7 +450,15 @@ export function maskInput({
   );
   const presetWantsMask = !!privacy && privacy.maskAllInputs;
 
-  if (!legacyWantsMask && !presetWantsMask) return value;
+  if (!legacyWantsMask && !presetWantsMask) {
+    // Detectors only get a say on values that would otherwise leave unmasked;
+    // a trusted legacy maskInputFn composition stays untouched, mirroring the
+    // text-node hook in serializeTextNode.
+    if (privacy && detectSensitiveValue(value, privacy)) {
+      return '*'.repeat(value.length);
+    }
+    return value;
+  }
 
   let masked = maskInputFn ? maskInputFn(value, element) : '*'.repeat(value.length);
   if (presetWantsMask && maskInputFn) {

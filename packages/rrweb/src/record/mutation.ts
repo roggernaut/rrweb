@@ -6,6 +6,7 @@ import {
   isShadowRoot,
   needMaskingText,
   maskInput,
+  detectSensitiveValue,
   finalizeAttribute,
   FORM_VALUE_TAGS,
   Mirror,
@@ -617,23 +618,39 @@ export default class MutationBuffer {
           // `untaintedTagName` defeats a shadowed `tagName` (e.g. a form
           // control named "tagName") instead of failing closed to "not style".
           const parent = dom.parentNode(m.target);
-          const isStyle =
-            dom.untaintedTagName(parent as Element | null) === 'STYLE';
+          const parentTagName = dom.untaintedTagName(
+            parent as Element | null,
+          );
+          const isStyle = parentTagName === 'STYLE';
+          const isScript = parentTagName === 'SCRIPT';
+          let emittedValue = value;
+          if (
+            !isStyle &&
+            value &&
+            needMaskingText(
+              m.target,
+              this.maskTextClass,
+              this.maskTextSelector,
+              this.unmaskTextSelector,
+              true, // checkAncestors
+            )
+          ) {
+            emittedValue = this.maskTextFn
+              ? this.maskTextFn(value, closestElementOfNode(m.target))
+              : value.replace(/[\S]/g, '*');
+          } else if (
+            !isStyle &&
+            !isScript &&
+            value &&
+            this.privacy &&
+            detectSensitiveValue(value, this.privacy)
+          ) {
+            // Detectors mask the whole updated text node, same as the
+            // serializeTextNode hook does at snapshot time.
+            emittedValue = value.replace(/[\S]/g, '*');
+          }
           this.texts.push({
-            value:
-              !isStyle &&
-              needMaskingText(
-                m.target,
-                this.maskTextClass,
-                this.maskTextSelector,
-                this.unmaskTextSelector,
-                true, // checkAncestors
-              ) &&
-              value
-                ? this.maskTextFn
-                  ? this.maskTextFn(value, closestElementOfNode(m.target))
-                  : value.replace(/[\S]/g, '*')
-                : value,
+            value: emittedValue,
             node: m.target,
           });
         }

@@ -85,6 +85,20 @@ describe('text masking v2', () => {
     expect(out).not.toContain('4111 1111 1111 1111');
   });
 
+  it('detectors mask an input value at snapshot time under legacy', () => {
+    const withDetectors: PrivacyPolicy = {
+      version: 1,
+      preset: 'legacy',
+      detectors: { email: true },
+    };
+    const out = serialize(
+      '<input type="text" value="bob@example.com">',
+      withDetectors,
+    );
+    expect(out).not.toContain('bob@example.com');
+    expect(out).toContain('*'.repeat('bob@example.com'.length));
+  });
+
   it('keeps masking inherited from an ancestor outside the shadow root', () => {
     withShadowRoot(
       '<div class="rr-mask"><div id="host"></div></div>',
@@ -181,6 +195,55 @@ describe('maskInput v2', () => {
         privacy: legacy,
       }),
     ).toBe('plain');
+  });
+  it('detectors mask the whole input value when nothing else would', () => {
+    const withDetectors = compilePrivacyPolicy({
+      version: 1,
+      preset: 'legacy',
+      detectors: { email: true },
+    });
+    expect(
+      maskInput({
+        element: input(),
+        tagName: 'input',
+        type: 'text',
+        value: 'bob@example.com',
+        maskInputOptions: {},
+        privacy: withDetectors,
+      }),
+    ).toBe('*'.repeat('bob@example.com'.length));
+    // a clean value passes through untouched
+    expect(
+      maskInput({
+        element: input(),
+        tagName: 'input',
+        type: 'text',
+        value: 'plain',
+        maskInputOptions: {},
+        privacy: withDetectors,
+      }),
+    ).toBe('plain');
+  });
+  it('detectors do not override a trusted legacy maskInputFn composition', () => {
+    // Mirrors the text-node hook: detectors only run on values that would
+    // otherwise leave unmasked. When legacy options already mask, the fn's
+    // output is trusted exactly as before the plugin loaded.
+    const withDetectors = compilePrivacyPolicy({
+      version: 1,
+      preset: 'legacy',
+      detectors: { email: true },
+    });
+    expect(
+      maskInput({
+        element: input(),
+        tagName: 'input',
+        type: 'text',
+        value: 'bob@example.com',
+        maskInputOptions: { text: true },
+        maskInputFn: () => '[redacted]',
+        privacy: withDetectors,
+      }),
+    ).toBe('[redacted]');
   });
   it('protected inputs always mask, even legacy with no options', () => {
     expect(
