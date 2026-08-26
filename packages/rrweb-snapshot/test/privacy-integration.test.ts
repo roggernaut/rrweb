@@ -191,6 +191,58 @@ describe('text masking v2', () => {
     expect(out).not.toContain('hidden');
   });
 
+  it('detectors mask the whole text node under manual when configured', () => {
+    const withDetectors: PrivacyPolicy = {
+      version: 1,
+      preset: 'manual',
+      detectors: { paymentCard: true, phone: true },
+    };
+    const out = serialize(
+      '<p>call 5551234567 4111 1111 1111 1111 now</p>',
+      withDetectors,
+    );
+    expect(out).not.toContain('4111 1111 1111 1111');
+  });
+
+  it('detectors occlude every input value at snapshot time, clean or not', () => {
+    const withDetectors: PrivacyPolicy = {
+      version: 1,
+      preset: 'manual',
+      detectors: { email: true },
+    };
+    const out = serialize(
+      '<input type="text" value="bob@example.com">' +
+        '<input type="text" value="Visible Name">',
+      withDetectors,
+    );
+    expect(out).not.toContain('bob@example.com');
+    expect(out).toContain('*'.repeat('bob@example.com'.length));
+    // The clean value is occluded too: input values are never scanned, so
+    // "no detector matched" is not a reason to record one.
+    expect(out).not.toContain('Visible Name');
+    expect(out).toContain('*'.repeat('Visible Name'.length));
+  });
+
+  it('an unmask rule cannot reveal an input value while detectors are on', () => {
+    const withDetectors: PrivacyPolicy = {
+      version: 1,
+      preset: 'manual',
+      detectors: { email: true },
+      rules: [
+        {
+          target: { type: 'selector', selector: '.rr-unmask' },
+          action: 'unmask',
+        },
+      ],
+    };
+    const out = serialize(
+      '<input class="rr-unmask" type="text" value="Visible Name">',
+      withDetectors,
+    );
+    expect(out).not.toContain('Visible Name');
+    expect(out).toContain('*'.repeat('Visible Name'.length));
+  });
+
   it('keeps masking inherited from an ancestor outside the shadow root', () => {
     withShadowRoot(
       '<div class="rr-mask"><div id="host"></div></div>',
@@ -227,7 +279,7 @@ describe('text masking v2', () => {
     expect(out).not.toContain('secret');
   });
 
-  it('minimal leaves text untouched', () => {
+  it('minimal without detectors leaves text untouched', () => {
     expect(serialize('<p>bob@example.com</p>', undefined)).toContain(
       'bob@example.com',
     );
@@ -413,6 +465,79 @@ describe('maskInput v2', () => {
         privacy: minimal,
       }),
     ).toBe('plain');
+  });
+  it('detectors occlude every input value to length, matched or not', () => {
+    const withDetectors = compilePrivacyPolicy({
+      version: 1,
+      preset: 'minimal',
+      detectors: { email: true },
+    });
+    expect(withDetectors.maskAllInputs).toBe(true);
+    expect(
+      maskInput({
+        element: input(),
+        tagName: 'input',
+        type: 'text',
+        value: 'bob@example.com',
+        maskInputOptions: {},
+        privacy: withDetectors,
+      }),
+    ).toBe('*'.repeat('bob@example.com'.length));
+    // A value no detector matches is occluded just the same: input values are
+    // never scanned, so a clean scan is never the reason one gets recorded.
+    expect(
+      maskInput({
+        element: input(),
+        tagName: 'input',
+        type: 'text',
+        value: 'plain',
+        maskInputOptions: {},
+        privacy: withDetectors,
+      }),
+    ).toBe('*****');
+  });
+  it('every keystroke prefix is occluded at its own length', () => {
+    // The leak this replaced: a value scanned per input event records every
+    // prefix shorter than the first Luhn-valid length verbatim.
+    const withDetectors = compilePrivacyPolicy({
+      version: 1,
+      preset: 'minimal',
+      detectors: { paymentCard: true },
+    });
+    const card = '4111111111111111';
+    for (let i = 1; i <= card.length; i++) {
+      expect(
+        maskInput({
+          element: input(),
+          tagName: 'input',
+          type: 'text',
+          value: card.slice(0, i),
+          maskInputOptions: {},
+          privacy: withDetectors,
+        }),
+      ).toBe('*'.repeat(i));
+    }
+  });
+  it('a maskInputFn controls length only while detectors are on', () => {
+    // Under a bare minimal policy the fn's output is trusted verbatim; with
+    // detectors active the policy forces the balanced/strict posture, so the
+    // fn keeps its say over length and loses its say over content.
+    const withDetectors = compilePrivacyPolicy({
+      version: 1,
+      preset: 'minimal',
+      detectors: { email: true },
+    });
+    expect(
+      maskInput({
+        element: input(),
+        tagName: 'input',
+        type: 'text',
+        value: 'bob@example.com',
+        maskInputOptions: { text: true },
+        maskInputFn: () => '[redacted]',
+        privacy: withDetectors,
+      }),
+    ).toBe('*'.repeat('[redacted]'.length));
   });
   it('protected inputs always mask, even minimal with no options', () => {
     expect(
@@ -1300,6 +1425,19 @@ describe('<option selected> follows the select value decision', () => {
 
   it('strict does not record which option is selected', () => {
     const out = serialize(OPTIONS, { version: 1, preset: 'strict' });
+    expect(out).not.toContain('"selected"');
+  });
+
+  /**
+   * Detectors force `maskAllInputs` whatever the preset, so the flag has to
+   * follow even on a `minimal` base.
+   */
+  it('an active detector suppresses it even under minimal', () => {
+    const out = serialize(OPTIONS, {
+      version: 1,
+      preset: 'minimal',
+      detectors: { email: true },
+    });
     expect(out).not.toContain('"selected"');
   });
 

@@ -261,8 +261,8 @@ of preset or configuration.
 Masking an input value also suppresses the `selected` flag on the
 `<option>` elements of a `<select>`: which option is selected discloses the
 select's value just as the value itself does, so both follow one decision.
-This applies under `balanced`/`strict` and (as before) under
-`maskAllInputs` or `maskInputOptions.select`.
+This applies under `balanced`/`strict`, whenever a heuristic detector is
+active, and (as before) under `maskAllInputs` or `maskInputOptions.select`.
 
 CSS is never masked, on any preset or code path: `style`/`_cssText`
 attributes and `<style>` element text are exempt from every masking branch,
@@ -531,6 +531,59 @@ record({
 });
 ```
 
+##### Heuristic PII detectors
+
+Heuristic PII detection (email, phone, Luhn-valid payment card, SSN-like,
+IPv4) is never implied by a preset. Opt in with
+`@rrweb/rrweb-plugin-privacy-detectors` (or its `applyPrivacyDetectors`
+helper), which masks the whole text node when a detector matches -- there is
+no character-range masking and no support for custom detector patterns.
+Detection scans **page text only**, at snapshot time and on later live text
+mutations. It only applies to text that would otherwise be recorded unmasked
+-- text already masked by a preset, selector, or manual option keeps that
+masking (including a trusted manual `maskTextFn` output). Attribute values
+are not scanned; use the presets' masked-attribute defaults or policy rules
+for those.
+
+Input values are never scanned. Instead, **while detectors are active every
+input value is occluded to its length** (`'*'.repeat(value.length)`),
+whatever the preset -- the plugin's policy compiles to `maskAllInputs: true`
+even on a `manual` base, and no unmask escape reopens it: neither
+`unmaskTextSelector`, nor a policy `unmask` rule, nor `.rr-unmask`
+reveals an input value. Scanning one would be worse than useless: a value is
+re-examined on every input event, so a card number is recorded verbatim in
+every prefix shorter than the first Luhn-valid length, and a value that
+scans clean still discloses every kind of PII the fixed pattern set does not
+model (passport numbers, non-US phone formats, dates of birth, account
+numbers, free text). Page text is different in kind -- already rendered, not
+accumulated a character at a time -- which is why scanning still applies
+there.
+
+```js
+import { getRecordPrivacyDetectorsPlugin } from '@rrweb/rrweb-plugin-privacy-detectors';
+
+record({
+  emit(event) {
+    // store event
+  },
+  plugins: [getRecordPrivacyDetectorsPlugin()],
+});
+```
+
+Once loaded, text detection runs independently of the active preset --
+including `manual` -- on top of whatever masking that preset already applies,
+and input occlusion is unconditional.
+
+> **Experimental.** Unlike the rest of Privacy at Capture, whole-value
+> heuristic detection on live text mutations has no production mileage in a
+> shipped session-replay recorder. Two limitations are known and unfixed: a
+> plugin whose policy transform fails to compile silently falls back to your
+> own, less restrictive policy with only a `console.error` (which also drops
+> the forced input occlusion); and any text over 10,000 characters is masked
+> wholesale without being scanned. See the plugin README for details. Treat
+> detectors as a backstop, not as the control protecting a field you already
+> know is sensitive.
+
 ##### Attribute and input masking callbacks
 
 For unusual attribute-bearing applications, `maskAllElementAttributes` is the
@@ -546,8 +599,9 @@ and can only
 narrow what the callback chose to keep, never restore something the policy
 would otherwise mask. `style`/`_cssText` are exempt from all of this.
 Likewise, under `minimal`, `maskInputFn`'s return value is trusted verbatim;
-under `balanced`/`strict`, `maskInputFn` output is star-replaced -- the
-callback controls length, never content. Every callback fails closed the
+under `balanced`/`strict` -- or with the detectors plugin loaded, which forces
+the same posture -- `maskInputFn` output is star-replaced: the callback
+controls length, never content. Every callback fails closed the
 same way: a `maskInputFn` or `maskTextFn` that throws, or returns anything
 other than a string, yields stars for the raw value instead of aborting the
 snapshot or recording the value. Protected inputs (see above) never reach

@@ -7,6 +7,8 @@ import {
   validateSelector,
   mergeSelectors,
   resolvePrivacyContext,
+  detectSensitiveValue,
+  buildDetectors,
   splitSelectorList,
   resolveTextValue,
   isEventIgnored,
@@ -48,6 +50,34 @@ describe('compilePrivacyPolicy v2', () => {
     expect(c.maskAllInputs).toBe(false);
     expect([...c.maskedAttributes]).toEqual([]);
     expect(c.attributePolicyInert).toBe(true);
+    expect(c.detectors).toEqual([]);
+  });
+  it('any active detector forces maskAllInputs, even on a manual base', () => {
+    const c = compilePrivacyPolicy({
+      version: 1,
+      preset: 'manual',
+      detectors: { email: true },
+    });
+    expect(c.preset).toBe('manual');
+    expect(c.maskAllInputs).toBe(true);
+    // ...and nothing else about the manual preset moves.
+    expect(c.maskTextSelector).toBeNull();
+    expect([...c.maskedAttributes]).toEqual([]);
+  });
+  it('a detectors block with every flag off leaves the preset alone', () => {
+    const c = compilePrivacyPolicy({
+      version: 1,
+      preset: 'manual',
+      detectors: {
+        email: false,
+        phone: false,
+        paymentCard: false,
+        ssn: false,
+        ipAddress: false,
+      },
+    });
+    expect(c.detectors).toEqual([]);
+    expect(c.maskAllInputs).toBe(false);
   });
   it('balanced masks inputs and attributes but not text', () => {
     const c = compilePrivacyPolicy({ version: 1, preset: 'balanced' });
@@ -1187,6 +1217,100 @@ describe('merge helpers validate the record()-level selector', () => {
     expect(warn).toHaveBeenCalled();
   });
 });
+
+describe('detectSensitiveValue', () => {
+  const withDetectors = compilePrivacyPolicy({
+    version: 1,
+    preset: 'manual',
+    detectors: {
+      email: true,
+      phone: true,
+      paymentCard: true,
+      ssn: true,
+      ipAddress: true,
+    },
+  });
+
+  it('detects a Luhn-valid card adjacent to other digits (review regression)', () => {
+    expect(
+      detectSensitiveValue(
+        'call 5551234567 4111 1111 1111 1111 now',
+        withDetectors,
+      ),
+    ).toBe(true);
+  });
+
+  it('detects email, ssn, ip; passes clean prose', () => {
+    expect(detectSensitiveValue('contact bob@example.com', withDetectors)).toBe(
+      true,
+    );
+    expect(detectSensitiveValue('ssn 123-45-6789', withDetectors)).toBe(true);
+    expect(detectSensitiveValue('host 192.168.0.1', withDetectors)).toBe(true);
+    expect(detectSensitiveValue('the quick brown fox', withDetectors)).toBe(
+      false,
+    );
+  });
+
+  it('rejects UUIDs and version strings as cards/ssns (false-positive guard)', () => {
+    expect(
+      detectSensitiveValue(
+        'id 550e8400-e29b-41d4-a716-446655440000',
+        withDetectors,
+      ),
+    ).toBe(false);
+    expect(detectSensitiveValue('v1.2.3.4000 build', withDetectors)).toBe(
+      false,
+    );
+  });
+
+  it('detects regardless of preset (works under manual)', () => {
+    expect(withDetectors.preset).toBe('manual');
+    expect(detectSensitiveValue('4111 1111 1111 1111', withDetectors)).toBe(
+      true,
+    );
+  });
+
+  it('no detectors configured -> never detects', () => {
+    const none = compilePrivacyPolicy({ version: 1, preset: 'strict' });
+    expect(detectSensitiveValue('bob@example.com', none)).toBe(false);
+  });
+
+  it('fails closed on absurdly long input instead of scanning it', () => {
+    const clean = 'a'.repeat(10_001);
+    expect(detectSensitiveValue(clean, withDetectors)).toBe(true);
+  });
+
+  it('per-detector toggles work', () => {
+    const emailOff = buildDetectors({
+      email: false,
+      phone: false,
+      paymentCard: true,
+      ssn: false,
+      ipAddress: false,
+    });
+    expect(emailOff.some((d) => d.name === 'email')).toBe(false);
+    expect(emailOff.some((d) => d.name === 'payment-card')).toBe(true);
+  });
+
+  it('detects spaced phone format (fix regression)', () => {
+    expect(detectSensitiveValue('call 555 123 4567 now', withDetectors)).toBe(
+      true,
+    );
+  });
+
+  it('detects dashed phone format (fix regression)', () => {
+    expect(detectSensitiveValue('555-123-4567', withDetectors)).toBe(true);
+  });
+
+  it('detects parenthesized area code format (fix regression)', () => {
+    expect(detectSensitiveValue('(555) 123-4567', withDetectors)).toBe(true);
+  });
+
+  it('detects parenthesized area code with country code (fix regression)', () => {
+    expect(detectSensitiveValue('+1 (555) 123-4567', withDetectors)).toBe(true);
+  });
+});
+
 /**
  * `needMaskingText` is exported from the package root and its third parameter
  * changed shape (raw selector string -> pre-split `{maskAll, selector}`). An

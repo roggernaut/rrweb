@@ -1,7 +1,9 @@
 import type {
+  CompiledDetector,
   CompiledPrivacyPolicy,
   MaskAttributeFn,
   MaskTextFn,
+  PrivacyDetectorOptions,
   PrivacyPolicy,
   VendorCompatId,
 } from './types';
@@ -252,6 +254,90 @@ export const FORM_VALUE_TAGS = new Set([
   'TEXTAREA',
 ]);
 
+const CARD_CANDIDATE = /(?:^|[^0-9-])((?:\d[ -]?){12,18}\d)(?:$|[^0-9-])/;
+const SSN_PATTERN = /\b(?!000|666|9\d{2})\d{3}-?(?!00)\d{2}-?(?!0000)\d{4}\b/;
+const EMAIL_PATTERN =
+  /[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[a-zA-Z0-9-]{1,63}(?:\.[a-zA-Z0-9-]{1,63})+/;
+const PHONE_PATTERN = /(?:^|\s)\+?\d{0,3}[\s.-]?\(?\d[\d ().-]{5,13}\d(?:$|\s)/;
+const IPV4_PATTERN = /\b(?:\d{1,3}\.){3}\d{1,3}\b/;
+const MAX_SCAN_LENGTH = 10_000;
+
+export const DEFAULT_PRIVACY_DETECTORS: Required<PrivacyDetectorOptions> = {
+  email: true,
+  phone: true,
+  paymentCard: true,
+  ssn: true,
+  ipAddress: true,
+};
+
+/** Opts into heuristic PII detectors; see guide.md "Heuristic PII detectors". EXPERIMENTAL: see the plugin README for known limitations. */
+export function applyPrivacyDetectors(
+  policy: PrivacyPolicy | undefined,
+  options?: PrivacyDetectorOptions,
+): PrivacyPolicy {
+  const base: PrivacyPolicy = policy || { version: 1, preset: 'manual' };
+  return {
+    ...base,
+    detectors: {
+      ...DEFAULT_PRIVACY_DETECTORS,
+      ...options,
+      ...base.detectors,
+    },
+  };
+}
+
+export function buildDetectors(
+  options: PrivacyDetectorOptions | undefined,
+): CompiledDetector[] {
+  const opts = options || {};
+  const detectors: CompiledDetector[] = [];
+  if (opts.email)
+    detectors.push({ name: 'email', test: (v) => EMAIL_PATTERN.test(v) });
+  if (opts.phone)
+    detectors.push({
+      name: 'phone',
+      test: (v) => {
+        const m = PHONE_PATTERN.exec(v);
+        if (!m) return false;
+        const digits = m[0].replace(/\D/g, '');
+        return digits.length >= 10 && digits.length <= 15;
+      },
+    });
+  if (opts.paymentCard)
+    detectors.push({
+      name: 'payment-card',
+      test: (v) => {
+        const m = CARD_CANDIDATE.exec(v);
+        return !!m && passesLuhn(m[1]);
+      },
+    });
+  if (opts.ssn)
+    detectors.push({ name: 'ssn', test: (v) => SSN_PATTERN.test(v) });
+  if (opts.ipAddress)
+    detectors.push({
+      name: 'ip-address',
+      test: (v) => {
+        const m = IPV4_PATTERN.exec(v);
+        return !!m && m[0].split('.').every((p) => Number(p) <= 255);
+      },
+    });
+  return detectors;
+}
+
+/** Runs the compiled detectors over one text node or `characterData` mutation value. */
+export function detectSensitiveValue(
+  value: string,
+  privacy: CompiledPrivacyPolicy,
+): boolean {
+  if (!privacy.detectors.length || !value) return false;
+  if (value.length > MAX_SCAN_LENGTH) return true;
+  const { detectors } = privacy;
+  for (let index = 0; index < detectors.length; index += 1) {
+    if (detectors[index].test(value)) return true;
+  }
+  return false;
+}
+
 /** Occludes text content, preserving whitespace so layout survives; contrast `stars`, which occludes to length. */
 function starText(value: string): string {
   return value.replace(/[\S]/g, '*');
@@ -264,6 +350,7 @@ export function resolveTextValue({
   parentTagName,
   needsMask,
   maskTextFn,
+  privacy,
   exemptScript,
 }: {
   value: string;
@@ -273,13 +360,15 @@ export function resolveTextValue({
   parentTagName?: string;
   needsMask: boolean;
   maskTextFn: MaskTextFn | undefined;
+  privacy: CompiledPrivacyPolicy | undefined;
   exemptScript: boolean;
 }): string {
   if (!value) return value;
   const tagName = parentTagName ?? untaintedTagName(parent);
   if (tagName === 'STYLE') return value;
+  const isScript = tagName === 'SCRIPT';
   if (needsMask) {
-    if (tagName === 'SCRIPT' && exemptScript) return value;
+    if (isScript && exemptScript) return value;
     if (!maskTextFn) return starText(value);
     // A callback that throws or returns a non-string fails closed to stars.
     let masked: unknown;
@@ -290,6 +379,8 @@ export function resolveTextValue({
     }
     return typeof masked === 'string' ? masked : starText(value);
   }
+  if (isScript) return value;
+  if (privacy && detectSensitiveValue(value, privacy)) return starText(value);
   return value;
 }
 
@@ -414,6 +505,8 @@ export function compilePrivacyPolicy(
     console.warn(
       '[rrweb privacy] vendorCompat has no effect under the minimal preset; use balanced or strict, or add the classes as mask/block rules.',
     );
+  const detectors = buildDetectors(effective.detectors);
+  const maskAllInputs = managed || detectors.length > 0;
   const maskedAttributes = new Set(managed ? MASKED_ATTRIBUTE_DEFAULTS : []);
   const blockMedia = preset === 'strict';
 
@@ -470,10 +563,11 @@ export function compilePrivacyPolicy(
     ignoreEventsSelector: managed
       ? joinSelectors([vendorCompatSelector(compatVendors, 'ignoreEvents')])
       : null,
-    maskAllInputs: managed,
+    maskAllInputs,
     maskedAttributes,
     attributePolicyInert: !blockMedia && maskedAttributes.size === 0,
     blockMedia,
+    detectors,
   };
 }
 
@@ -563,6 +657,24 @@ export function resolvePrivacyContext({
     maskTextSelector: mergedMaskTextSelector,
     unmaskTextSelector: mergedUnmaskTextSelector,
   };
+}
+
+export function passesLuhn(candidate: string): boolean {
+  const digits = candidate.replace(/[ -]/g, '');
+  if (!/^\d{13,19}$/.test(digits) || /^(\d)\1+$/.test(digits)) return false;
+
+  let sum = 0;
+  let double = false;
+  for (let index = digits.length - 1; index >= 0; index -= 1) {
+    let digit = Number(digits[index]);
+    if (double) {
+      digit *= 2;
+      if (digit > 9) digit -= 9;
+    }
+    sum += digit;
+    double = !double;
+  }
+  return sum % 10 === 0;
 }
 
 let maskAttributeConflictWarned = false;

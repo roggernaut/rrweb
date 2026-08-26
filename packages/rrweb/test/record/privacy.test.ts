@@ -3,7 +3,37 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import record from '../../src/record';
-import { EventType, IncrementalSource, type eventWithTime } from '@rrweb/types';
+import {
+  EventType,
+  IncrementalSource,
+  type RecordPlugin,
+  type eventWithTime,
+} from '@rrweb/types';
+
+describe('record() privacy policy plugin fallback', () => {
+  it('a plugin returning a malformed policy falls back to the user policy instead of throwing', () => {
+    const badPlugin: RecordPlugin = {
+      name: 'bad@1',
+      applyPrivacyPolicy: () => ({ nonsense: true } as never),
+    };
+
+    let stop: (() => void) | undefined;
+    expect(() => {
+      stop = record({ emit: () => {}, plugins: [badPlugin] });
+    }).not.toThrow();
+    stop?.();
+  });
+
+  it('still throws when the user supplies their own invalid policy directly (no plugin involved)', () => {
+    expect(() => {
+      record({
+        emit: () => {},
+        // @ts-expect-error intentionally invalid for this test
+        privacyPolicy: { nonsense: true },
+      });
+    }).toThrow();
+  });
+});
 
 describe('record() and a <form> whose tagName is shadowed', () => {
   it('records an attribute mutation on the form without throwing', async () => {
@@ -52,6 +82,159 @@ describe('record() and a <form> whose tagName is shadowed', () => {
         ),
     );
     expect(mutationEmitted).toBe(true);
+  });
+});
+
+describe('record() privacy detectors on live updates', () => {
+  const withEmailDetector = {
+    version: 1,
+    preset: 'manual',
+    detectors: { email: true },
+  } as const;
+
+  it('masks a characterData mutation whose new text trips a detector', async () => {
+    document.body.innerHTML = '<p>hello</p>';
+    const textNode = document.querySelector('p')!.firstChild as Text;
+
+    const events: eventWithTime[] = [];
+    const stop = record({
+      emit: (event) => events.push(event),
+      privacyPolicy: withEmailDetector,
+    });
+    try {
+      textNode.data = 'contact bob@example.com';
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    } finally {
+      stop?.();
+    }
+
+    const textMutations = events.flatMap((event) =>
+      event.type === EventType.IncrementalSnapshot &&
+      event.data.source === IncrementalSource.Mutation
+        ? event.data.texts
+        : [],
+    );
+    expect(textMutations.length).toBeGreaterThan(0);
+    expect(JSON.stringify(textMutations)).not.toContain('bob@example.com');
+  });
+
+  it('leaves a characterData mutation with clean text untouched under manual', async () => {
+    document.body.innerHTML = '<p>hello</p>';
+    const textNode = document.querySelector('p')!.firstChild as Text;
+
+    const events: eventWithTime[] = [];
+    const stop = record({
+      emit: (event) => events.push(event),
+      privacyPolicy: withEmailDetector,
+    });
+    try {
+      textNode.data = 'still plain text';
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    } finally {
+      stop?.();
+    }
+
+    const textMutations = events.flatMap((event) =>
+      event.type === EventType.IncrementalSnapshot &&
+      event.data.source === IncrementalSource.Mutation
+        ? event.data.texts
+        : [],
+    );
+    expect(JSON.stringify(textMutations)).toContain('still plain text');
+  });
+
+  it('never scans <style> text mutations, even with detectors on', async () => {
+    document.body.innerHTML = '<style>body{color:red}</style>';
+    const textNode = document.querySelector('style')!.firstChild as Text;
+
+    const events: eventWithTime[] = [];
+    const stop = record({
+      emit: (event) => events.push(event),
+      privacyPolicy: withEmailDetector,
+    });
+    try {
+      // an email-shaped token inside CSS content must never star the sheet
+      textNode.data = '/* bob@example.com */ body{color:blue}';
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    } finally {
+      stop?.();
+    }
+
+    const textMutations = events.flatMap((event) =>
+      event.type === EventType.IncrementalSnapshot &&
+      event.data.source === IncrementalSource.Mutation
+        ? event.data.texts
+        : [],
+    );
+    expect(JSON.stringify(textMutations)).toContain('body{color:blue}');
+  });
+
+  /** The masked values the recorder emitted, in order. */
+  async function recordInputValues(
+    markup: string,
+    drive: (input: HTMLInputElement) => void,
+    options: { unmaskTextSelector?: string } = {},
+  ): Promise<string[]> {
+    document.body.innerHTML = markup;
+    const input = document.querySelector('input')!;
+    const events: eventWithTime[] = [];
+    const stop = record({
+      emit: (event) => events.push(event),
+      privacyPolicy: withEmailDetector,
+      ...options,
+    });
+    try {
+      drive(input);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    } finally {
+      stop?.();
+    }
+    return events.flatMap((event) =>
+      event.type === EventType.IncrementalSnapshot &&
+      event.data.source === IncrementalSource.Input
+        ? [event.data.text]
+        : [],
+    );
+  }
+
+  it('occludes a typed value at every keystroke length', async () => {
+    // The leak this replaced: scanning per input event recorded every prefix
+    // shorter than the first Luhn-valid length verbatim, so the full card
+    // number was reconstructable even though the final value came out masked.
+    const card = '4111111111111111';
+    const values = await recordInputValues('<input type="text">', (input) => {
+      for (let i = 1; i <= card.length; i++) {
+        input.value = card.slice(0, i);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    });
+    expect(values.length).toBe(card.length);
+    values.forEach((value, i) => expect(value).toBe('*'.repeat(i + 1)));
+  });
+
+  it('occludes a pasted value, matched or not', async () => {
+    const values = await recordInputValues('<input type="text">', (input) => {
+      input.value = 'bob@example.com';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.value = 'nothing sensitive here';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(values).toEqual([
+      '*'.repeat('bob@example.com'.length),
+      '*'.repeat('nothing sensitive here'.length),
+    ]);
+  });
+
+  it('no unmask escape reveals an input value while detectors are on', async () => {
+    const values = await recordInputValues(
+      '<input class="rr-unmask" type="text">',
+      (input) => {
+        input.value = 'Visible Name';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      },
+      { unmaskTextSelector: '.rr-unmask' },
+    );
+    expect(values).toEqual(['*'.repeat('Visible Name'.length)]);
   });
 });
 
