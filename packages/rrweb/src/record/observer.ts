@@ -1,6 +1,5 @@
 import {
-  type MaskInputOptions,
-  maskInputValue,
+  maskInput,
   Mirror,
   getInputType,
   toLowerCase,
@@ -391,6 +390,7 @@ function initInputObserver({
   maskInputFn,
   sampling,
   userTriggeredOnInput,
+  privacy,
 }: observerParam): listenerHandler {
   function eventHandler(event: Event) {
     let target = getEventTarget(event) as HTMLElement | null;
@@ -425,17 +425,15 @@ function initInputObserver({
 
     if (type === 'radio' || type === 'checkbox') {
       isChecked = (target as HTMLInputElement).checked;
-    } else if (
-      maskInputOptions[tagName.toLowerCase() as keyof MaskInputOptions] ||
-      maskInputOptions[type as keyof MaskInputOptions]
-    ) {
-      text = maskInputValue({
+    } else {
+      text = maskInput({
         element: target,
         maskInputOptions,
         tagName,
         type,
         value: text,
         maskInputFn,
+        privacy,
       });
     }
     cbWithDedup(

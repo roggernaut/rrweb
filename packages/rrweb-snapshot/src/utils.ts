@@ -11,6 +11,7 @@
  *   modules while keeping this module as a compatibility shim for external users
  */
 import type {
+  CompiledPrivacyPolicy,
   idNodeMap,
   MaskInputFn,
   MaskInputOptions,
@@ -377,6 +378,91 @@ export function getInputType(element: HTMLElement): Lowercase<string> | null {
     ? // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
       toLowerCase(type)
     : null;
+}
+
+const PROTECTED_AUTOCOMPLETE = new Set([
+  'cc-csc',
+  'cc-exp',
+  'cc-exp-month',
+  'cc-exp-year',
+  'cc-name',
+  'cc-number',
+  'current-password',
+  'new-password',
+  'one-time-code',
+]);
+
+/**
+ * Inputs that are always masked, regardless of maskInputOptions or privacy
+ * preset: password/hidden inputs (including ones that used to be password
+ * inputs, via getInputType's data-rr-is-password check), and inputs whose
+ * autocomplete attribute names a sensitive field (credit card, password,
+ * OTP).
+ */
+export function isProtectedInput(element: HTMLElement): boolean {
+  // Task 9 replaces with untaintedTagName. A shadowed/non-string `tagName`
+  // (e.g. <input name="tagName">) fails closed: treat as protected.
+  const t: unknown = element.tagName;
+  if (typeof t !== 'string') return true;
+  if (t !== 'INPUT') return false;
+  const input = element as HTMLInputElement;
+  const type = getInputType(element);
+  if (type === 'password' || type === 'hidden') {
+    return true;
+  }
+  return input.autocomplete
+    .toLowerCase()
+    .split(/\s+/)
+    .some((token) => PROTECTED_AUTOCOMPLETE.has(token));
+}
+
+/**
+ * Single entry point for input value masking. Composes:
+ * - protected inputs (password/hidden/cc-* autocomplete): always masked,
+ *   regardless of everything else.
+ * - legacy `maskInputOptions`: mask iff the tag/type opts in; `maskInputFn`
+ *   output (if provided) is trusted verbatim, matching pre-v2 behavior.
+ * - balanced/strict privacy presets (`privacy.maskAllInputs`): always mask,
+ *   shape-free. If `maskInputFn` is provided its output length is kept but
+ *   its content is discarded and star-replaced -- the fn controls length
+ *   only, never leaks real content.
+ */
+export function maskInput({
+  element,
+  tagName,
+  type,
+  value,
+  maskInputOptions,
+  maskInputFn,
+  privacy,
+}: {
+  element: HTMLElement;
+  tagName: string;
+  type: string | null;
+  value: string;
+  maskInputOptions: MaskInputOptions;
+  maskInputFn?: MaskInputFn;
+  privacy: CompiledPrivacyPolicy | undefined;
+}): string {
+  if (isProtectedInput(element)) return '*'.repeat(value.length);
+
+  const actualType = type && toLowerCase(type);
+  const legacyWantsMask = Boolean(
+    maskInputOptions[tagName.toLowerCase() as keyof MaskInputOptions] ||
+      (actualType && maskInputOptions[actualType as keyof MaskInputOptions]),
+  );
+  const presetWantsMask = !!privacy && privacy.maskAllInputs;
+
+  if (!legacyWantsMask && !presetWantsMask) return value;
+
+  let masked = maskInputFn ? maskInputFn(value, element) : '*'.repeat(value.length);
+  if (presetWantsMask && maskInputFn) {
+    // fn controls length only under balanced/strict; never trust its content.
+    masked = '*'.repeat(masked.length);
+  } else if (presetWantsMask && !maskInputFn) {
+    masked = '*'.repeat(value.length);
+  }
+  return masked;
 }
 
 /**

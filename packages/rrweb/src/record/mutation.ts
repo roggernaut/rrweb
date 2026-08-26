@@ -5,7 +5,7 @@ import {
   ignoreAttribute,
   isShadowRoot,
   needMaskingText,
-  maskInputValue,
+  maskInput,
   Mirror,
   isNativeShadowDom,
   getInputType,
@@ -574,13 +574,14 @@ export default class MutationBuffer {
       (cn) => dom.textContent(cn) || '',
     ).join('');
     const type = getInputType(textarea);
-    item.attributes.value = maskInputValue({
+    item.attributes.value = maskInput({
       element: textarea,
       maskInputOptions: this.maskInputOptions,
       tagName: textarea.tagName,
       type,
       value,
       maskInputFn: this.maskInputFn,
+      privacy: this.privacy,
     });
   };
 
@@ -631,13 +632,14 @@ export default class MutationBuffer {
         if (attributeName === 'value') {
           const type = getInputType(target);
 
-          value = maskInputValue({
+          value = maskInput({
             element: target,
             maskInputOptions: this.maskInputOptions,
             tagName: target.tagName,
             type,
-            value,
+            value: value || '',
             maskInputFn: this.maskInputFn,
+            privacy: this.privacy,
           });
         }
         if (

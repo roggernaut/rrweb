@@ -14,18 +14,6 @@ const VENDOR_BLOCK_CLASSES =
 const PRIVACY_PRESETS = new Set(['strict', 'balanced', 'legacy']);
 const MASKED_ATTRIBUTE_DEFAULTS = ['title', 'placeholder', 'aria-label'];
 
-const PROTECTED_AUTOCOMPLETE = new Set([
-  'cc-csc',
-  'cc-exp',
-  'cc-exp-month',
-  'cc-exp-year',
-  'cc-name',
-  'cc-number',
-  'current-password',
-  'new-password',
-  'one-time-code',
-]);
-
 const DEFAULT_BLOCKED_QUERY_PARAMETERS = [
   'access_token',
   'auth',
@@ -236,26 +224,6 @@ export function passesLuhn(candidate: string): boolean {
     double = !double;
   }
   return sum % 10 === 0;
-}
-
-export function isProtectedInput(element: HTMLElement): boolean {
-  // Task 9 replaces with untaintedTagName. A shadowed/non-string `tagName`
-  // (e.g. <input name="tagName">) fails closed: treat as protected.
-  const t: unknown = element.tagName;
-  if (typeof t !== 'string') return true;
-  if (t !== 'INPUT') return false;
-  const input = element as HTMLInputElement;
-  if (
-    input.type === 'password' ||
-    input.type === 'hidden' ||
-    input.hasAttribute('data-rr-is-password')
-  ) {
-    return true;
-  }
-  return input.autocomplete
-    .toLowerCase()
-    .split(/\s+/)
-    .some((token) => PROTECTED_AUTOCOMPLETE.has(token));
 }
 
 export function sanitizeUrl(value: string, privacy: CompiledPrivacyPolicy | undefined): string {

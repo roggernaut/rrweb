@@ -25,7 +25,7 @@ import {
   is2DCanvasBlank,
   isElement,
   isShadowRoot,
-  maskInputValue,
+  maskInput,
   isNativeShadowDom,
   stringifyStylesheet,
   getInputType,
@@ -732,13 +732,14 @@ function serializeElementNode(
       value
     ) {
       const type = getInputType(n);
-      attributes.value = maskInputValue({
+      attributes.value = maskInput({
         element: n,
         type,
         tagName,
         value,
         maskInputOptions,
         maskInputFn,
+        privacy,
       });
     } else if (checked) {
       attributes.checked = checked;

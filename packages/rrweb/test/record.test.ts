@@ -190,9 +190,10 @@ describe('record', function (this: ISuite) {
 
     const payload = JSON.stringify(ctx.events);
     expect(payload).not.toContain('person@example.com');
-    expect(payload).toContain('xxxxxx@xxxxxxx.xxx');
+    // v2: masking is shape-free, star-only (no digit/letter-preserving mask).
+    expect(payload).toContain('*'.repeat('person@example.com'.length));
     expect(payload).not.toContain('Visible Name');
-    expect(payload).toContain('xxxxxxx xxxx');
+    expect(payload).toContain('*'.repeat('Visible Name'.length));
   });
 
   it('applies final attribute masking to snapshots and mutations', async () => {

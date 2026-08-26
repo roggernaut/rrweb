@@ -3,6 +3,8 @@
  */
 import { describe, it, expect } from 'vitest';
 import snapshot from '../src/snapshot';
+import { compilePrivacyPolicy } from '../src/privacy';
+import { maskInput, isProtectedInput } from '../src/utils';
 import type { PrivacyPolicy } from '../src/types';
 
 function serialize(html: string, privacyPolicy?: PrivacyPolicy): string {
@@ -110,5 +112,74 @@ describe('text masking v2', () => {
     expect(serialize('<p>bob@example.com</p>', undefined)).toContain(
       'bob@example.com',
     );
+  });
+});
+
+describe('maskInput v2', () => {
+  const balanced = compilePrivacyPolicy({ version: 1, preset: 'balanced' });
+  const legacy = compilePrivacyPolicy(undefined);
+  const input = (attrs = '') => {
+    document.body.innerHTML = `<input ${attrs} value="4111 1111 1111 1111">`;
+    return document.querySelector('input') as HTMLInputElement;
+  };
+  it('balanced masks all inputs shape-free (stars, not digits)', () => {
+    const out = maskInput({
+      element: input(),
+      tagName: 'input',
+      type: 'text',
+      value: '4111 1111 1111 1111',
+      maskInputOptions: {},
+      privacy: balanced,
+    });
+    expect(out).toBe('*'.repeat(19));
+  });
+  it('balanced + maskInputFn: fn controls length only, never content', () => {
+    const out = maskInput({
+      element: input(),
+      tagName: 'input',
+      type: 'text',
+      value: 'secret',
+      maskInputOptions: {},
+      maskInputFn: () => '[redacted]',
+      privacy: balanced,
+    });
+    expect(out).toBe('*'.repeat('[redacted]'.length));
+  });
+  it('legacy + maskInputFn trusted verbatim when legacy options mask', () => {
+    const out = maskInput({
+      element: input(),
+      tagName: 'input',
+      type: 'text',
+      value: 'secret',
+      maskInputOptions: { text: true },
+      maskInputFn: () => '[redacted]',
+      privacy: legacy,
+    });
+    expect(out).toBe('[redacted]');
+  });
+  it('legacy without options passes value through', () => {
+    expect(
+      maskInput({
+        element: input(),
+        tagName: 'input',
+        type: 'text',
+        value: 'plain',
+        maskInputOptions: {},
+        privacy: legacy,
+      }),
+    ).toBe('plain');
+  });
+  it('protected inputs always mask, even legacy with no options', () => {
+    expect(
+      maskInput({
+        element: input('type="password"'),
+        tagName: 'input',
+        type: 'password',
+        value: 'pw',
+        maskInputOptions: {},
+        privacy: legacy,
+      }),
+    ).toBe('**');
+    expect(isProtectedInput(input('autocomplete="cc-number"'))).toBe(true);
   });
 });
