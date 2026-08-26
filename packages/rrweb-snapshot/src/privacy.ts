@@ -246,20 +246,36 @@ export function resolveUnmaskTextSelector(
 }
 
 /**
- * Split a selector list on its *top-level* commas only. A naive `split(',')`
- * tears `:is(a,b)` and `[data-x="a,b"]` in half, and rejoining deduplicated
- * halves would then corrupt them.
+ * Split a selector list on its *top-level* commas only, so that merging and
+ * deduplicating lists never rewrites what a fragment means.
+ *
+ * The three things a naive `split(',')` gets wrong, all of which round-trip
+ * through `joinSelectors`:
+ *  - `:is(a,b)` / `:not(a,b)` -- commas nested in a functional pseudo-class
+ *  - `[data-x="a,b"]` -- commas inside an attribute value string
+ *  - `.a\,b` -- an *escaped* comma, which is a literal character in the class
+ *    name (this selector matches `class="a,b"`), not a separator
+ *
+ * @internal exported for direct unit testing; not part of the privacy API.
  */
-function splitSelectorList(selector: string): string[] {
+export function splitSelectorList(selector: string): string[] {
   const parts: string[] = [];
   let depth = 0;
   let quote: string | null = null;
   let start = 0;
   for (let index = 0; index < selector.length; index += 1) {
     const char = selector[index];
+    // A backslash escapes the next character *anywhere* in a selector, inside
+    // a quoted string or not. Handling it only inside quotes would tear
+    // `.a\,b` in two, and the stray `b` fragment would then collide in the
+    // dedupe with an unrelated `b` selector and silently swallow it -- a
+    // dropped mask selector is a fail-open, so this case must come first.
+    if (char === '\\') {
+      index += 1;
+      continue;
+    }
     if (quote) {
-      if (char === '\\') index += 1;
-      else if (char === quote) quote = null;
+      if (char === quote) quote = null;
       continue;
     }
     if (char === '"' || char === "'") quote = char;

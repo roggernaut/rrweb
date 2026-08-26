@@ -11,6 +11,7 @@ import {
   detectSensitiveValue,
   buildDetectors,
   sanitizeUrl,
+  splitSelectorList,
 } from '../src/privacy';
 import snapshot from '../src/snapshot';
 
@@ -115,6 +116,46 @@ describe('validateSelector', () => {
     expect(validateSelector(':::nope')).toBe(false);
   });
 });
+/**
+ * The splitter exists so that merging and deduplicating selector lists never
+ * rewrites what a fragment means. Every case here is a comma that is NOT a
+ * separator.
+ */
+describe('splitSelectorList', () => {
+  it('splits an ordinary list on its separators', () => {
+    expect(splitSelectorList('.a,.b,.c')).toEqual(['.a', '.b', '.c']);
+    expect(splitSelectorList('.only')).toEqual(['.only']);
+  });
+
+  it('keeps commas nested in a functional pseudo-class', () => {
+    expect(splitSelectorList(':is(.a,.b)')).toEqual([':is(.a,.b)']);
+    expect(splitSelectorList(':not(.a,.b),.c')).toEqual([':not(.a,.b)', '.c']);
+  });
+
+  it('keeps commas inside an attribute value', () => {
+    expect(splitSelectorList('[data-x="p,q"]')).toEqual(['[data-x="p,q"]']);
+    expect(splitSelectorList("[data-x='p,q'],.c")).toEqual([
+      "[data-x='p,q']",
+      '.c',
+    ]);
+  });
+
+  it('keeps an escaped comma, quoted or not', () => {
+    // `.a\,b` is a single class selector for the class name "a,b" -- the
+    // backslash escape is valid outside quotes too, and tearing it here let
+    // the stray `b` fragment collide with an unrelated `b` selector.
+    expect(splitSelectorList('.a\\,b')).toEqual(['.a\\,b']);
+    expect(splitSelectorList('.a\\,b,b')).toEqual(['.a\\,b', 'b']);
+    expect(splitSelectorList('[data-x="p\\"q,r"]')).toEqual([
+      '[data-x="p\\"q,r"]',
+    ]);
+  });
+
+  it('does not run past the end on a trailing backslash', () => {
+    expect(splitSelectorList('.a\\')).toEqual(['.a\\']);
+  });
+});
+
 describe('mergeBlockSelectors', () => {
   it('joins legacy selector with compiled blockSelector', () => {
     const c = compilePrivacyPolicy({ version: 1, preset: 'balanced' });
@@ -178,6 +219,40 @@ describe('merge helpers validate the record()-level selector', () => {
     const merged = mergeMaskTextSelectors('.rr-mask,.mine', balanced);
     expect(merged!.split(',').filter((p) => p === '.rr-mask')).toHaveLength(1);
     expect(merged).toContain('.mine');
+  });
+
+  /**
+   * Regression: the splitter used to honor a backslash escape only inside
+   * quotes, so `.a\,b` was torn into `.a\` and `b`. The stray `b` then
+   * collided in the dedupe `Set` with the independently supplied `b`
+   * selector and silently swallowed it -- a dropped mask selector, i.e. a
+   * fail-open. Both must survive the merge and still match.
+   */
+  it('an escaped comma does not swallow an unrelated selector in the dedupe', () => {
+    const legacy = compilePrivacyPolicy(undefined);
+    const merged = mergeMaskTextSelectors('.a\\,b,b', legacy)!;
+
+    document.body.innerHTML = '<div class="a,b">x</div><b>y</b>';
+    const commaClassEl = document.querySelector('div')!;
+    const bEl = document.querySelector('b')!;
+
+    expect(commaClassEl.matches(merged)).toBe(true);
+    expect(bEl.matches(merged)).toBe(true);
+  });
+
+  it('keeps both halves when they arrive from different merge sources', () => {
+    // the escaped-comma selector comes in as the record()-level option, the
+    // colliding `b` from a policy rule
+    const policy = compilePrivacyPolicy({
+      version: 1,
+      preset: 'legacy',
+      rules: [{ target: { type: 'selector', selector: 'b' }, action: 'mask' }],
+    });
+    const merged = mergeMaskTextSelectors('.a\\,b', policy)!;
+
+    document.body.innerHTML = '<div class="a,b">x</div><b>y</b>';
+    expect(document.querySelector('div')!.matches(merged)).toBe(true);
+    expect(document.querySelector('b')!.matches(merged)).toBe(true);
   });
 
   it('does not tear a selector whose commas are nested', () => {
