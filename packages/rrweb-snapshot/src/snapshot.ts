@@ -316,33 +316,43 @@ function classMatchesMaskTextClass(
   return false;
 }
 
+/**
+ * @param inheritedNeedsMask the decision already taken for an ancestor the walk
+ * cannot reach — the caller's context crosses shadow-root/iframe boundaries
+ * that `parentElement` does not. It is the walk's default result, so a masked
+ * ancestor outside the boundary keeps masking (fail closed) while an
+ * `unmaskTextSelector` match found inside the boundary still wins.
+ */
 export function needMaskingText(
   node: Node,
   maskTextClass: string | RegExp,
   maskTextSelector: string | null,
   unmaskTextSelector: string | null,
   checkAncestors: boolean,
+  inheritedNeedsMask = false,
 ): boolean {
   try {
+    const { maskAll, selector } = maskTextSelector
+      ? splitMaskAllSelector(maskTextSelector)
+      : { maskAll: false, selector: null };
+    // fast path: nothing can overrule masking when no unmasking is configured
+    if ((maskAll || inheritedNeedsMask) && !unmaskTextSelector) return true;
     let el: Element;
     if (isElement(node)) {
       el = node;
       if (!dom.childNodes(el).length) {
         // optimisation: we can avoid any of the below checks on leaf elements
-        // as masking is applied to child text nodes only
-        return false;
+        // as masking is applied to child text nodes only. The inherited
+        // decision is still handed on, for any shadow-root children.
+        return inheritedNeedsMask;
       }
     } else if (dom.parentElement(node) === null) {
-      // should warn? maybe a text node isn't attached to a parent node yet?
-      return false;
+      // a text node parented by a shadow root (or not attached yet): there is
+      // no chain to inspect, so fall back to the inherited decision
+      return inheritedNeedsMask || maskAll;
     } else {
       el = dom.parentElement(node)!;
     }
-    const { maskAll, selector } = maskTextSelector
-      ? splitMaskAllSelector(maskTextSelector)
-      : { maskAll: false, selector: null };
-    // fast path: nothing can overrule a mask-everything policy
-    if (maskAll && !unmaskTextSelector) return true;
     let current: Element | null = el;
     while (current) {
       // nearest ancestor wins: the first explicit decision going upwards
@@ -353,7 +363,7 @@ export function needMaskingText(
       if (!checkAncestors) break;
       current = dom.parentElement(current);
     }
-    return maskAll;
+    return maskAll || inheritedNeedsMask;
   } catch (e) {
     // fail closed: an error in the mask decision masks
     return true;
@@ -1139,6 +1149,9 @@ export function serializeNodeWithId(
       maskTextSelector,
       unmaskTextSelector,
       checkAncestors,
+      // the inherited decision covers ancestors across shadow-root/iframe
+      // boundaries, which the per-node walk cannot see
+      needsMask === true,
     );
   }
 

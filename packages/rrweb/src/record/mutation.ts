@@ -596,15 +596,24 @@ export default class MutationBuffer {
           !isBlocked(m.target, this.blockClass, this.blockSelector, false) &&
           value !== m.oldValue
         ) {
+          // CSS is never masked, on any path: a starred stylesheet corrupts
+          // the replay. Mirrors serializeTextNode's `isStyle` exemption.
+          const parent = dom.parentNode(m.target);
+          const isStyle =
+            parent && typeof (parent as HTMLElement).tagName === 'string'
+              ? (parent as HTMLElement).tagName.toUpperCase() === 'STYLE'
+              : false;
           this.texts.push({
             value:
+              !isStyle &&
               needMaskingText(
                 m.target,
                 this.maskTextClass,
                 this.maskTextSelector,
                 this.unmaskTextSelector,
                 true, // checkAncestors
-              ) && value
+              ) &&
+              value
                 ? this.maskTextFn
                   ? this.maskTextFn(value, closestElementOfNode(m.target))
                   : value.replace(/[\S]/g, '*')

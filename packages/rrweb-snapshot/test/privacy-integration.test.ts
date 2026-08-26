@@ -10,6 +10,13 @@ function serialize(html: string, privacyPolicy?: PrivacyPolicy): string {
   return JSON.stringify(snapshot(document, { privacyPolicy }));
 }
 
+/** Attaches an open shadow root to `#host` and fills it. */
+function withShadowRoot(lightHtml: string, shadowHtml: string): void {
+  document.body.innerHTML = lightHtml;
+  const host = document.querySelector('#host') as HTMLElement;
+  host.attachShadow({ mode: 'open' }).innerHTML = shadowHtml;
+}
+
 describe('text masking v2', () => {
   const strict: PrivacyPolicy = { version: 1, preset: 'strict' };
 
@@ -25,6 +32,19 @@ describe('text masking v2', () => {
       strict,
     );
     expect(out).toMatch(/body\s*\{\s*color:\s*red/);
+    expect(out).not.toContain('secret');
+  });
+
+  it('never masks the <style> text node itself when the css is not captured as _cssText', () => {
+    document.body.innerHTML =
+      '<div><style>body{color:red}</style><p>secret</p></div>';
+    const styleEl = document.querySelector('style') as HTMLStyleElement;
+    // with no CSSOM sheet (CSP, cross-origin) the CSS stays on the text node
+    // instead of moving to `_cssText`, which is what actually exercises
+    // serializeTextNode's `isStyle` exemption
+    Object.defineProperty(styleEl, 'sheet', { get: () => null });
+    const out = JSON.stringify(snapshot(document, { privacyPolicy: strict }));
+    expect(out).toContain('body{color:red}');
     expect(out).not.toContain('secret');
   });
 
@@ -48,6 +68,42 @@ describe('text masking v2', () => {
       withDetectors,
     );
     expect(out).not.toContain('4111 1111 1111 1111');
+  });
+
+  it('keeps masking inherited from an ancestor outside the shadow root', () => {
+    withShadowRoot(
+      '<div class="rr-mask"><div id="host"></div></div>',
+      '<p>secret</p>',
+    );
+    const out = JSON.stringify(
+      snapshot(document, {
+        privacyPolicy: { version: 1, preset: 'balanced' },
+      }),
+    );
+    expect(out).not.toContain('secret');
+  });
+
+  it('lets an unmask selector inside the shadow root escape a masked host', () => {
+    withShadowRoot(
+      '<div class="rr-mask"><div id="host"></div></div>',
+      '<div class="rr-unmask"><p>visible</p></div>',
+    );
+    const out = JSON.stringify(
+      snapshot(document, {
+        privacyPolicy: { version: 1, preset: 'balanced' },
+      }),
+    );
+    expect(out).toContain('visible');
+  });
+
+  it('masks a text node parented directly by a shadow root under strict', () => {
+    document.body.innerHTML = '<div id="host"></div>';
+    const host = document.querySelector('#host') as HTMLElement;
+    host
+      .attachShadow({ mode: 'open' })
+      .appendChild(document.createTextNode('secret'));
+    const out = JSON.stringify(snapshot(document, { privacyPolicy: strict }));
+    expect(out).not.toContain('secret');
   });
 
   it('legacy without detectors leaves text untouched', () => {
