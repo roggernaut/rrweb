@@ -4,6 +4,11 @@ import {
   getRecordPrivacyDetectorsPlugin,
   PLUGIN_NAME,
 } from '../src/index';
+import {
+  compilePrivacyPolicy,
+  detectSensitiveValue,
+  type PrivacyPolicy,
+} from 'rrweb-snapshot';
 
 describe('privacy detectors plugin', () => {
   it('opts heuristic detectors onto a balanced policy', () => {
@@ -56,5 +61,14 @@ describe('privacy detectors plugin', () => {
         ipAddress: true,
       },
     });
+  });
+
+  it('plugin with no user policy yields a legacy policy whose compiled detectors are active', () => {
+    const plugin = getRecordPrivacyDetectorsPlugin();
+    const policy = plugin.applyPrivacyPolicy!(undefined) as PrivacyPolicy;
+    expect(policy.preset).toBe('legacy');
+    const compiled = compilePrivacyPolicy(policy);
+    expect(compiled.detectors.length).toBeGreaterThan(0);
+    expect(detectSensitiveValue('bob@example.com', compiled)).toBe(true);
   });
 });

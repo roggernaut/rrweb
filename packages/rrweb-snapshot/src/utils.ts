@@ -400,11 +400,7 @@ const PROTECTED_AUTOCOMPLETE = new Set([
  * OTP).
  */
 export function isProtectedInput(element: HTMLElement): boolean {
-  // Task 9 replaces with untaintedTagName. A shadowed/non-string `tagName`
-  // (e.g. <input name="tagName">) fails closed: treat as protected.
-  const t: unknown = element.tagName;
-  if (typeof t !== 'string') return true;
-  if (t !== 'INPUT') return false;
+  if (dom.untaintedTagName(element) !== 'INPUT') return false;
   const input = element as HTMLInputElement;
   const type = getInputType(element);
   if (type === 'password' || type === 'hidden') {

@@ -5,6 +5,7 @@ import type {
   PrivacyDetectorOptions,
   PrivacyPolicy,
 } from './types';
+import { untaintedTagName } from '@rrweb/utils';
 
 const VENDOR_MASK_CLASSES =
   '.rr-mask,.mp-mask,.fs-mask,.amp-mask,.ph-mask,.sentry-mask,[data-sentry-mask]';
@@ -280,15 +281,6 @@ function stars(value: string): string {
 }
 
 /**
- * A shadowed or non-string `tagName` (e.g. `<input name="tagName">` inside a
- * form) must not crash the sweep; an unknown tag simply matches no tag set.
- */
-function tagNameOf(element: Element): string {
-  const t: unknown = element.tagName;
-  return typeof t === 'string' ? t.toUpperCase() : '';
-}
-
-/**
  * The single decision point for every attribute rrweb records, on both the
  * snapshot and the mutation path. Called exactly once per attribute, at the
  * end of serialization, so no earlier stage needs to know about privacy.
@@ -361,7 +353,7 @@ export function finalizeAttribute({
 
   if (!privacy) return current;
 
-  const tagName = tagNameOf(element);
+  const tagName = untaintedTagName(element);
   if (
     privacy.preset === 'strict' &&
     MEDIA_TAGS.has(tagName) &&

@@ -4,6 +4,7 @@ import {
   type MaskInputOptions,
   createMirror,
   compilePrivacyPolicy,
+  type CompiledPrivacyPolicy,
   mergeBlockSelectors,
   mergeMaskTextSelectors,
   mergeUnmaskTextSelectors,
@@ -121,7 +122,33 @@ function record<T = eventWithTime>(
         : policy,
     privacyPolicy,
   );
-  const privacy = compilePrivacyPolicy(portablePrivacyPolicy);
+  // What actually gets used from here on -- both to compile `privacy` below
+  // and to hand to `snapshot()` later (which independently compiles its own
+  // `privacyPolicy` option). Defaults to the plugin-transformed policy, but
+  // falls back to the user's own policy if the transform produced something
+  // uncompilable, so both compile calls stay in agreement.
+  let effectivePrivacyPolicy = portablePrivacyPolicy;
+  let privacy: CompiledPrivacyPolicy;
+  try {
+    privacy = compilePrivacyPolicy(portablePrivacyPolicy);
+  } catch (error) {
+    // A plugin's `applyPrivacyPolicy` transform produced something
+    // `compilePrivacyPolicy` can't compile. That's the plugin's bug, not the
+    // user's -- fall back to the user's own (untransformed) policy so a
+    // broken plugin can't take recording down entirely. If the user's own
+    // policy is itself invalid, that's a programmer error and should still
+    // throw.
+    if (portablePrivacyPolicy !== privacyPolicy) {
+      console.error(
+        '[rrweb] plugin-transformed privacy policy failed to compile; using the user policy',
+        error,
+      );
+      effectivePrivacyPolicy = privacyPolicy;
+      privacy = compilePrivacyPolicy(privacyPolicy);
+    } else {
+      throw error;
+    }
+  }
   const blockSelector = mergeBlockSelectors(legacyBlockSelector, privacy);
   const maskTextSelector = mergeMaskTextSelectors(
     legacyMaskTextSelector,
@@ -428,7 +455,7 @@ function record<T = eventWithTime>(
       recordCanvas,
       canvasMaskingConfigured,
       inlineImages,
-      privacyPolicy: portablePrivacyPolicy,
+      privacyPolicy: effectivePrivacyPolicy,
       onSerialize: (n) => {
         if (isSerializedIframe(n, mirror)) {
           iframeManager.addIframe(n as HTMLIFrameElement);

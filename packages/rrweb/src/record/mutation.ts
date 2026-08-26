@@ -606,11 +606,11 @@ export default class MutationBuffer {
         ) {
           // CSS is never masked, on any path: a starred stylesheet corrupts
           // the replay. Mirrors serializeTextNode's `isStyle` exemption.
+          // `untaintedTagName` defeats a shadowed `tagName` (e.g. a form
+          // control named "tagName") instead of failing closed to "not style".
           const parent = dom.parentNode(m.target);
           const isStyle =
-            parent && typeof (parent as HTMLElement).tagName === 'string'
-              ? (parent as HTMLElement).tagName.toUpperCase() === 'STYLE'
-              : false;
+            dom.untaintedTagName(parent as Element | null) === 'STYLE';
           this.texts.push({
             value:
               !isStyle &&
@@ -638,18 +638,17 @@ export default class MutationBuffer {
 
         // `value` only means "input value" on form controls; on e.g. `<li>` or
         // `<param>` it is an ordinary attribute and belongs to the normal
-        // `finalizeAttribute` path instead.
-        if (
-          attributeName === 'value' &&
-          typeof target.tagName === 'string' &&
-          FORM_VALUE_TAGS.has(target.tagName.toUpperCase())
-        ) {
+        // `finalizeAttribute` path instead. `untaintedTagName` reads the real
+        // tag name even when a named form control (e.g. <input name="tagName">)
+        // shadows the `tagName` property on `target`.
+        const targetTagName = dom.untaintedTagName(target);
+        if (attributeName === 'value' && FORM_VALUE_TAGS.has(targetTagName)) {
           const type = getInputType(target);
 
           value = maskInput({
             element: target,
             maskInputOptions: this.maskInputOptions,
-            tagName: target.tagName,
+            tagName: targetTagName,
             type,
             value: value || '',
             maskInputFn: this.maskInputFn,
