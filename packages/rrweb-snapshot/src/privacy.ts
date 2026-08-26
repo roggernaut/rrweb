@@ -239,10 +239,27 @@ export function isProtectedInput(element: HTMLElement): boolean {
     .some((token) => PROTECTED_AUTOCOMPLETE.has(token));
 }
 
-export function sanitizeUrl(
-  value: string,
-  _privacy: CompiledPrivacyPolicy | undefined,
-): string {
-  // Task 3 reimplements
-  return value;
+export function sanitizeUrl(value: string, privacy: CompiledPrivacyPolicy | undefined): string {
+  if (!privacy || !privacy.sanitizeUrls) return value;
+  try {
+    const url = new URL(value, 'https://rrweb.invalid');
+    url.username = '';
+    url.password = '';
+    for (const [name] of url.searchParams) {
+      const lower = name.toLowerCase();
+      if (
+        (privacy.preset === 'strict' && !privacy.allowedQueryParameters) ||
+        (privacy.allowedQueryParameters && !privacy.allowedQueryParameters.has(lower)) ||
+        privacy.blockedQueryParameters.has(lower)
+      ) {
+        url.searchParams.set(name, '*');
+      }
+    }
+    if (privacy.removeHash) url.hash = '';
+    if (url.origin === 'https://rrweb.invalid')
+      return `${url.pathname}${url.search}${url.hash}`;
+    return url.toString();
+  } catch {
+    return ''; // fail closed: an unparseable URL is not recorded
+  }
 }

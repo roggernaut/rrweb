@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi } from 'vitest';
-import { compilePrivacyPolicy, validateSelector, mergeBlockSelectors, detectSensitiveValue, buildDetectors } from '../src/privacy';
+import { compilePrivacyPolicy, validateSelector, mergeBlockSelectors, detectSensitiveValue, buildDetectors, sanitizeUrl } from '../src/privacy';
 
 describe('compilePrivacyPolicy v2', () => {
   it('legacy preset compiles to inert options', () => {
@@ -131,5 +131,29 @@ describe('detectSensitiveValue', () => {
 
   it('detects dashed phone format (fix regression)', () => {
     expect(detectSensitiveValue('555-123-4567', withDetectors)).toBe(true);
+  });
+});
+
+describe('sanitizeUrl v2', () => {
+  const strict = compilePrivacyPolicy({ version: 1, preset: 'strict' });
+  const balanced = compilePrivacyPolicy({ version: 1, preset: 'balanced' });
+  const legacy = compilePrivacyPolicy(undefined);
+  it('strips userinfo credentials', () => {
+    expect(sanitizeUrl('https://alice:hunter2@api.example.com/x', balanced)).toBe('https://api.example.com/x');
+  });
+  it('masks blocked query parameters, case-insensitively', () => {
+    expect(sanitizeUrl('https://a.com/?Token=abc&ok=1', balanced)).toBe('https://a.com/?Token=*&ok=1');
+  });
+  it('strict masks all params unless allowlisted', () => {
+    const allow = compilePrivacyPolicy({ version: 1, preset: 'strict', url: { allowedQueryParameters: ['page'] } });
+    expect(sanitizeUrl('https://a.com/?page=2&q=x', strict)).toBe('https://a.com/?page=*&q=*');
+    expect(sanitizeUrl('https://a.com/?page=2&q=x', allow)).toBe('https://a.com/?page=2&q=*');
+  });
+  it('removes hash unless disabled; legacy passes through untouched', () => {
+    expect(sanitizeUrl('https://a.com/x#frag', balanced)).toBe('https://a.com/x');
+    expect(sanitizeUrl('https://alice:pw@a.com/?token=x#f', legacy)).toBe('https://alice:pw@a.com/?token=x#f');
+  });
+  it('unparseable value under non-legacy fails closed to empty string', () => {
+    expect(sanitizeUrl('http://[broken', balanced)).toBe('');
   });
 });
