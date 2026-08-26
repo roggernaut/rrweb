@@ -1,6 +1,7 @@
 # @rrweb/rrweb-plugin-privacy-detectors
 
-Opt-in Highlight-style heuristic PII matching for rrweb Privacy at Capture:
+Opt-in heuristic PII matching for rrweb Privacy at Capture — inspired by the
+automatic PII redaction found in commercial session-replay tooling:
 whole-value masking of page text nodes and form input values when a detector
 matches (email, phone, Luhn-valid payment card, SSN-like, IPv4). Detection
 covers the full snapshot and later live updates (text mutations and input

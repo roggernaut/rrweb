@@ -78,7 +78,9 @@ const DEFAULT_BLOCKED_QUERY_PARAMETERS = [
   'token',
 ];
 
-// Detector patterns (from posthog-js autocapture-utils.ts)
+// Fixed detector patterns. The validation approach (Luhn checking, SSN
+// invalid-group exclusions, delimited digit runs) is inspired by the PII
+// scrubbing in established session-replay and analytics tooling.
 const CARD_CANDIDATE = /(?:^|[^0-9-])((?:\d[ -]?){12,18}\d)(?:$|[^0-9-])/;
 const SSN_PATTERN = /\b(?!000|666|9\d{2})\d{3}-?(?!00)\d{2}-?(?!0000)\d{4}\b/;
 const EMAIL_PATTERN =
@@ -96,9 +98,10 @@ export const DEFAULT_PRIVACY_DETECTORS: Required<PrivacyDetectorOptions> = {
 };
 
 /**
- * Opt into Highlight-style heuristic PII detectors (email, phone, Luhn card,
- * SSN-like, IPv4). These are not implied by `balanced` or `strict`; load them
- * through this helper or `@rrweb/rrweb-plugin-privacy-detectors`.
+ * Opt into heuristic PII detectors (email, phone, Luhn card, SSN-like, IPv4).
+ * A detector hit masks the whole text node or input value. These are not
+ * implied by `balanced` or `strict`; load them through this helper or
+ * `@rrweb/rrweb-plugin-privacy-detectors`.
  */
 export function applyPrivacyDetectors(
   policy: PrivacyPolicy | undefined,

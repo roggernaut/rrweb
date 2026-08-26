@@ -14,9 +14,10 @@ export const PLUGIN_NAME = 'rrweb/privacy-detectors@1';
 export { applyPrivacyDetectors, DEFAULT_PRIVACY_DETECTORS };
 
 /**
- * Highlight-style heuristic PII matching (email, phone, Luhn payment card,
- * SSN-like, IPv4). Opt in explicitly; `balanced` and `strict` do not enable
- * these detectors on their own.
+ * Heuristic PII matching (email, phone, Luhn payment card, SSN-like, IPv4);
+ * a detector hit masks the whole text node or input value. Opt in
+ * explicitly; `balanced` and `strict` do not enable these detectors on
+ * their own.
  */
 export const getRecordPrivacyDetectorsPlugin: (
   options?: PrivacyDetectorsPluginOptions,
