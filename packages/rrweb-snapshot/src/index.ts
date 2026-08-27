@@ -6,6 +6,8 @@ import snapshot, {
   visitSnapshot,
   cleanupSnapshot,
   needMaskingText,
+  splitMaskAllSelector,
+  type MaskTextSelector,
   classMatchesRegex,
   IGNORED_NODE,
   genId,
@@ -38,7 +40,9 @@ export {
   visitSnapshot,
   cleanupSnapshot,
   needMaskingText,
+  splitMaskAllSelector,
   classMatchesRegex,
   IGNORED_NODE,
   genId,
 };
+export type { MaskTextSelector };

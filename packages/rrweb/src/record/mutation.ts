@@ -5,6 +5,8 @@ import {
   ignoreAttribute,
   isShadowRoot,
   needMaskingText,
+  splitMaskAllSelector,
+  type MaskTextSelector,
   maskInput,
   finalizeAttribute,
   resolveTextValue,
@@ -198,6 +200,14 @@ export default class MutationBuffer {
    */
   private effectiveUnmaskTextSelector: string | null = null;
   /**
+   * `maskTextSelector` split into its `'*'` mask-everything default and its
+   * explicit selectors, once per flush rather than once per node.
+   */
+  private splitMaskTextSelector: MaskTextSelector = {
+    maskAll: false,
+    selector: null,
+  };
+  /**
    * `needMaskingText` results memoised for the duration of one synchronous
    * mutation flush, keyed by the element the ancestor walk starts from.
    *
@@ -309,6 +319,7 @@ export default class MutationBuffer {
       this.doc,
       this.privacy?.unmaskTextSelector ?? null,
     );
+    this.splitMaskTextSelector = splitMaskAllSelector(this.maskTextSelector);
     this.maskDecisionCache.clear();
     try {
       mutations.forEach(this.processMutation); // adds mutations to the buffer
@@ -342,7 +353,7 @@ export default class MutationBuffer {
     const decision = needMaskingText(
       node,
       this.maskTextClass,
-      this.maskTextSelector,
+      this.splitMaskTextSelector,
       this.effectiveUnmaskTextSelector,
       true, // checkAncestors
     );
@@ -409,7 +420,7 @@ export default class MutationBuffer {
         blockClass: this.blockClass,
         blockSelector: this.blockSelector,
         maskTextClass: this.maskTextClass,
-        maskTextSelector: this.maskTextSelector,
+        maskTextSelector: this.splitMaskTextSelector,
         unmaskTextSelector: this.effectiveUnmaskTextSelector,
         skipChild: true,
         newlyAddedElement: true,

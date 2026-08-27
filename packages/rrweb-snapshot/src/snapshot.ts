@@ -39,6 +39,7 @@ import {
   resolvePrivacyContext,
   resolveTextValue,
   resolveUnmaskTextSelector,
+  splitSelectorList,
 } from './privacy';
 import dom from '@rrweb/utils';
 
@@ -277,30 +278,35 @@ export function classMatchesRegex(
  * split out of the selector list and only applied once the ancestor walk has
  * found nothing explicit.
  */
-const maskAllSelectorCache = new Map<
-  string,
-  { maskAll: boolean; selector: string | null }
->();
-
-function splitMaskAllSelector(maskTextSelector: string): {
+export type MaskTextSelector = {
+  /** the `'*'` mask-everything default, split out of the list */
   maskAll: boolean;
+  /** the explicit selectors, with any `'*'` removed */
   selector: string | null;
-} {
-  const cached = maskAllSelectorCache.get(maskTextSelector);
-  if (cached) return cached;
+};
+
+/**
+ * Split once per serialization pass -- at the top of `snapshot()` and once
+ * per mutation flush -- and threaded down from there, rather than re-parsed
+ * (or looked up in a module-global cache) for every node.
+ */
+export function splitMaskAllSelector(
+  maskTextSelector: string | null,
+): MaskTextSelector {
+  if (!maskTextSelector) return { maskAll: false, selector: null };
   let maskAll = false;
   const kept: string[] = [];
-  for (const part of maskTextSelector.split(',')) {
+  // `splitSelectorList`, not `split(',')`: a comma nested in `:is(a,b)`, in an
+  // attribute value, or escaped as `\,` is not a separator, and tearing one
+  // apart here would corrupt the selector that is put back together.
+  for (const part of splitSelectorList(maskTextSelector)) {
     if (part.trim() === '*') maskAll = true;
     else kept.push(part);
   }
-  const parsed = {
+  return {
     maskAll,
     selector: maskAll ? kept.join(',') || null : maskTextSelector,
   };
-  if (maskAllSelectorCache.size < 100)
-    maskAllSelectorCache.set(maskTextSelector, parsed);
-  return parsed;
 }
 
 function classMatchesMaskTextClass(
@@ -325,15 +331,13 @@ function classMatchesMaskTextClass(
 export function needMaskingText(
   node: Node,
   maskTextClass: string | RegExp,
-  maskTextSelector: string | null,
+  maskTextSelector: MaskTextSelector,
   unmaskTextSelector: string | null,
   checkAncestors: boolean,
   inheritedNeedsMask = false,
 ): boolean {
   try {
-    const { maskAll, selector } = maskTextSelector
-      ? splitMaskAllSelector(maskTextSelector)
-      : { maskAll: false, selector: null };
+    const { maskAll, selector } = maskTextSelector;
     // fast path: nothing can overrule masking when no unmasking is configured
     if ((maskAll || inheritedNeedsMask) && !unmaskTextSelector) return true;
     let el: Element;
@@ -1088,7 +1092,7 @@ export function serializeNodeWithId(
     blockClass: string | RegExp;
     blockSelector: string | null;
     maskTextClass: string | RegExp;
-    maskTextSelector: string | null;
+    maskTextSelector: MaskTextSelector;
     unmaskTextSelector: string | null;
     skipChild: boolean;
     inlineStylesheet: boolean;
@@ -1534,6 +1538,8 @@ function snapshot(
     n,
     mergedUnmaskTextSelector,
   );
+  // Split once for this pass, not once per node.
+  const splitMaskTextSelector = splitMaskAllSelector(maskTextSelector);
   const maskInputOptions: MaskInputOptions =
     maskAllInputs === true
       ? {
@@ -1567,7 +1573,7 @@ function snapshot(
     blockClass,
     blockSelector,
     maskTextClass,
-    maskTextSelector,
+    maskTextSelector: splitMaskTextSelector,
     unmaskTextSelector,
     skipChild: false,
     inlineStylesheet,
