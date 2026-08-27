@@ -505,25 +505,63 @@ export function compilePrivacyPolicy(
  * stops a syntactically broken selector from ever reaching it. The compiled
  * halves are already validated, so re-probing them is only a cheap no-op.
  */
-export function mergeBlockSelectors(
-  legacySelector: string | null,
-  privacy: CompiledPrivacyPolicy | undefined,
+export function mergeSelectors(
+  legacySelector: string | null | undefined,
+  compiledSelector: string | null | undefined,
 ): string | null {
-  return joinSelectors([legacySelector, privacy?.blockSelector]);
+  return joinSelectors([legacySelector, compiledSelector]);
 }
 
-export function mergeMaskTextSelectors(
-  legacySelector: string | null,
-  privacy: CompiledPrivacyPolicy | undefined,
-): string | null {
-  return joinSelectors([legacySelector, privacy?.maskTextSelector]);
-}
+/** The privacy state one recording pass (or one `snapshot()` call) runs on. */
+export type PrivacyContext = {
+  privacy: CompiledPrivacyPolicy;
+  blockSelector: string | null;
+  maskTextSelector: string | null;
+  unmaskTextSelector: string | null;
+};
 
-export function mergeUnmaskTextSelectors(
-  legacySelector: string | null,
-  privacy: CompiledPrivacyPolicy | undefined,
-): string | null {
-  return joinSelectors([legacySelector, privacy?.unmaskTextSelector]);
+/**
+ * The one privacy prologue: compile the portable policy (unless an
+ * already-compiled one is handed in), merge every `record()`-level selector
+ * option with its compiled counterpart, and write the merged unmask selector
+ * back onto the policy.
+ *
+ * The write-back is what makes "one unmask selector, honored everywhere" true.
+ * `finalizeAttribute` reads the *compiled policy's* `unmaskTextSelector`, so
+ * without it the `record()`-level string option would only ever affect text
+ * masking and would silently skip the masked-attribute escape.
+ *
+ * Both `record()` and a standalone `snapshot()` call go through here, which is
+ * why merging has to be idempotent -- see `joinSelectors`.
+ */
+export function resolvePrivacyContext({
+  privacy: compiled,
+  privacyPolicy,
+  blockSelector = null,
+  maskTextSelector = null,
+  unmaskTextSelector = null,
+}: {
+  /** An already-compiled policy; takes precedence over `privacyPolicy`. */
+  privacy?: CompiledPrivacyPolicy;
+  privacyPolicy?: PrivacyPolicy;
+  blockSelector?: string | null;
+  maskTextSelector?: string | null;
+  unmaskTextSelector?: string | null;
+}): PrivacyContext {
+  const base = compiled || compilePrivacyPolicy(privacyPolicy);
+  const mergedUnmaskTextSelector = mergeSelectors(
+    unmaskTextSelector,
+    base.unmaskTextSelector,
+  );
+  return {
+    privacy:
+      mergedUnmaskTextSelector === base.unmaskTextSelector
+        ? base
+        : { ...base, unmaskTextSelector: mergedUnmaskTextSelector },
+    blockSelector: mergeSelectors(blockSelector, base.blockSelector),
+    maskTextSelector: mergeSelectors(maskTextSelector, base.maskTextSelector),
+    unmaskTextSelector: mergedUnmaskTextSelector,
+  };
 }
 
 export function passesLuhn(candidate: string): boolean {

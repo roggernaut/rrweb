@@ -35,12 +35,9 @@ import {
   markCssSplits,
 } from './snapshot-utils';
 import {
-  compilePrivacyPolicy,
   detectSensitiveValue,
   finalizeAttribute,
-  mergeBlockSelectors,
-  mergeMaskTextSelectors,
-  mergeUnmaskTextSelectors,
+  resolvePrivacyContext,
   resolveUnmaskTextSelector,
 } from './privacy';
 import dom from '@rrweb/utils';
@@ -1476,6 +1473,15 @@ function snapshot(
     stylesheetLoadTimeout?: number;
     keepIframeSrcFn?: KeepIframeSrcFn;
     privacyPolicy?: PrivacyPolicy;
+    /**
+     * @internal An already-compiled policy whose selectors have already been
+     * merged into the `blockSelector`/`maskTextSelector`/`unmaskTextSelector`
+     * options above. Takes precedence over `privacyPolicy` and skips the
+     * compile-and-merge prologue; `record()` passes it so the policy is
+     * compiled once per recording rather than once per full snapshot. The
+     * per-document unmask presence probe still runs.
+     */
+    privacy?: CompiledPrivacyPolicy;
   },
 ): serializedNodeWithId | null {
   const {
@@ -1504,23 +1510,29 @@ function snapshot(
     stylesheetLoadTimeout,
     keepIframeSrcFn = () => false,
     privacyPolicy,
+    privacy: compiledPrivacy,
   } = options || {};
-  let privacy = compilePrivacyPolicy(privacyPolicy);
-  const blockSelector = mergeBlockSelectors(legacyBlockSelector, privacy);
-  const maskTextSelector = mergeMaskTextSelectors(
-    legacyMaskTextSelector,
+  // `record()` hands over an already-compiled policy whose selectors it has
+  // already merged into the options above; a standalone caller gets the full
+  // compile-and-merge prologue.
+  const {
     privacy,
-  );
-  // One unmask selector, honored everywhere. `finalizeAttribute` reads the
-  // *compiled policy's* `unmaskTextSelector`, so the `record()`-level string
-  // option has to be written back onto the policy or it would only ever
-  // affect text masking and silently skip the masked-attribute escape.
-  const mergedUnmaskTextSelector = mergeUnmaskTextSelectors(
-    legacyUnmaskTextSelector,
-    privacy,
-  );
-  if (mergedUnmaskTextSelector !== privacy.unmaskTextSelector)
-    privacy = { ...privacy, unmaskTextSelector: mergedUnmaskTextSelector };
+    blockSelector,
+    maskTextSelector,
+    unmaskTextSelector: mergedUnmaskTextSelector,
+  } = compiledPrivacy
+    ? {
+        privacy: compiledPrivacy,
+        blockSelector: legacyBlockSelector,
+        maskTextSelector: legacyMaskTextSelector,
+        unmaskTextSelector: compiledPrivacy.unmaskTextSelector,
+      }
+    : resolvePrivacyContext({
+        privacyPolicy,
+        blockSelector: legacyBlockSelector,
+        maskTextSelector: legacyMaskTextSelector,
+        unmaskTextSelector: legacyUnmaskTextSelector,
+      });
   // The policy above keeps the *unresolved* selector: `resolveUnmaskTextSelector`
   // is a presence probe scoped to this document, and the same policy object is
   // threaded into nested iframe documents, where a match may well exist.

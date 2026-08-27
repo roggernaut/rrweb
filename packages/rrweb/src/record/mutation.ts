@@ -189,9 +189,9 @@ export default class MutationBuffer {
   private blockSelector: observerParam['blockSelector'];
   private maskTextClass: observerParam['maskTextClass'];
   private maskTextSelector: observerParam['maskTextSelector'];
-  private unmaskTextSelector: observerParam['unmaskTextSelector'];
   /**
-   * `unmaskTextSelector` re-resolved once per mutation flush (see
+   * The compiled policy's `unmaskTextSelector` re-resolved once per mutation
+   * flush (see
    * `resolveUnmaskTextSelector`): null when nothing in the live document
    * currently matches it, so the per-node ancestor walk it otherwise forces
    * in `needMaskingText`/`serializeNodeWithId` can short-circuit again.
@@ -242,7 +242,6 @@ export default class MutationBuffer {
         'blockSelector',
         'maskTextClass',
         'maskTextSelector',
-        'unmaskTextSelector',
         'inlineStylesheet',
         'maskInputOptions',
         'maskTextFn',
@@ -308,7 +307,7 @@ export default class MutationBuffer {
     // actually configured one.
     this.effectiveUnmaskTextSelector = resolveUnmaskTextSelector(
       this.doc,
-      this.unmaskTextSelector,
+      this.privacy?.unmaskTextSelector ?? null,
     );
     this.maskDecisionCache.clear();
     try {

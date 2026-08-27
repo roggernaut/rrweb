@@ -125,7 +125,6 @@ export type observerParam = {
   ignoreSelector: string | null;
   maskTextClass: maskTextClass;
   maskTextSelector: string | null;
-  unmaskTextSelector: string | null;
   maskInputOptions: MaskInputOptions;
   maskInputFn?: MaskInputFn;
   maskTextFn?: MaskTextFn;
@@ -174,7 +173,6 @@ export type MutationBufferParam = Pick<
   | 'blockSelector'
   | 'maskTextClass'
   | 'maskTextSelector'
-  | 'unmaskTextSelector'
   | 'inlineStylesheet'
   | 'maskInputOptions'
   | 'maskTextFn'

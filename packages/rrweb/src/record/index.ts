@@ -5,9 +5,7 @@ import {
   createMirror,
   compilePrivacyPolicy,
   type CompiledPrivacyPolicy,
-  mergeBlockSelectors,
-  mergeMaskTextSelectors,
-  mergeUnmaskTextSelectors,
+  resolvePrivacyContext,
   sanitizeUrl,
 } from 'rrweb-snapshot';
 import { initObservers, mutationBuffers } from './observer';
@@ -122,15 +120,9 @@ function record<T = eventWithTime>(
         : policy,
     privacyPolicy,
   );
-  // What actually gets used from here on -- both to compile `privacy` below
-  // and to hand to `snapshot()` later (which independently compiles its own
-  // `privacyPolicy` option). Defaults to the plugin-transformed policy, but
-  // falls back to the user's own policy if the transform produced something
-  // uncompilable, so both compile calls stay in agreement.
-  let effectivePrivacyPolicy = portablePrivacyPolicy;
-  let privacy: CompiledPrivacyPolicy;
+  let compiledPrivacy: CompiledPrivacyPolicy;
   try {
-    privacy = compilePrivacyPolicy(portablePrivacyPolicy);
+    compiledPrivacy = compilePrivacyPolicy(portablePrivacyPolicy);
   } catch (error) {
     // A plugin's `applyPrivacyPolicy` transform produced something
     // `compilePrivacyPolicy` can't compile. That's the plugin's bug, not the
@@ -143,28 +135,22 @@ function record<T = eventWithTime>(
         '[rrweb] plugin-transformed privacy policy failed to compile; using the user policy',
         error,
       );
-      effectivePrivacyPolicy = privacyPolicy;
-      privacy = compilePrivacyPolicy(privacyPolicy);
+      compiledPrivacy = compilePrivacyPolicy(privacyPolicy);
     } else {
       throw error;
     }
   }
-  const blockSelector = mergeBlockSelectors(legacyBlockSelector, privacy);
-  const maskTextSelector = mergeMaskTextSelectors(
-    legacyMaskTextSelector,
-    privacy,
-  );
-  const unmaskTextSelector = mergeUnmaskTextSelectors(
-    legacyUnmaskTextSelector,
-    privacy,
-  );
-  // One unmask selector, honored everywhere. The mutation path's
-  // `finalizeAttribute` reads the compiled policy's own `unmaskTextSelector`,
-  // so the `record()`-level string option is written back onto it -- without
-  // this it would only affect text masking, never the masked-attribute
-  // escape. `snapshot()` does the same for the full-snapshot path.
-  if (unmaskTextSelector !== privacy.unmaskTextSelector)
-    privacy = { ...privacy, unmaskTextSelector };
+  // The one privacy prologue: merges every legacy selector option with its
+  // compiled counterpart and writes the merged unmask selector back onto the
+  // policy. `snapshot()` is handed `privacy` directly, so it neither compiles
+  // nor merges again. The merged unmask selector needs no separate carrier of
+  // its own -- it rides on `privacy`, and every consumer reads it from there.
+  const { privacy, blockSelector, maskTextSelector } = resolvePrivacyContext({
+    privacy: compiledPrivacy,
+    blockSelector: legacyBlockSelector,
+    maskTextSelector: legacyMaskTextSelector,
+    unmaskTextSelector: legacyUnmaskTextSelector,
+  });
   // Strict remains fail-closed for the whole canvas. Region providers are
   // available to balanced/legacy policies, where the application owns
   // the completeness of those regions.
@@ -413,7 +399,6 @@ function record<T = eventWithTime>(
       blockSelector,
       maskTextClass,
       maskTextSelector,
-      unmaskTextSelector,
       inlineStylesheet,
       maskInputOptions,
       dataURLOptions,
@@ -467,7 +452,6 @@ function record<T = eventWithTime>(
       blockSelector,
       maskTextClass,
       maskTextSelector,
-      unmaskTextSelector,
       inlineStylesheet,
       maskAllInputs: maskInputOptions,
       maskTextFn,
@@ -479,7 +463,7 @@ function record<T = eventWithTime>(
       recordCanvas,
       canvasMaskingConfigured,
       inlineImages,
-      privacyPolicy: effectivePrivacyPolicy,
+      privacy,
       onSerialize: (n) => {
         if (isSerializedIframe(n, mirror)) {
           iframeManager.addIframe(n as HTMLIFrameElement);
@@ -623,7 +607,6 @@ function record<T = eventWithTime>(
           ignoreSelector,
           maskTextClass,
           maskTextSelector,
-          unmaskTextSelector,
           maskInputOptions,
           maskAllElementAttributes,
           maskAttributeFn,

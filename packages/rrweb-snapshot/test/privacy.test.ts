@@ -5,9 +5,8 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   compilePrivacyPolicy,
   validateSelector,
-  mergeBlockSelectors,
-  mergeMaskTextSelectors,
-  mergeUnmaskTextSelectors,
+  mergeSelectors,
+  resolvePrivacyContext,
   detectSensitiveValue,
   buildDetectors,
   sanitizeUrl,
@@ -188,13 +187,34 @@ describe('splitSelectorList', () => {
   });
 });
 
-describe('mergeBlockSelectors', () => {
+describe('resolvePrivacyContext', () => {
   it('joins legacy selector with compiled blockSelector', () => {
-    const c = compilePrivacyPolicy({ version: 1, preset: 'balanced' });
-    expect(mergeBlockSelectors('.legacy', c)).toContain('.legacy');
-    expect(mergeBlockSelectors('.legacy', c)).toContain(
-      '[data-privacy="exclude"]',
-    );
+    const { blockSelector } = resolvePrivacyContext({
+      privacyPolicy: { version: 1, preset: 'balanced' },
+      blockSelector: '.legacy',
+    });
+    expect(blockSelector).toContain('.legacy');
+    expect(blockSelector).toContain('[data-privacy="exclude"]');
+  });
+
+  /**
+   * `finalizeAttribute` reads the *compiled policy's* `unmaskTextSelector`,
+   * so the record()-level option has to be written back onto the policy or it
+   * would only ever affect text masking.
+   */
+  it('writes the merged unmask selector back onto the compiled policy', () => {
+    const { privacy, unmaskTextSelector } = resolvePrivacyContext({
+      privacyPolicy: { version: 1, preset: 'balanced' },
+      unmaskTextSelector: '.mine',
+    });
+    expect(privacy.unmaskTextSelector).toBe(unmaskTextSelector);
+    expect(privacy.unmaskTextSelector).toContain('.mine');
+    expect(privacy.unmaskTextSelector).toContain('[data-privacy="allow"]');
+  });
+
+  it('leaves the compiled policy untouched when nothing was merged in', () => {
+    const compiled = compilePrivacyPolicy({ version: 1, preset: 'balanced' });
+    expect(resolvePrivacyContext({ privacy: compiled }).privacy).toBe(compiled);
   });
 });
 
@@ -214,12 +234,12 @@ describe('merge helpers validate the record()-level selector', () => {
   });
 
   it.each([
-    ['mergeMaskTextSelectors', mergeMaskTextSelectors],
-    ['mergeUnmaskTextSelectors', mergeUnmaskTextSelectors],
-    ['mergeBlockSelectors', mergeBlockSelectors],
-  ])('%s drops an invalid legacy half with a warning', (_name, merge) => {
+    ['maskTextSelector', balanced.maskTextSelector],
+    ['unmaskTextSelector', balanced.unmaskTextSelector],
+    ['blockSelector', balanced.blockSelector],
+  ])('%s drops an invalid legacy half with a warning', (_name, compiled) => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    const merged = merge(':::garbage', balanced);
+    const merged = mergeSelectors(':::garbage', compiled);
     expect(merged).not.toContain(':::garbage');
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining('dropping invalid selector'),
@@ -230,7 +250,10 @@ describe('merge helpers validate the record()-level selector', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     // ':::garbage,.valid' is a single invalid selector string, so it is
     // dropped whole; the caller keeps the compiled policy's own selectors.
-    const merged = mergeMaskTextSelectors(':::garbage,.valid', balanced);
+    const merged = mergeSelectors(
+      ':::garbage,.valid',
+      balanced.maskTextSelector,
+    );
     expect(merged).toBe(balanced.maskTextSelector);
     expect(warn).toHaveBeenCalled();
   });
@@ -241,14 +264,14 @@ describe('merge helpers validate the record()-level selector', () => {
    * Without deduplication every fragment would be repeated on each pass.
    */
   it('is idempotent: re-merging an already-merged selector adds nothing', () => {
-    const once = mergeUnmaskTextSelectors(null, balanced);
-    const twice = mergeUnmaskTextSelectors(once, balanced);
+    const once = mergeSelectors(null, balanced.unmaskTextSelector);
+    const twice = mergeSelectors(once, balanced.unmaskTextSelector);
     expect(twice).toBe(once);
-    expect(mergeUnmaskTextSelectors(twice, balanced)).toBe(once);
+    expect(mergeSelectors(twice, balanced.unmaskTextSelector)).toBe(once);
   });
 
   it('deduplicates a fragment the legacy half repeats from the policy', () => {
-    const merged = mergeMaskTextSelectors('.rr-mask,.mine', balanced);
+    const merged = mergeSelectors('.rr-mask,.mine', balanced.maskTextSelector);
     expect(merged!.split(',').filter((p) => p === '.rr-mask')).toHaveLength(1);
     expect(merged).toContain('.mine');
   });
@@ -262,7 +285,7 @@ describe('merge helpers validate the record()-level selector', () => {
    */
   it('an escaped comma does not swallow an unrelated selector in the dedupe', () => {
     const legacy = compilePrivacyPolicy(undefined);
-    const merged = mergeMaskTextSelectors('.a\\,b,b', legacy)!;
+    const merged = mergeSelectors('.a\\,b,b', legacy.maskTextSelector)!;
 
     document.body.innerHTML = '<div class="a,b">x</div><b>y</b>';
     const commaClassEl = document.querySelector('div')!;
@@ -280,7 +303,7 @@ describe('merge helpers validate the record()-level selector', () => {
       preset: 'legacy',
       rules: [{ target: { type: 'selector', selector: 'b' }, action: 'mask' }],
     });
-    const merged = mergeMaskTextSelectors('.a\\,b', policy)!;
+    const merged = mergeSelectors('.a\\,b', policy.maskTextSelector)!;
 
     document.body.innerHTML = '<div class="a,b">x</div><b>y</b>';
     expect(document.querySelector('div')!.matches(merged)).toBe(true);
@@ -290,9 +313,9 @@ describe('merge helpers validate the record()-level selector', () => {
   it('does not tear a selector whose commas are nested', () => {
     // a naive split(',') would produce ':is(.a' and '.b)' -- rejoining
     // deduplicated halves of those would corrupt the selector
-    const merged = mergeMaskTextSelectors(
+    const merged = mergeSelectors(
       ':is(.a,.b),[data-x="p,q"]',
-      balanced,
+      balanced.maskTextSelector,
     );
     expect(merged).toContain(':is(.a,.b)');
     expect(merged).toContain('[data-x="p,q"]');
@@ -307,7 +330,10 @@ describe('merge helpers validate the record()-level selector', () => {
     const out = JSON.stringify(
       snapshot(document, {
         privacyPolicy: { version: 1, preset: 'balanced' },
-        maskTextSelector: mergeMaskTextSelectors(':::garbage,.valid', balanced),
+        maskTextSelector: mergeSelectors(
+          ':::garbage,.valid',
+          balanced.maskTextSelector,
+        ),
       }),
     );
 
