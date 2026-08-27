@@ -338,18 +338,16 @@ convention to reach for in new markup -- use `data-privacy` for that.
 
 - Mask: `.rr-mask`, `.mp-mask`, `.fs-mask`, `.amp-mask`, `.ph-mask`, `.sentry-mask`, `[data-sentry-mask]`, `.dd-privacy-mask`, `[data-dd-privacy="mask"]`, `.dd-privacy-mask-user-input`, `[data-dd-privacy="mask-user-input"]`, `.nr-mask`, `[data-nr-mask]`
 - Block: `.rr-block`, `.mp-block`, `.fs-exclude`, `.amp-block`, `.ph-no-capture`, `.sentry-block`, `.dd-privacy-hidden`, `[data-dd-privacy="hidden"]`, `.nr-block`, `[data-nr-block]`
-- Unmask: `.amp-unmask`, `.rr-unmask`
+- Unmask: `.rr-unmask`
 
 The mask and block lists are the mask/exclude conventions of major
 session-replay tools -- rrweb, Mixpanel, Amplitude, PostHog, Sentry,
 FullStory, Datadog, and New Relic. Recognizing a foreign mask/block token is
 protective-only: it can only increase masking. Foreign UNMASK/allow tokens
 are deliberately never honored, because honoring one could reveal something
-the page author masked for a reason rrweb has no way to know. That asymmetry
-is why the unmask list is so much shorter than the other two: `.amp-unmask`
-is Amplitude's, `.rr-unmask` is rrweb's own, and every other vendor either
-ships no unmask class at all or defaults its unmask list to empty, so there
-is nothing more to be compatible with.
+the page author masked for a reason rrweb has no way to know. Unmasking must
+come from rrweb's own `.rr-unmask`, the neutral `data-privacy="allow"`
+attribute, or an explicit policy/recording option.
 
 The Datadog tokens come from `browser-sdk
 packages/browser-rum-core/src/domain/privacyConstants.ts` (the

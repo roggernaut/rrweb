@@ -59,6 +59,14 @@ describe('text masking v2', () => {
     expect(out).not.toContain('hidden');
   });
 
+  it('does not let a foreign unmask token escape strict masking', () => {
+    const out = serialize(
+      '<div class="amp-unmask"><p>still hidden</p></div>',
+      strict,
+    );
+    expect(out).not.toContain('still hidden');
+  });
+
   /**
    * Different levels: nearest ancestor wins (covered above). Same element:
    * mask wins. Sentry resolves the tie with `maskDistance <= unmaskDistance`,

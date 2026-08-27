@@ -23,7 +23,6 @@ const PRIVACY_SELECTOR_FRAGMENTS = [
   'fs-mask',
   'fs-exclude',
   'amp-mask',
-  'amp-unmask',
   'amp-block',
   'ph-mask',
   'ph-no-capture',

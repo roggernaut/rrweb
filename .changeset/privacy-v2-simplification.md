@@ -72,10 +72,10 @@ Additional breaking/behavior notes:
   markup. Their mask/block tokens are honored because doing so can only
   increase masking; their unmask/allow tokens are never honored, because
   honoring one could reveal something the page author masked for a reason
-  rrweb cannot know. The recognized cross-vendor unmask tokens are therefore
-  just `.amp-unmask` and rrweb's own `.rr-unmask`;
-  `.sentry-unmask`/`[data-sentry-unmask]` were removed, since no vendor
-  defines them (Sentry's `unmask` default is `[]`). The mask and block class
+  rrweb cannot know. Unmasking comes only from rrweb's own `.rr-unmask`, the
+  neutral `data-privacy="allow"` attribute, or an explicit policy/recording
+  option. Foreign conventions such as `.amp-unmask`, `.sentry-unmask`, and
+  `[data-sentry-unmask]` are not recognized. The mask and block class
   lists now cover eight vendors' conventions -- rrweb, Mixpanel, Amplitude,
   PostHog, Sentry, FullStory, Datadog, and New Relic.
 - The preset's masked attributes (`title`, `placeholder`, `aria-label`) now

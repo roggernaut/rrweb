@@ -93,13 +93,10 @@ describe('compilePrivacyPolicy v2', () => {
     expect(c.unmaskTextSelector).toContain('.safe');
     expect(c.blockSelector).toContain('.gone');
   });
-  it('recognizes only real vendor unmask tokens plus rrweb’s own', () => {
-    // Amplitude is the only vendor shipping an unmask class. Sentry's
-    // `unmask` default is `[]` -- there is no `.sentry-unmask` convention to
-    // be compatible with, so claiming one would be fiction.
+  it('never grants authority to foreign unmask tokens', () => {
     const c = compilePrivacyPolicy({ version: 1, preset: 'balanced' });
     expect(c.unmaskTextSelector).toContain('.rr-unmask');
-    expect(c.unmaskTextSelector).toContain('.amp-unmask');
+    expect(c.unmaskTextSelector).not.toContain('amp-unmask');
     expect(c.unmaskTextSelector).not.toContain('sentry-unmask');
     // the mask/block lists stay full cross-vendor compat
     expect(c.maskTextSelector).toContain('.sentry-mask');

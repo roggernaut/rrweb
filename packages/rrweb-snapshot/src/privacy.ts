@@ -16,8 +16,7 @@ import { untaintedTagName } from '@rrweb/utils';
 // (rrweb, Mixpanel, Amplitude, PostHog, Sentry, FullStory, Datadog, New
 // Relic) that pages may already carry. Recognizing a foreign mask/block
 // token is protective-only -- it can only increase masking. Foreign
-// UNMASK/allow tokens are deliberately never honored (they could reveal); see
-// `VENDOR_UNMASK_CLASSES` below.
+// UNMASK/allow tokens are deliberately never honored (they could reveal).
 //
 // Sources:
 // - Datadog `browser-sdk packages/browser-rum-core/src/domain/privacyConstants.ts`
@@ -29,10 +28,11 @@ import { untaintedTagName } from '@rrweb/utils';
 //   `nr-ignore` deliberately excluded)
 const VENDOR_MASK_CLASSES =
   '.rr-mask,.mp-mask,.fs-mask,.amp-mask,.ph-mask,.sentry-mask,[data-sentry-mask],.dd-privacy-mask,[data-dd-privacy="mask"],.dd-privacy-mask-user-input,[data-dd-privacy="mask-user-input"],.nr-mask,[data-nr-mask]';
-// Amplitude is the only vendor that ships an unmask class (`.amp-unmask`);
-// Sentry's `unmask` default is `[]`, so there is no `.sentry-unmask` to be
-// compatible with. `.rr-unmask` is rrweb's own convention, not vendor compat.
-const VENDOR_UNMASK_CLASSES = '.rr-unmask,.amp-unmask';
+// Unmasking is intentionally limited to rrweb's own convention, the neutral
+// `data-privacy="allow"` attribute, and explicit policy/record() selectors.
+// A foreign unmask token may have been safe only under its original recorder's
+// defaults, so migration compatibility must never grant it authority here.
+const RRWEB_UNMASK_CLASS = '.rr-unmask';
 const VENDOR_BLOCK_CLASSES =
   '.rr-block,.mp-block,.fs-exclude,.amp-block,.ph-no-capture,.sentry-block,.dd-privacy-hidden,[data-dd-privacy="hidden"],.nr-block,[data-nr-block]';
 const PRIVACY_PRESETS = new Set(['strict', 'balanced', 'legacy']);
@@ -551,11 +551,7 @@ export function compilePrivacyPolicy(
         ),
     unmaskTextSelector: joinSelectors(
       nonLegacy
-        ? [
-            '[data-privacy="allow"]',
-            VENDOR_UNMASK_CLASSES,
-            ...bySelector.unmask,
-          ]
+        ? ['[data-privacy="allow"]', RRWEB_UNMASK_CLASS, ...bySelector.unmask]
         : bySelector.unmask,
     ),
     blockSelector: joinSelectors(
