@@ -39,6 +39,7 @@ import {
   resolvePrivacyContext,
   resolveTextValue,
   resolveUnmaskTextSelector,
+  shouldCapturePixels,
   splitSelectorList,
 } from './privacy';
 import dom from '@rrweb/utils';
@@ -788,8 +789,7 @@ function serializeElementNode(
   if (
     tagName === 'canvas' &&
     recordCanvas &&
-    !canvasMaskingConfigured?.() &&
-    privacy?.policy.preset !== 'strict'
+    shouldCapturePixels(privacy, canvasMaskingConfigured)
   ) {
     if ((n as ICanvas).__context === '2d') {
       // only record this on 2d canvas
@@ -822,11 +822,7 @@ function serializeElementNode(
     }
   }
   // save image offline
-  if (
-    tagName === 'img' &&
-    inlineImages &&
-    privacy?.policy.preset !== 'strict'
-  ) {
+  if (tagName === 'img' && inlineImages && shouldCapturePixels(privacy)) {
     if (!canvasService) {
       canvasService = doc.createElement('canvas');
       canvasCtx = canvasService.getContext('2d');

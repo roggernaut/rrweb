@@ -154,8 +154,7 @@ function record<T = eventWithTime>(
   // Strict remains fail-closed for the whole canvas. Region providers are
   // available to balanced/legacy policies, where the application owns
   // the completeness of those regions.
-  const recordCanvas =
-    requestedRecordCanvas && privacy?.policy.preset !== 'strict';
+  const recordCanvas = requestedRecordCanvas && !privacy.blockMedia;
   const canvasMaskingConfigured = canvasMasking
     ? () => isCanvasMaskingConfigured(canvasMasking)
     : undefined;

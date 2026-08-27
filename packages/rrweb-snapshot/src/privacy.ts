@@ -332,6 +332,26 @@ export function resolveTextValue({
   return value;
 }
 
+/**
+ * Whether real pixels may be recorded for `element`'s content.
+ *
+ * Two independent reasons to say no, folded into one call so both snapshot
+ * pixel sites ask the same question the same way:
+ *  - `strict` blocks media wholesale (`blockMedia` is the preset alias);
+ *  - a configured canvas masking provider means the only capture path that
+ *    can redact anything is the FPS one, so the snapshot's own `toDataURL`
+ *    must not run alongside it.
+ *
+ * The second reason is a canvas concern only, so the `<img>` inlining site
+ * passes no thunk.
+ */
+export function shouldCapturePixels(
+  privacy: CompiledPrivacyPolicy | undefined,
+  canvasMaskingConfigured?: () => boolean,
+): boolean {
+  return !privacy?.blockMedia && !canvasMaskingConfigured?.();
+}
+
 export function validateSelector(selector: string): boolean {
   try {
     document.createDocumentFragment().querySelector(selector);
@@ -508,7 +528,6 @@ export function compilePrivacyPolicy(
   }
 
   return {
-    policy: effective,
     preset,
     maskTextSelector: nonLegacy
       ? preset === 'strict'

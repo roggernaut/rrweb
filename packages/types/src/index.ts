@@ -372,7 +372,6 @@ export type CompiledDetector = {
 
 /** Runtime form of a compiled policy, shared by snapshot and incremental observers. */
 export type CompiledPrivacyPolicy = {
-  policy: PrivacyPolicy;
   preset: PrivacyPreset;
   /** 'mask' rules + [data-privacy="mask"] + vendor classes (+ '*' under strict) */
   maskTextSelector: string | null;
@@ -388,9 +387,9 @@ export type CompiledPrivacyPolicy = {
   maskAllInputs: boolean;
   /** ['title','placeholder','aria-label'] under balanced/strict, else [] */
   maskedAttributes: string[];
-  /** true under strict */
+  /** true under strict; the `strict` preset alias every media gate reads */
   blockMedia: boolean;
-  /** true under balanced/strict */
+  /** true under balanced/strict; the non-legacy preset alias */
   sanitizeUrls: boolean;
   /** precomputed, lowercased */
   blockedQueryParameters: Set<string>;

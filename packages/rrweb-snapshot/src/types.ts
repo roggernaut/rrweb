@@ -74,89 +74,24 @@ export type MaskAttributeFn = (
   element: Element,
 ) => string;
 
-/** A versioned, portable Privacy at Capture policy understood by rrweb. */
-export type PrivacyPolicy = {
-  version: 1;
-  preset: PrivacyPreset;
-  rules?: PrivacyRule[];
-  detectors?: PrivacyDetectorOptions;
-  url?: PrivacyUrlOptions;
-};
-
-export type PrivacyPreset = 'strict' | 'balanced' | 'legacy';
-
-/** `unmask` is an alias of `allow`. */
-export type PrivacyAction = 'allow' | 'unmask' | 'mask' | 'exclude';
-
-export type PrivacyRule = {
-  target: PrivacyTarget;
-  action: PrivacyAction;
-};
-
-export type PrivacyTarget = {
-  type: 'selector';
-  /** A CSS selector. Rules also apply to descendants of the matched node. */
-  selector: string;
-};
-
-export type PrivacyDetectorOptions = Partial<{
-  /**
-   * Explicit opt-in flags for built-in heuristic detectors. Presets do not
-   * enable these; use `@rrweb/rrweb-plugin-privacy-detectors` or
-   * `applyPrivacyDetectors`.
-   */
-  email: boolean;
-  phone: boolean;
-  paymentCard: boolean;
-  ssn: boolean;
-  ipAddress: boolean;
-}>;
-
-export type PrivacyUrlOptions = {
-  /** Query parameter names whose values are always removed. */
-  blockedQueryParameters?: string[];
-  /**
-   * When supplied, all query parameter values except these are removed.
-   * Parameter names remain visible so replays retain useful routing context.
-   */
-  allowedQueryParameters?: string[];
-  removeHash?: boolean;
-};
-
-export type CompiledDetector = {
-  name: string;
-  test: (value: string) => boolean;
-};
-
-/** @internal Runtime form shared by snapshot and incremental observers. */
-export type CompiledPrivacyPolicy = {
-  policy: PrivacyPolicy;
-  preset: PrivacyPreset;
-  /** 'mask' rules + [data-privacy="mask"] + vendor classes (+ '*' under strict) */
-  maskTextSelector: string | null;
-  /** 'allow'/'unmask' rules + [data-privacy="allow"] + vendor unmask classes */
-  unmaskTextSelector: string | null;
-  /** 'exclude' rules + [data-privacy="exclude"] + vendor block classes */
-  blockSelector: string | null;
-  /**
-   * true under balanced/strict, and whenever any heuristic detector is
-   * active: detectors scan text content only, so input values are occluded
-   * to length rather than scanned as they are typed.
-   */
-  maskAllInputs: boolean;
-  /** ['title','placeholder','aria-label'] under balanced/strict, else [] */
-  maskedAttributes: string[];
-  /** true under strict */
-  blockMedia: boolean;
-  /** true under balanced/strict */
-  sanitizeUrls: boolean;
-  /** precomputed, lowercased */
-  blockedQueryParameters: Set<string>;
-  allowedQueryParameters: Set<string> | null;
-  removeHash: boolean;
-  /** populated by applyPrivacyDetectors; [] otherwise. Text content only. */
-  detectors: CompiledDetector[];
-};
+/**
+ * The Privacy at Capture type family lives in `@rrweb/types`, which is the
+ * single declared source of truth for it: the policy is a portable, versioned
+ * document that travels between the recorder, the plugins and any consumer,
+ * so no one of those packages should own its shape. Re-exported here so
+ * `rrweb-snapshot`'s own public surface is unchanged.
+ */
+export type {
+  PrivacyPolicy,
+  PrivacyPreset,
+  PrivacyAction,
+  PrivacyRule,
+  PrivacyTarget,
+  PrivacyDetectorOptions,
+  PrivacyUrlOptions,
+  CompiledDetector,
+  CompiledPrivacyPolicy,
+} from '@rrweb/types';
 
 export type KeepIframeSrcFn = (src: string) => boolean;
 
