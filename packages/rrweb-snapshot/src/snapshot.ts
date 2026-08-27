@@ -1508,9 +1508,10 @@ function snapshot(
     /**
      * @internal An already-compiled policy whose selectors have already been
      * merged into the `blockSelector`/`maskTextSelector`/`unmaskTextSelector`
-     * options above. Takes precedence over `privacyPolicy` and skips the
-     * compile-and-merge prologue; `record()` passes it so the policy is
-     * compiled once per recording rather than once per full snapshot. The
+     * options above. Takes precedence over `privacyPolicy`. The shared
+     * prologue (`resolvePrivacyContext`) still runs on both entry points and
+     * is idempotent, so re-merging pre-merged selectors is a no-op; passing
+     * `privacy` avoids re-COMPILING the policy on every full snapshot. The
      * per-document unmask presence probe still runs.
      */
     privacy?: CompiledPrivacyPolicy;
