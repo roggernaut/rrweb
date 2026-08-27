@@ -7,14 +7,29 @@ import type {
 } from './types';
 import { untaintedTagName } from '@rrweb/utils';
 
+// These are the mask/exclude conventions of major session-replay tools
+// (rrweb, Mixpanel, Amplitude, PostHog, Sentry, FullStory, Datadog, New
+// Relic) that pages may already carry. Recognizing a foreign mask/block
+// token is protective-only -- it can only increase masking. Foreign
+// UNMASK/allow tokens are deliberately never honored (they could reveal); see
+// `VENDOR_UNMASK_CLASSES` below.
+//
+// Sources:
+// - Datadog `browser-sdk packages/browser-rum-core/src/domain/privacyConstants.ts`
+//   (`data-dd-privacy` attr; `dd-privacy-` class prefix; `mask`/
+//   `mask-user-input`/`hidden` values; `allow` and `mask-unless-allowlisted`
+//   deliberately excluded)
+// - New Relic `newrelic-browser-agent src/common/config/init.js`
+//   (`[data-nr-mask]`, `nr-mask`, `nr-block`, `[data-nr-block]`; `nr-unmask`/
+//   `nr-ignore` deliberately excluded)
 const VENDOR_MASK_CLASSES =
-  '.rr-mask,.mp-mask,.fs-mask,.amp-mask,.ph-mask,.sentry-mask,[data-sentry-mask]';
+  '.rr-mask,.mp-mask,.fs-mask,.amp-mask,.ph-mask,.sentry-mask,[data-sentry-mask],.dd-privacy-mask,[data-dd-privacy="mask"],.dd-privacy-mask-user-input,[data-dd-privacy="mask-user-input"],.nr-mask,[data-nr-mask]';
 // Amplitude is the only vendor that ships an unmask class (`.amp-unmask`);
 // Sentry's `unmask` default is `[]`, so there is no `.sentry-unmask` to be
 // compatible with. `.rr-unmask` is rrweb's own convention, not vendor compat.
 const VENDOR_UNMASK_CLASSES = '.rr-unmask,.amp-unmask';
 const VENDOR_BLOCK_CLASSES =
-  '.rr-block,.mp-block,.fs-exclude,.amp-block,.ph-no-capture,.sentry-block';
+  '.rr-block,.mp-block,.fs-exclude,.amp-block,.ph-no-capture,.sentry-block,.dd-privacy-hidden,[data-dd-privacy="hidden"],.nr-block,[data-nr-block]';
 const PRIVACY_PRESETS = new Set(['strict', 'balanced', 'legacy']);
 const MASKED_ATTRIBUTE_DEFAULTS = ['title', 'placeholder', 'aria-label'];
 
@@ -348,7 +363,7 @@ export function compilePrivacyPolicy(
     const action = rule.action === 'allow' ? 'unmask' : rule.action;
     if (!(action in bySelector))
       throw new Error(`Unsupported privacy action: ${String(rule.action)}`);
-    bySelector[action as keyof typeof bySelector].push(rule.target.selector);
+    bySelector[action].push(rule.target.selector);
   }
 
   return {

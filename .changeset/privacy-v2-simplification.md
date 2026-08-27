@@ -54,7 +54,8 @@ Additional breaking/behavior notes:
 - The recognized cross-vendor unmask tokens are now `.amp-unmask` and
   rrweb's own `.rr-unmask`. `.sentry-unmask`/`[data-sentry-unmask]` were
   removed: no vendor defines them (Sentry's `unmask` default is `[]`). The
-  mask and block class lists are unchanged.
+  mask and block class lists now cover eight vendors' conventions -- rrweb,
+  Mixpanel, Amplitude, PostHog, Sentry, FullStory, Datadog, and New Relic.
 - The preset's masked attributes (`title`, `placeholder`, `aria-label`) now
   honor the unmask selector -- whether it came from a policy `unmask`/`allow`
   rule, a recognized vendor class, or the `record()`-level

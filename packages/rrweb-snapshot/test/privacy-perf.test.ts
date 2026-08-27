@@ -30,6 +30,9 @@ const PRIVACY_SELECTOR_FRAGMENTS = [
   'sentry-mask',
   'sentry-block',
   'data-sentry-mask',
+  'dd-privacy',
+  'nr-mask',
+  'nr-block',
 ];
 
 function buildDeepDom() {

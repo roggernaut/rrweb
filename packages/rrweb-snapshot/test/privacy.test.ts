@@ -34,7 +34,11 @@ describe('compilePrivacyPolicy v2', () => {
     expect(c.maskTextSelector).not.toContain('*');
     expect(c.maskTextSelector).toContain('[data-privacy="mask"]');
     expect(c.maskTextSelector).toContain('.ph-mask'); // cross-vendor classes
+    expect(c.maskTextSelector).toContain('.dd-privacy-mask'); // Datadog
+    expect(c.maskTextSelector).toContain('[data-nr-mask]'); // New Relic
     expect(c.blockSelector).toContain('[data-privacy="exclude"]');
+    expect(c.blockSelector).toContain('.dd-privacy-hidden'); // Datadog
+    expect(c.blockSelector).toContain('[data-nr-block]'); // New Relic
   });
   it('strict masks all text and blocks media', () => {
     const c = compilePrivacyPolicy({ version: 1, preset: 'strict' });

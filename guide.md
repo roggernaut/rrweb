@@ -286,13 +286,30 @@ markup, no extra configuration required:
 <span data-privacy="allow">This content may be captured</span>
 ```
 
-- Mask: `.rr-mask`, `.mp-mask`, `.fs-mask`, `.amp-mask`, `.ph-mask`, `.sentry-mask`, `[data-sentry-mask]`
+- Mask: `.rr-mask`, `.mp-mask`, `.fs-mask`, `.amp-mask`, `.ph-mask`, `.sentry-mask`, `[data-sentry-mask]`, `.dd-privacy-mask`, `[data-dd-privacy="mask"]`, `.dd-privacy-mask-user-input`, `[data-dd-privacy="mask-user-input"]`, `.nr-mask`, `[data-nr-mask]`
 - Unmask: `.amp-unmask`, `.rr-unmask`
-- Block: `.rr-block`, `.mp-block`, `.fs-exclude`, `.amp-block`, `.ph-no-capture`, `.sentry-block`
+- Block: `.rr-block`, `.mp-block`, `.fs-exclude`, `.amp-block`, `.ph-no-capture`, `.sentry-block`, `.dd-privacy-hidden`, `[data-dd-privacy="hidden"]`, `.nr-block`, `[data-nr-block]`
 
-The mask and block lists are cross-vendor compatibility: markup already
-annotated for Mixpanel, FullStory, Amplitude, PostHog or Sentry keeps
-working. The unmask list is deliberately much shorter, because unmask
+The mask and block lists are the mask/exclude conventions of major
+session-replay tools -- rrweb, Mixpanel, Amplitude, PostHog, Sentry,
+FullStory, Datadog, and New Relic -- that a page may already carry, so markup
+already annotated for any of them keeps working with no extra configuration.
+Recognizing a foreign mask/block token is protective-only: it can only
+increase masking. Foreign UNMASK/allow tokens are deliberately never
+honored, because honoring one could reveal something the page author masked
+for a reason rrweb has no way to know. That asymmetry is why the unmask list
+below is so much shorter than the mask and block lists.
+
+The Datadog tokens come from `browser-sdk
+packages/browser-rum-core/src/domain/privacyConstants.ts` (the
+`data-dd-privacy` attribute and `dd-privacy-` class prefix, `mask`/
+`mask-user-input`/`hidden` values; `allow` and `mask-unless-allowlisted` are
+deliberately excluded, since those are unmask conventions). The New Relic
+tokens come from `newrelic-browser-agent src/common/config/init.js`
+(`[data-nr-mask]`, `nr-mask`, `nr-block`, `[data-nr-block]`; `nr-unmask`/
+`nr-ignore` are deliberately excluded for the same reason).
+
+The unmask list is deliberately much shorter, because unmask
 conventions barely exist in the wild: `.amp-unmask` is Amplitude's, and
 `.rr-unmask` is rrweb's own. Other vendors either ship no unmask class at all
 or default their unmask list to empty, so there is nothing to be compatible
