@@ -160,5 +160,5 @@ Additional breaking/behavior notes:
   a provider masks nothing, so the measured box was unused and the frame was
   being discarded for no privacy gain; capture now falls back to the canvas's
   client dimensions, exactly as it does when no provider is configured at all.
-  A provider that *is* in force still measures precisely and still fails
+  A provider that _is_ in force still measures precisely and still fails
   closed on an unmeasurable canvas.
