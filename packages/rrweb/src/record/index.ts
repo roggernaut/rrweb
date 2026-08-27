@@ -4,6 +4,7 @@ import {
   type MaskInputOptions,
   createMirror,
   resolvePrivacyContext,
+  sanitizeUrl,
 } from 'rrweb-snapshot';
 import { initObservers, mutationBuffers } from './observer';
 import {
@@ -387,7 +388,9 @@ function record<T = eventWithTime>(
       {
         type: EventType.Meta,
         data: {
-          href: window.location.href,
+          // Meta's `href` is a required string; '' is the inert fallback for
+          // an unparseable URL, which `sanitizeUrl` otherwise drops (null).
+          href: sanitizeUrl(window.location.href, privacy) ?? '',
           width: getWindowWidth(),
           height: getWindowHeight(),
         },
