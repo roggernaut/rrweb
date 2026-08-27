@@ -127,18 +127,43 @@ describe('text masking v2', () => {
     expect(out).not.toContain('4111 1111 1111 1111');
   });
 
-  it('detectors mask an input value at snapshot time under legacy', () => {
+  it('detectors occlude every input value at snapshot time, clean or not', () => {
     const withDetectors: PrivacyPolicy = {
       version: 1,
       preset: 'legacy',
       detectors: { email: true },
     };
     const out = serialize(
-      '<input type="text" value="bob@example.com">',
+      '<input type="text" value="bob@example.com">' +
+        '<input type="text" value="Visible Name">',
       withDetectors,
     );
     expect(out).not.toContain('bob@example.com');
     expect(out).toContain('*'.repeat('bob@example.com'.length));
+    // The clean value is occluded too: input values are never scanned, so
+    // "no detector matched" is not a reason to record one.
+    expect(out).not.toContain('Visible Name');
+    expect(out).toContain('*'.repeat('Visible Name'.length));
+  });
+
+  it('an unmask rule cannot reveal an input value while detectors are on', () => {
+    const withDetectors: PrivacyPolicy = {
+      version: 1,
+      preset: 'legacy',
+      detectors: { email: true },
+      rules: [
+        {
+          target: { type: 'selector', selector: '.rr-unmask' },
+          action: 'allow',
+        },
+      ],
+    };
+    const out = serialize(
+      '<input class="rr-unmask" type="text" value="Visible Name">',
+      withDetectors,
+    );
+    expect(out).not.toContain('Visible Name');
+    expect(out).toContain('*'.repeat('Visible Name'.length));
   });
 
   it('keeps masking inherited from an ancestor outside the shadow root', () => {
@@ -238,12 +263,13 @@ describe('maskInput v2', () => {
       }),
     ).toBe('plain');
   });
-  it('detectors mask the whole input value when nothing else would', () => {
+  it('detectors occlude every input value to length, matched or not', () => {
     const withDetectors = compilePrivacyPolicy({
       version: 1,
       preset: 'legacy',
       detectors: { email: true },
     });
+    expect(withDetectors.maskAllInputs).toBe(true);
     expect(
       maskInput({
         element: input(),
@@ -254,7 +280,8 @@ describe('maskInput v2', () => {
         privacy: withDetectors,
       }),
     ).toBe('*'.repeat('bob@example.com'.length));
-    // a clean value passes through untouched
+    // A value no detector matches is occluded just the same: input values are
+    // never scanned, so a clean scan is never the reason one gets recorded.
     expect(
       maskInput({
         element: input(),
@@ -264,12 +291,34 @@ describe('maskInput v2', () => {
         maskInputOptions: {},
         privacy: withDetectors,
       }),
-    ).toBe('plain');
+    ).toBe('*****');
   });
-  it('detectors do not override a trusted legacy maskInputFn composition', () => {
-    // Mirrors the text-node hook: detectors only run on values that would
-    // otherwise leave unmasked. When legacy options already mask, the fn's
-    // output is trusted exactly as before the plugin loaded.
+  it('every keystroke prefix is occluded at its own length', () => {
+    // The leak this replaced: a value scanned per input event records every
+    // prefix shorter than the first Luhn-valid length verbatim.
+    const withDetectors = compilePrivacyPolicy({
+      version: 1,
+      preset: 'legacy',
+      detectors: { paymentCard: true },
+    });
+    const card = '4111111111111111';
+    for (let i = 1; i <= card.length; i++) {
+      expect(
+        maskInput({
+          element: input(),
+          tagName: 'input',
+          type: 'text',
+          value: card.slice(0, i),
+          maskInputOptions: {},
+          privacy: withDetectors,
+        }),
+      ).toBe('*'.repeat(i));
+    }
+  });
+  it('a maskInputFn controls length only while detectors are on', () => {
+    // Under a bare legacy policy the fn's output is trusted verbatim; with
+    // detectors active the policy forces the balanced/strict posture, so the
+    // fn keeps its say over length and loses its say over content.
     const withDetectors = compilePrivacyPolicy({
       version: 1,
       preset: 'legacy',
@@ -285,7 +334,7 @@ describe('maskInput v2', () => {
         maskInputFn: () => '[redacted]',
         privacy: withDetectors,
       }),
-    ).toBe('[redacted]');
+    ).toBe('*'.repeat('[redacted]'.length));
   });
   it('protected inputs always mask, even legacy with no options', () => {
     expect(

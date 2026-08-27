@@ -387,18 +387,33 @@ record({
 });
 ```
 
+##### Heuristic PII detectors
+
 Heuristic PII detection (email, phone, Luhn-valid payment card, SSN-like,
 IPv4) is never implied by a preset. Opt in with
 `@rrweb/rrweb-plugin-privacy-detectors` (or its `applyPrivacyDetectors`
-helper), which masks the whole value when a detector matches -- there is no
-character-range masking and no support for custom detector patterns.
-Detection scans page text nodes and form input values, both at
-snapshot time and on later live updates (text mutations and input events).
-It only applies to values that would otherwise be recorded unmasked -- text
-or inputs already masked by a preset, selector, or legacy option keep that
-masking (including a trusted legacy `maskTextFn`/`maskInputFn` output).
-Attribute values are not scanned; use the presets' masked-attribute defaults
-or policy rules for those.
+helper), which masks the whole text node when a detector matches -- there is
+no character-range masking and no support for custom detector patterns.
+Detection scans **page text only**, at snapshot time and on later live text
+mutations. It only applies to text that would otherwise be recorded unmasked
+-- text already masked by a preset, selector, or legacy option keeps that
+masking (including a trusted legacy `maskTextFn` output). Attribute values
+are not scanned; use the presets' masked-attribute defaults or policy rules
+for those.
+
+Input values are never scanned. Instead, **while detectors are active every
+input value is occluded to its length** (`'*'.repeat(value.length)`),
+whatever the preset -- the plugin's policy compiles to `maskAllInputs: true`
+even on a `legacy` base, and no unmask escape reopens it: neither
+`unmaskTextSelector`, nor a policy `unmask`/`allow` rule, nor `.rr-unmask`
+reveals an input value. Scanning one would be worse than useless: a value is
+re-examined on every input event, so a card number is recorded verbatim in
+every prefix shorter than the first Luhn-valid length, and a value that
+scans clean still discloses every kind of PII the fixed pattern set does not
+model (passport numbers, non-US phone formats, dates of birth, account
+numbers, free text). Page text is different in kind -- already rendered, not
+accumulated a character at a time -- which is why scanning still applies
+there.
 
 ```js
 import { getRecordPrivacyDetectorsPlugin } from '@rrweb/rrweb-plugin-privacy-detectors';
@@ -411,8 +426,9 @@ record({
 });
 ```
 
-Once loaded, detectors run independently of the active preset -- including
-`legacy` -- on top of whatever masking that preset already applies.
+Once loaded, text detection runs independently of the active preset --
+including `legacy` -- on top of whatever masking that preset already applies,
+and input occlusion is unconditional.
 
 ##### Attribute and input masking callbacks
 
@@ -428,8 +444,9 @@ sanitization, `title`/`placeholder`/`aria-label` masking, ...) and can only
 narrow what the callback chose to keep, never restore something the policy
 would otherwise mask. `style`/`_cssText` are exempt from all of this.
 Likewise, under `legacy`, `maskInputFn`'s return value is trusted verbatim;
-under `balanced`/`strict`, `maskInputFn` output is star-replaced -- the
-callback controls length, never content.
+under `balanced`/`strict` -- or with the detectors plugin loaded, which forces
+the same posture -- `maskInputFn` output is star-replaced: the callback
+controls length, never content.
 
 ##### Canvas masking
 

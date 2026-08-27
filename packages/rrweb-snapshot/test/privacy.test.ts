@@ -26,6 +26,34 @@ describe('compilePrivacyPolicy v2', () => {
     expect(c.sanitizeUrls).toBe(false);
     expect(c.detectors).toEqual([]);
   });
+  it('any active detector forces maskAllInputs, even on a legacy base', () => {
+    const c = compilePrivacyPolicy({
+      version: 1,
+      preset: 'legacy',
+      detectors: { email: true },
+    });
+    expect(c.preset).toBe('legacy');
+    expect(c.maskAllInputs).toBe(true);
+    // ...and nothing else about the legacy preset moves.
+    expect(c.maskTextSelector).toBeNull();
+    expect(c.maskedAttributes).toEqual([]);
+    expect(c.sanitizeUrls).toBe(false);
+  });
+  it('a detectors block with every flag off leaves the preset alone', () => {
+    const c = compilePrivacyPolicy({
+      version: 1,
+      preset: 'legacy',
+      detectors: {
+        email: false,
+        phone: false,
+        paymentCard: false,
+        ssn: false,
+        ipAddress: false,
+      },
+    });
+    expect(c.detectors).toEqual([]);
+    expect(c.maskAllInputs).toBe(false);
+  });
   it('balanced masks inputs, attributes and URLs but not text', () => {
     const c = compilePrivacyPolicy({ version: 1, preset: 'balanced' });
     expect(c.maskAllInputs).toBe(true);

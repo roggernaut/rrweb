@@ -169,30 +169,72 @@ describe('record() privacy detectors on live updates', () => {
     expect(JSON.stringify(textMutations)).toContain('body{color:blue}');
   });
 
-  it('masks a live input event whose value trips a detector', async () => {
-    document.body.innerHTML = '<input type="text">';
+  /** The masked values the recorder emitted, in order. */
+  async function recordInputValues(
+    markup: string,
+    drive: (input: HTMLInputElement) => void,
+    options: { unmaskTextSelector?: string } = {},
+  ): Promise<string[]> {
+    document.body.innerHTML = markup;
     const input = document.querySelector('input')!;
-
     const events: eventWithTime[] = [];
     const stop = record({
       emit: (event) => events.push(event),
       privacyPolicy: withEmailDetector,
+      ...options,
     });
     try {
-      input.value = 'bob@example.com';
-      input.dispatchEvent(new Event('input', { bubbles: true }));
+      drive(input);
       await new Promise((resolve) => setTimeout(resolve, 0));
     } finally {
       stop?.();
     }
-
-    const inputEvents = events.filter(
-      (event) =>
-        event.type === EventType.IncrementalSnapshot &&
-        event.data.source === IncrementalSource.Input,
+    return events.flatMap((event) =>
+      event.type === EventType.IncrementalSnapshot &&
+      event.data.source === IncrementalSource.Input
+        ? [event.data.text]
+        : [],
     );
-    expect(inputEvents.length).toBeGreaterThan(0);
-    expect(JSON.stringify(inputEvents)).not.toContain('bob@example.com');
+  }
+
+  it('occludes a typed value at every keystroke length', async () => {
+    // The leak this replaced: scanning per input event recorded every prefix
+    // shorter than the first Luhn-valid length verbatim, so the full card
+    // number was reconstructable even though the final value came out masked.
+    const card = '4111111111111111';
+    const values = await recordInputValues('<input type="text">', (input) => {
+      for (let i = 1; i <= card.length; i++) {
+        input.value = card.slice(0, i);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    });
+    expect(values.length).toBe(card.length);
+    values.forEach((value, i) => expect(value).toBe('*'.repeat(i + 1)));
+  });
+
+  it('occludes a pasted value, matched or not', async () => {
+    const values = await recordInputValues('<input type="text">', (input) => {
+      input.value = 'bob@example.com';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.value = 'nothing sensitive here';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(values).toEqual([
+      '*'.repeat('bob@example.com'.length),
+      '*'.repeat('nothing sensitive here'.length),
+    ]);
+  });
+
+  it('no unmask escape reveals an input value while detectors are on', async () => {
+    const values = await recordInputValues(
+      '<input class="rr-unmask" type="text">',
+      (input) => {
+        input.value = 'Visible Name';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      },
+      { unmaskTextSelector: '.rr-unmask' },
+    );
+    expect(values).toEqual(['*'.repeat('Visible Name'.length)]);
   });
 });
 

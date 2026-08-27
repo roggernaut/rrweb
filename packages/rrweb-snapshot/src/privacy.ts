@@ -188,9 +188,13 @@ export const DEFAULT_PRIVACY_DETECTORS: Required<PrivacyDetectorOptions> = {
 
 /**
  * Opt into heuristic PII detectors (email, phone, Luhn card, SSN-like, IPv4).
- * A detector hit masks the whole text node or input value. These are not
- * implied by `balanced` or `strict`; load them through this helper or
+ * A detector hit masks the whole text node. These are not implied by
+ * `balanced` or `strict`; load them through this helper or
  * `@rrweb/rrweb-plugin-privacy-detectors`.
+ *
+ * Detectors scan **text content only**. Turning any of them on also forces
+ * `maskAllInputs` in `compilePrivacyPolicy`, regardless of preset -- see the
+ * note there for why input values are occluded rather than scanned.
  */
 export function applyPrivacyDetectors(
   policy: PrivacyPolicy | undefined,
@@ -245,6 +249,12 @@ export function buildDetectors(
   return detectors;
 }
 
+/**
+ * Runs the compiled detectors over one **text** value: a text node at snapshot
+ * time, or the new data of a `characterData` mutation. Call sites are limited
+ * to those two on purpose -- input values are occluded by `maskAllInputs`
+ * rather than scanned, so nothing here ever sees a value being typed.
+ */
 export function detectSensitiveValue(
   value: string,
   privacy: CompiledPrivacyPolicy,
@@ -400,6 +410,17 @@ export function compilePrivacyPolicy(
     throw new Error(`Unsupported privacy preset: ${String(effective.preset)}`);
   const preset = effective.preset;
   const nonLegacy = preset !== 'legacy';
+  const detectors = buildDetectors(effective.detectors);
+  // Heuristic detectors scan text content only; no code path scans an input
+  // value. Scanning one as it is typed would record every raw prefix before
+  // the pattern could match -- a card number is fully reconstructable from
+  // the keystrokes that precede the first Luhn-valid length -- and even a
+  // value that scans clean at every length still discloses whatever kind of
+  // PII the fixed pattern set does not model. So while any detector is
+  // active, every input value is occluded to its length, whatever the preset
+  // (including a `legacy` base). Non-plugin users configure no detectors, so
+  // this leaves the preset-only semantics untouched.
+  const maskAllInputs = nonLegacy || detectors.length > 0;
 
   const bySelector = {
     mask: [] as string[],
@@ -455,7 +476,7 @@ export function compilePrivacyPolicy(
         ? ['[data-privacy="exclude"]', ...bySelector.exclude]
         : [],
     ),
-    maskAllInputs: nonLegacy,
+    maskAllInputs,
     maskedAttributes: nonLegacy ? [...MASKED_ATTRIBUTE_DEFAULTS] : [],
     blockMedia: preset === 'strict',
     sanitizeUrls: nonLegacy,
@@ -471,7 +492,7 @@ export function compilePrivacyPolicy(
         )
       : null,
     removeHash: effective.url?.removeHash !== false,
-    detectors: buildDetectors(effective.detectors),
+    detectors,
   };
 }
 

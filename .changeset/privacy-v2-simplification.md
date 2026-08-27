@@ -21,12 +21,23 @@ Additional breaking/behavior notes:
   including `characterData` mutations -- this is deliberate: CSS is never
   masked.
 - Heuristic detection now masks whole values -- there is no more
-  character-range `'xxxx'`-shape masking. It scans page text nodes and form
-  input values, both at snapshot time and on live updates (`characterData`
-  mutations and input events), whenever the value would otherwise be recorded
-  unmasked. Attribute values are not scanned.
+  character-range `'xxxx'`-shape masking -- and scans **page text only**:
+  text nodes at snapshot time and `characterData` mutations afterwards,
+  whenever the text would otherwise be recorded unmasked. Attribute values
+  are not scanned.
+- Input values are never scanned by detectors, on any path. Instead, while
+  any detector is active the compiled policy sets `maskAllInputs`, whatever
+  the preset -- including a `legacy` base -- so every input value is occluded
+  to its length and no unmask escape (`unmaskTextSelector`, an
+  `unmask`/`allow` rule, `.rr-unmask`) reopens it. Scanning a value as it is
+  typed records every raw prefix before a pattern can match, so a card number
+  stays reconstructable from the keystrokes even though the final value is
+  masked; and recording a value because nothing matched still discloses every
+  kind of PII a fixed pattern set does not model. Configuring no detectors
+  leaves preset-only behavior exactly as it was.
 - `maskInputFn`/`maskAttributeFn` outputs are constrained under
-  `balanced`/`strict`: `maskInputFn` output is star-replaced (the callback
+  `balanced`/`strict` (and, for `maskInputFn`, whenever detectors are
+  active): `maskInputFn` output is star-replaced (the callback
   controls length, never content), and `maskAttributeFn` output is
   policy-final (the compiled policy can still narrow, but never restore,
   what the callback chose to keep).

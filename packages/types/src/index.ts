@@ -380,7 +380,11 @@ export type CompiledPrivacyPolicy = {
   unmaskTextSelector: string | null;
   /** 'exclude' rules + [data-privacy="exclude"] + vendor block classes */
   blockSelector: string | null;
-  /** true under balanced/strict */
+  /**
+   * true under balanced/strict, and whenever any heuristic detector is
+   * active: detectors scan text content only, so input values are occluded
+   * to length rather than scanned as they are typed.
+   */
   maskAllInputs: boolean;
   /** ['title','placeholder','aria-label'] under balanced/strict, else [] */
   maskedAttributes: string[];
@@ -392,7 +396,10 @@ export type CompiledPrivacyPolicy = {
   blockedQueryParameters: Set<string>;
   allowedQueryParameters: Set<string> | null;
   removeHash: boolean;
-  /** populated by an opt-in detector plugin (e.g. @rrweb/rrweb-plugin-privacy-detectors); [] otherwise */
+  /**
+   * populated by an opt-in detector plugin (e.g. the privacy-detectors
+   * plugin); [] otherwise. Scans text content only -- never input values.
+   */
   detectors: CompiledDetector[];
 };
 
