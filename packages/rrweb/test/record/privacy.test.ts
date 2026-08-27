@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import record from '../../src/record';
 import {
   EventType,
@@ -330,5 +330,110 @@ describe('record() unmaskTextSelector reaches masked attributes', () => {
       { privacyPolicy: { version: 1, preset: 'balanced' } },
     );
     expect(titles).toContain('updated-0');
+  });
+});
+
+describe('record() per-flush mask-decision memoisation', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    document.body.innerHTML = '';
+  });
+
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  const textMutationsIn = (events: eventWithTime[]) =>
+    events.flatMap((event) =>
+      event.type === EventType.IncrementalSnapshot &&
+      event.data.source === IncrementalSource.Mutation
+        ? event.data.texts
+        : [],
+    );
+
+  /**
+   * Counts only the ancestor-walk probes: `needMaskingText` is the sole caller
+   * that passes the compiled unmask selector to `Element.prototype.matches`
+   * (`finalizeAttribute`'s unmask check goes through `closest`). One walk over
+   * this document touches the mutated node's parent, `<body>` and `<html>`, so
+   * an uncached flush of N text mutations under one parent would be N times
+   * whatever a single one costs.
+   */
+  function countUnmaskWalkProbes() {
+    const original = Element.prototype.matches;
+    let calls = 0;
+    vi.spyOn(Element.prototype, 'matches').mockImplementation(function (
+      this: Element,
+      selector: string,
+    ) {
+      if (selector.includes('data-privacy="allow"')) calls += 1;
+      return original.call(this, selector);
+    });
+    return () => calls;
+  }
+
+  it('walks the ancestor chain once for many text mutations sharing a parent', async () => {
+    // The `.rr-unmask` target keeps `resolveUnmaskTextSelector` from nulling
+    // the selector for the flush -- with no match anywhere the walk would
+    // short-circuit and there would be nothing to memoise.
+    document.body.innerHTML =
+      '<div class="rr-unmask">keep</div><div id="host"></div>';
+    const host = document.getElementById('host')!;
+    const nodes: Text[] = [];
+    for (let index = 0; index < 10; index += 1) {
+      const text = document.createTextNode(`t${index}`);
+      host.appendChild(text);
+      nodes.push(text);
+    }
+
+    const events: eventWithTime[] = [];
+    const stop = record({
+      emit: (event) => events.push(event),
+      privacyPolicy: { version: 1, preset: 'balanced' },
+    });
+    // Spy only after the initial full snapshot, which legitimately walks every
+    // node; this test is about the mutation flush.
+    const probes = countUnmaskWalkProbes();
+    try {
+      nodes.forEach((node, index) => {
+        node.data = `updated-${index}`;
+      });
+      await flush();
+    } finally {
+      stop?.();
+    }
+
+    // All ten mutations were seen...
+    expect(textMutationsIn(events)).toHaveLength(10);
+    // ...but the shared parent's chain was walked for the first one only.
+    // Three levels (#host, body, html), not thirty.
+    expect(probes()).toBeGreaterThan(0);
+    expect(probes()).toBeLessThan(10);
+  });
+
+  it('does not carry a decision across flushes: a later .rr-mask still masks', async () => {
+    document.body.innerHTML =
+      '<div class="rr-unmask">keep</div><div id="host">before</div>';
+    const host = document.getElementById('host')!;
+    const textNode = host.firstChild as Text;
+
+    const events: eventWithTime[] = [];
+    const stop = record({
+      emit: (event) => events.push(event),
+      privacyPolicy: { version: 1, preset: 'balanced' },
+    });
+    try {
+      textNode.data = 'first-plain';
+      await flush();
+      host.classList.add('rr-mask');
+      await flush();
+      textNode.data = 'second-secret';
+      await flush();
+    } finally {
+      stop?.();
+    }
+
+    const values = textMutationsIn(events).map((text) => text.value);
+    expect(values).toContain('first-plain');
+    expect(values).not.toContain('second-secret');
+    expect(values).toContain('*'.repeat('second-secret'.length));
   });
 });

@@ -197,6 +197,21 @@ export default class MutationBuffer {
    * in `needMaskingText`/`serializeNodeWithId` can short-circuit again.
    */
   private effectiveUnmaskTextSelector: string | null = null;
+  /**
+   * `needMaskingText` results memoised for the duration of one synchronous
+   * mutation flush, keyed by the element the ancestor walk starts from.
+   *
+   * Datadog memoises at exactly this granularity, for exactly this reason --
+   * one `Map` per synchronous mutation batch, valid "because we process
+   * incremental mutations synchronously, [so] we know that privacy levels
+   * cannot change during the process" (browser-sdk
+   * `packages/browser-rum/src/domain/record/serialization/serializeMutations.ts:95-102`).
+   *
+   * Deliberately not shared across flushes: between them the DOM, and so every
+   * ancestor chain a decision was derived from, is free to change. Holding the
+   * node keys any longer would also pin removed nodes in memory.
+   */
+  private maskDecisionCache = new Map<Node, boolean>();
   private inlineStylesheet: observerParam['inlineStylesheet'];
   private maskInputOptions: observerParam['maskInputOptions'];
   private maskTextFn: observerParam['maskTextFn'];
@@ -295,8 +310,45 @@ export default class MutationBuffer {
       this.doc,
       this.unmaskTextSelector,
     );
-    mutations.forEach(this.processMutation); // adds mutations to the buffer
-    this.emit(); // clears buffer if not locked/frozen
+    this.maskDecisionCache.clear();
+    try {
+      mutations.forEach(this.processMutation); // adds mutations to the buffer
+      this.emit(); // clears buffer if not locked/frozen
+    } finally {
+      // The decisions are only sound for this flush; see the field's comment.
+      this.maskDecisionCache.clear();
+    }
+  };
+
+  /**
+   * `needMaskingText` for the target of a `characterData` mutation, memoised
+   * for this flush.
+   *
+   * With `checkAncestors` on and no inherited decision, `needMaskingText`
+   * starts its walk at the node's parent element and its result is a pure
+   * function of that element -- so the parent, not the mutated text node, is
+   * the key, and N text mutations under one parent share a single walk.
+   * (A character-data node with no parent element has no chain to walk; it
+   * gets a constant answer and is keyed by itself.)
+   *
+   * This composes with `resolveUnmaskTextSelector` rather than duplicating it:
+   * when the probe has nulled the selector for this flush the walk already
+   * short-circuits, and the cache costs one `Map` lookup on top of nearly
+   * nothing.
+   */
+  private needMaskingTextForCharacterData = (node: Node): boolean => {
+    const key: Node = dom.parentElement(node) || node;
+    const cached = this.maskDecisionCache.get(key);
+    if (cached !== undefined) return cached;
+    const decision = needMaskingText(
+      node,
+      this.maskTextClass,
+      this.maskTextSelector,
+      this.effectiveUnmaskTextSelector,
+      true, // checkAncestors
+    );
+    this.maskDecisionCache.set(key, decision);
+    return decision;
   };
 
   public emit = () => {
@@ -641,13 +693,7 @@ export default class MutationBuffer {
           if (
             !isStyle &&
             value &&
-            needMaskingText(
-              m.target,
-              this.maskTextClass,
-              this.maskTextSelector,
-              this.effectiveUnmaskTextSelector,
-              true, // checkAncestors
-            )
+            this.needMaskingTextForCharacterData(m.target)
           ) {
             emittedValue = this.maskTextFn
               ? this.maskTextFn(value, closestElementOfNode(m.target))

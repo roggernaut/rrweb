@@ -96,3 +96,10 @@ Additional breaking/behavior notes:
   `sampling.canvas` alone. `record()` also no longer mutates the `sampling`
   object it was passed, and no longer re-exports the internal
   `resolveCanvasSampling` helper.
+- The mutation buffer now memoises `needMaskingText` decisions for the
+  duration of a single synchronous flush, keyed by the element the ancestor
+  walk starts from, so N `characterData` mutations sharing a parent cost one
+  walk instead of N. Nothing is cached across flushes -- the DOM, and so every
+  ancestor chain a decision came from, may change between them. Same
+  granularity and same justification as Datadog's per-batch
+  `nodePrivacyLevelCache`.
