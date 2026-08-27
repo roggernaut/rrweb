@@ -385,8 +385,15 @@ export type CompiledPrivacyPolicy = {
    * to length rather than scanned as they are typed.
    */
   maskAllInputs: boolean;
-  /** ['title','placeholder','aria-label'] under balanced/strict, else [] */
-  maskedAttributes: string[];
+  /** ['title','placeholder','aria-label'] under balanced/strict, else empty */
+  maskedAttributes: Set<string>;
+  /**
+   * true when the policy has nothing at all to say about attributes, so
+   * `finalizeAttribute` can return its input untouched without reading the
+   * name or the element. Precomputed because it is asked once per attribute
+   * of every element rrweb records.
+   */
+  attributePolicyInert: boolean;
   /** true under strict; the `strict` preset alias every media gate reads */
   blockMedia: boolean;
   /** true under balanced/strict; the non-legacy preset alias */

@@ -263,7 +263,11 @@ export function detectSensitiveValue(
   if (!privacy.detectors.length || !value) return false;
   // Fail closed on absurd inputs instead of scanning them.
   if (value.length > MAX_SCAN_LENGTH) return true;
-  return privacy.detectors.some((d) => d.test(value));
+  const { detectors } = privacy;
+  for (let index = 0; index < detectors.length; index += 1) {
+    if (detectors[index].test(value)) return true;
+  }
+  return false;
 }
 
 /**
@@ -508,6 +512,9 @@ export function compilePrivacyPolicy(
   // (including a `legacy` base). Non-plugin users configure no detectors, so
   // this leaves the preset-only semantics untouched.
   const maskAllInputs = nonLegacy || detectors.length > 0;
+  const maskedAttributes = new Set(nonLegacy ? MASKED_ATTRIBUTE_DEFAULTS : []);
+  const blockMedia = preset === 'strict';
+  const sanitizeUrls = nonLegacy;
 
   const bySelector = {
     mask: [] as string[],
@@ -563,9 +570,16 @@ export function compilePrivacyPolicy(
         : [],
     ),
     maskAllInputs,
-    maskedAttributes: nonLegacy ? [...MASKED_ATTRIBUTE_DEFAULTS] : [],
-    blockMedia: preset === 'strict',
-    sanitizeUrls: nonLegacy,
+    maskedAttributes,
+    // Spelled out from the branches of `finalizeAttribute`'s policy block
+    // rather than from `preset` directly, so a new branch that forgets to
+    // narrow this is a visible omission rather than a silent leak. The
+    // strict-only `value` branch needs no clause of its own: `blockMedia` is
+    // the `strict` alias, so `!blockMedia` has already excluded it.
+    attributePolicyInert:
+      !blockMedia && !sanitizeUrls && maskedAttributes.size === 0,
+    blockMedia,
+    sanitizeUrls,
     blockedQueryParameters: new Set(
       [
         ...DEFAULT_BLOCKED_QUERY_PARAMETERS,
@@ -683,14 +697,32 @@ export function stars(value: string): string {
  * Whether `element` sits inside an unmask subtree. A selector that throws
  * grants no escape: the caller stays on its masking path (fail closed).
  */
-function isUnmasked(element: Element, privacy: CompiledPrivacyPolicy): boolean {
+function isUnmasked(
+  element: Element,
+  privacy: CompiledPrivacyPolicy,
+  memo?: UnmaskMemo,
+): boolean {
   if (!privacy.unmaskTextSelector) return false;
+  if (memo && memo.element === element) return memo.answer;
+  let answer: boolean;
   try {
-    return !!element.closest(privacy.unmaskTextSelector);
+    answer = !!element.closest(privacy.unmaskTextSelector);
   } catch {
-    return false;
+    answer = false;
   }
+  if (memo) {
+    memo.element = element;
+    memo.answer = answer;
+  }
+  return answer;
 }
+
+/**
+ * One element's `isUnmasked` answer, reused across that element's whole
+ * attribute sweep. An element with three masked attributes asked `closest()`
+ * three times; the ancestor chain cannot change in between.
+ */
+type UnmaskMemo = { element: Element | null; answer: boolean };
 
 /**
  * A neutral, same-dimension SVG to stand in for a blocked image source, so
@@ -702,14 +734,32 @@ function isUnmasked(element: Element, privacy: CompiledPrivacyPolicy): boolean {
  * Only `<`, `>` and `#` are percent-encoded -- the rest is already legal in a
  * data URI, and leaving it readable keeps recorded values diffable.
  */
+const URI_UNSAFE = /[<>#]/g;
+const URI_ESCAPES: Record<string, string> = {
+  '<': '%3C',
+  '>': '%3E',
+  '#': '%23',
+};
+/**
+ * A blocked page usually repeats a handful of image sizes, so the encoded
+ * string is memoised on `WxH`. Bounded like every other cache here: a page
+ * with unbounded distinct dimensions stops caching rather than growing.
+ */
+const placeholderCache = new Map<string, string>();
+
 function placeholderImage(width: string, height: string): string {
+  const key = `${width}x${height}`;
+  const cached = placeholderCache.get(key);
+  if (cached !== undefined) return cached;
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">` +
     `<rect width="${width}" height="${height}" fill="#ddd"/></svg>`;
-  return `data:image/svg+xml;utf8,${svg
-    .replace(/</g, '%3C')
-    .replace(/>/g, '%3E')
-    .replace(/#/g, '%23')}`;
+  const encoded = `data:image/svg+xml;utf8,${svg.replace(
+    URI_UNSAFE,
+    (char) => URI_ESCAPES[char],
+  )}`;
+  if (placeholderCache.size < 100) placeholderCache.set(key, encoded);
+  return encoded;
 }
 
 /**
@@ -799,6 +849,7 @@ export function finalizeAttribute({
   maskAllElementAttributes = false,
   maskAttributeFn,
   isGenerated = false,
+  unmaskMemo,
 }: {
   element: Element;
   name: string;
@@ -807,7 +858,18 @@ export function finalizeAttribute({
   maskAllElementAttributes?: boolean;
   maskAttributeFn?: MaskAttributeFn;
   isGenerated?: boolean;
+  /** @internal see `UnmaskMemo`; supplied by `finalizeAttributes` */
+  unmaskMemo?: UnmaskMemo;
 }): string | null {
+  // Hot path: with no callback, no coarse switch, and a policy that has
+  // nothing to say about attributes, this is the identity function. Bail
+  // before lowercasing the name or touching the element.
+  if (
+    !maskAllElementAttributes &&
+    !maskAttributeFn &&
+    (!privacy || privacy.attributePolicyInert)
+  )
+    return value;
   if (value === null || value === '') return value;
 
   const normalizedName = name.toLowerCase();
@@ -844,26 +906,25 @@ export function finalizeAttribute({
 
   if (!privacy) return current;
 
-  const tagName = untaintedTagName(element);
-  if (
-    privacy.blockMedia &&
-    MEDIA_TAGS.has(tagName) &&
-    MEDIA_SOURCE_ATTRIBUTES.has(normalizedName)
-  ) {
-    return blockedMediaValue(element, tagName, normalizedName);
+  // `untaintedTagName` is only read by the two branches that need it, not up
+  // front for every attribute of every element.
+  if (privacy.blockMedia && MEDIA_SOURCE_ATTRIBUTES.has(normalizedName)) {
+    const tagName = untaintedTagName(element);
+    if (MEDIA_TAGS.has(tagName))
+      return blockedMediaValue(element, tagName, normalizedName);
   }
   if (URL_ATTRIBUTES.has(normalizedName)) return sanitizeUrl(current, privacy);
-  if (privacy.maskedAttributes.includes(normalizedName)) {
+  if (privacy.maskedAttributes.has(normalizedName)) {
     // An unmask ancestor is an explicit "this subtree is safe" statement and
     // escapes the preset's masked-attribute defaults, matching Sentry's
     // `maskAttribute` precedent. It cannot reach the branches above: a URL is
     // still sanitized and a blocked media source is still dropped.
-    return isUnmasked(element, privacy) ? current : stars(current);
+    return isUnmasked(element, privacy, unmaskMemo) ? current : stars(current);
   }
   if (
     normalizedName === 'value' &&
     privacy.preset === 'strict' &&
-    FORM_VALUE_TAGS.has(tagName)
+    FORM_VALUE_TAGS.has(untaintedTagName(element))
   ) {
     return stars(current);
   }
@@ -896,6 +957,7 @@ export function finalizeAttributes(
     generatedAttributes?: Set<string>;
   },
 ): void {
+  const unmaskMemo: UnmaskMemo = { element: null, answer: false };
   for (const name in attributes) {
     const value = attributes[name];
     if (typeof value !== 'string' && value !== null) continue;
@@ -907,6 +969,7 @@ export function finalizeAttributes(
       maskAllElementAttributes,
       maskAttributeFn,
       isGenerated: generatedAttributes?.has(name),
+      unmaskMemo,
     });
   }
 }

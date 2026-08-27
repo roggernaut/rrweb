@@ -386,6 +386,10 @@ export function getInputType(element: HTMLElement): Lowercase<string> | null {
     : null;
 }
 
+/** Hoisted so the hot path does not construct it per call. Not global: a
+ * global regex carries `lastIndex` state between `test` calls. */
+const AUTOCOMPLETE_SEPARATOR = /\s+/;
+
 const PROTECTED_AUTOCOMPLETE = new Set([
   'cc-csc',
   'cc-exp',
@@ -412,9 +416,16 @@ export function isProtectedInput(element: HTMLElement): boolean {
   if (type === 'password' || type === 'hidden') {
     return true;
   }
-  return input.autocomplete
-    .toLowerCase()
-    .split(/\s+/)
+  // `autocomplete` is empty on the overwhelming majority of inputs, and a
+  // single token on nearly all of the rest -- so bail, then try the whole
+  // value against the set, and only split when there is something to split.
+  const autocomplete = input.autocomplete;
+  if (!autocomplete) return false;
+  const lower = autocomplete.toLowerCase();
+  if (PROTECTED_AUTOCOMPLETE.has(lower)) return true;
+  if (!AUTOCOMPLETE_SEPARATOR.test(lower)) return false;
+  return lower
+    .split(AUTOCOMPLETE_SEPARATOR)
     .some((token) => PROTECTED_AUTOCOMPLETE.has(token));
 }
 

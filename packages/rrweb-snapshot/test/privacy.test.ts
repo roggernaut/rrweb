@@ -21,7 +21,7 @@ describe('compilePrivacyPolicy v2', () => {
     expect(c.maskTextSelector).toBeNull();
     expect(c.blockSelector).toBeNull();
     expect(c.maskAllInputs).toBe(false);
-    expect(c.maskedAttributes).toEqual([]);
+    expect([...c.maskedAttributes]).toEqual([]);
     expect(c.sanitizeUrls).toBe(false);
     expect(c.detectors).toEqual([]);
   });
@@ -35,7 +35,7 @@ describe('compilePrivacyPolicy v2', () => {
     expect(c.maskAllInputs).toBe(true);
     // ...and nothing else about the legacy preset moves.
     expect(c.maskTextSelector).toBeNull();
-    expect(c.maskedAttributes).toEqual([]);
+    expect([...c.maskedAttributes]).toEqual([]);
     expect(c.sanitizeUrls).toBe(false);
   });
   it('a detectors block with every flag off leaves the preset alone', () => {
@@ -56,7 +56,11 @@ describe('compilePrivacyPolicy v2', () => {
   it('balanced masks inputs, attributes and URLs but not text', () => {
     const c = compilePrivacyPolicy({ version: 1, preset: 'balanced' });
     expect(c.maskAllInputs).toBe(true);
-    expect(c.maskedAttributes).toEqual(['title', 'placeholder', 'aria-label']);
+    expect([...c.maskedAttributes]).toEqual([
+      'title',
+      'placeholder',
+      'aria-label',
+    ]);
     expect(c.sanitizeUrls).toBe(true);
     expect(c.maskTextSelector).not.toContain('*');
     expect(c.maskTextSelector).toContain('[data-privacy="mask"]');

@@ -21,6 +21,7 @@ import type { ImageBitmapDataURLRequestWorker } from '../../workers/image-bitmap
 import {
   computeFrameMaskRegions,
   getCanvasContentBoxSize,
+  isCanvasMaskingConfigured,
   SKIP_FRAME,
 } from './canvas-mask';
 
@@ -280,7 +281,12 @@ export class CanvasManager {
             }
             let displayWidth = canvas.clientWidth || canvas.width;
             let displayHeight = canvas.clientHeight || canvas.height;
-            if (options.canvasMasking) {
+            // Gate on `isCanvasMaskingConfigured`, not truthiness: a
+            // provider whose `isConfigured()` currently returns false masks
+            // nothing, so `computeFrameMaskRegions` will ignore the measured
+            // box anyway -- measuring (and failing closed on an unmeasurable
+            // canvas) would cost a layout flush per frame for nothing.
+            if (isCanvasMaskingConfigured(options.canvasMasking)) {
               // The backing store maps onto the content box, not the
               // border box that `clientWidth`/`clientHeight` report -
               // measure it precisely whenever masking is configured so
