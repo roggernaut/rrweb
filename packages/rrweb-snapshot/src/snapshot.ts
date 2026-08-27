@@ -1123,6 +1123,22 @@ export function serializeNodeWithId(
     stylesheetLoadTimeout?: number;
     cssCaptured?: boolean;
     privacy?: CompiledPrivacyPolicy;
+    /**
+     * `needMaskingText` results memoised for the duration of one `snapshot()`
+     * call, keyed by the element its ancestor walk starts from -- the mirror
+     * of `MutationBuffer`'s per-flush cache, for the same reason and with the
+     * same lifetime discipline. The DOM cannot change while a synchronous
+     * walk is in progress, so every decision derived from an ancestor chain
+     * stays valid for exactly as long as that walk.
+     *
+     * The walk starts at the node itself for an element and at its parent
+     * element otherwise, so an element and its text/comment children share
+     * one key and one walk. The two *deferred* re-serializations below (an
+     * iframe or stylesheet that finishes loading after the snapshot has
+     * returned) deliberately do not receive the cache: by then the DOM is
+     * free to have moved on.
+     */
+    maskDecisionCache?: Map<Node, boolean>;
   },
 ): serializedNodeWithId | null {
   const {
@@ -1154,6 +1170,7 @@ export function serializeNodeWithId(
     newlyAddedElement = false,
     cssCaptured = false,
     privacy,
+    maskDecisionCache,
   } = options;
   let { needsMask } = options;
   let { preserveWhiteSpace = true } = options;
@@ -1166,16 +1183,25 @@ export function serializeNodeWithId(
     // where the nearest-ancestor decision has to be recomputed per node)
     const checkAncestors =
       needsMask === undefined || Boolean(unmaskTextSelector);
-    needsMask = needMaskingText(
-      n as Element,
-      maskTextClass,
-      maskTextSelector,
-      unmaskTextSelector,
-      checkAncestors,
-      // the inherited decision covers ancestors across shadow-root/iframe
-      // boundaries, which the per-node walk cannot see
-      needsMask === true,
-    );
+    // the element the walk will start from; also the memoisation key, so N
+    // text children of one element share a single ancestor walk
+    const walkStart = isElement(n) ? n : dom.parentElement(n) || n;
+    const cached = maskDecisionCache?.get(walkStart);
+    if (cached !== undefined) {
+      needsMask = cached;
+    } else {
+      needsMask = needMaskingText(
+        n as Element,
+        maskTextClass,
+        maskTextSelector,
+        unmaskTextSelector,
+        checkAncestors,
+        // the inherited decision covers ancestors across shadow-root/iframe
+        // boundaries, which the per-node walk cannot see
+        needsMask === true,
+      );
+      maskDecisionCache?.set(walkStart, needsMask);
+    }
   }
 
   const _serializedNode = serializeNode(n, {
@@ -1283,6 +1309,7 @@ export function serializeNodeWithId(
       keepIframeSrcFn,
       cssCaptured: false,
       privacy,
+      maskDecisionCache,
     };
 
     if (
@@ -1540,6 +1567,8 @@ function snapshot(
   );
   // Split once for this pass, not once per node.
   const splitMaskTextSelector = splitMaskAllSelector(maskTextSelector);
+  // Scoped to this call and dropped with it; see the option's comment.
+  const maskDecisionCache = new Map<Node, boolean>();
   const maskInputOptions: MaskInputOptions =
     maskAllInputs === true
       ? {
@@ -1596,6 +1625,7 @@ function snapshot(
     keepIframeSrcFn,
     newlyAddedElement: false,
     privacy,
+    maskDecisionCache,
   });
 }
 
