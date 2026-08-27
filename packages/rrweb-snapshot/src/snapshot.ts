@@ -35,9 +35,9 @@ import {
   markCssSplits,
 } from './snapshot-utils';
 import {
-  detectSensitiveValue,
   finalizeAttribute,
   resolvePrivacyContext,
+  resolveTextValue,
   resolveUnmaskTextSelector,
 } from './privacy';
 import dom from '@rrweb/utils';
@@ -590,17 +590,15 @@ function serializeTextNode(
   },
 ): serializedNode {
   const { needsMask, maskTextFn, rootId, cssCaptured, privacy } = options;
-  // The parent node may not be an html element which has a tagName attribute,
-  // and named form controls can shadow `tagName` (e.g. <input name="tagName">
-  // inside a <form>). `untaintedTagName` handles both: '' for a non-element
-  // parent, the real tag name even when shadowed.
-  const parent = dom.parentNode(n);
-  const parentTagName =
-    dom.untaintedTagName(parent as Element | null) || undefined;
+  // The parent element may not be an html element which has a tagName
+  // attribute, and named form controls can shadow `tagName` (e.g. <input
+  // name="tagName"> inside a <form>). `untaintedTagName` handles both: '' for
+  // a non-element parent, the real tag name even when shadowed.
+  const parent = dom.parentElement(n);
+  const parentTagName = dom.untaintedTagName(parent);
   let textContent: string | null = '';
-  const isStyle = parentTagName === 'STYLE' ? true : undefined;
-  const isScript = parentTagName === 'SCRIPT' ? true : undefined;
-  if (isScript) {
+  const isStyle = parentTagName === 'STYLE';
+  if (parentTagName === 'SCRIPT') {
     textContent = 'SCRIPT_PLACEHOLDER';
   } else if (!cssCaptured) {
     textContent = dom.textContent(n);
@@ -612,22 +610,18 @@ function serializeTextNode(
       textContent = absolutifyURLs(textContent, getHref(options.doc));
     }
   }
-  if (!isStyle && !isScript && textContent && needsMask) {
-    textContent = maskTextFn
-      ? maskTextFn(textContent, dom.parentElement(n))
-      : textContent.replace(/[\S]/g, '*');
-  }
-  // Detectors are policy-independent and mask the whole text node when they
-  // find anything sensitive. CSS and scripts are never scanned or masked.
-  if (
-    !isStyle &&
-    !isScript &&
-    textContent &&
-    !needsMask &&
-    privacy &&
-    detectSensitiveValue(textContent, privacy)
-  ) {
-    textContent = textContent.replace(/[\S]/g, '*');
+  if (textContent) {
+    textContent = resolveTextValue({
+      value: textContent,
+      parent,
+      parentTagName,
+      needsMask,
+      maskTextFn,
+      privacy,
+      // the snapshot path's inherited asymmetry: <script> text is exempt
+      // from the mask branch too, not just from the detectors
+      exemptScript: true,
+    });
   }
 
   return {

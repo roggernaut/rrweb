@@ -6,8 +6,8 @@ import {
   isShadowRoot,
   needMaskingText,
   maskInput,
-  detectSensitiveValue,
   finalizeAttribute,
+  resolveTextValue,
   resolveUnmaskTextSelector,
   FORM_VALUE_TAGS,
   Mirror,
@@ -680,36 +680,20 @@ export default class MutationBuffer {
           !isBlocked(m.target, this.blockClass, this.blockSelector, false) &&
           value !== m.oldValue
         ) {
-          // CSS is never masked, on any path: a starred stylesheet corrupts
-          // the replay. Mirrors serializeTextNode's `isStyle` exemption.
-          // `untaintedTagName` defeats a shadowed `tagName` (e.g. a form
-          // control named "tagName") instead of failing closed to "not style".
-          const parent = dom.parentNode(m.target);
-          const parentTagName = dom.untaintedTagName(parent as Element | null);
-          const isStyle = parentTagName === 'STYLE';
-          const isScript = parentTagName === 'SCRIPT';
-          let emittedValue = value;
-          if (
-            !isStyle &&
-            value &&
-            this.needMaskingTextForCharacterData(m.target)
-          ) {
-            emittedValue = this.maskTextFn
-              ? this.maskTextFn(value, closestElementOfNode(m.target))
-              : value.replace(/[\S]/g, '*');
-          } else if (
-            !isStyle &&
-            !isScript &&
-            value &&
-            this.privacy &&
-            detectSensitiveValue(value, this.privacy)
-          ) {
-            // Detectors mask the whole updated text node, same as the
-            // serializeTextNode hook does at snapshot time.
-            emittedValue = value.replace(/[\S]/g, '*');
-          }
+          // The same ladder serializeTextNode runs (CSS exemption, mask
+          // branch, detectors), minus the snapshot path's extra <script>
+          // exemption on the mask branch -- see `resolveTextValue`.
           this.texts.push({
-            value: emittedValue,
+            value: value
+              ? resolveTextValue({
+                  value,
+                  parent: closestElementOfNode(m.target),
+                  needsMask: this.needMaskingTextForCharacterData(m.target),
+                  maskTextFn: this.maskTextFn,
+                  privacy: this.privacy,
+                  exemptScript: false,
+                })
+              : value,
             node: m.target,
           });
         }

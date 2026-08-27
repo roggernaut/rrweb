@@ -2,6 +2,7 @@ import type {
   CompiledDetector,
   CompiledPrivacyPolicy,
   MaskAttributeFn,
+  MaskTextFn,
   PrivacyDetectorOptions,
   PrivacyPolicy,
 } from './types';
@@ -263,6 +264,72 @@ export function detectSensitiveValue(
   // Fail closed on absurd inputs instead of scanning them.
   if (value.length > MAX_SCAN_LENGTH) return true;
   return privacy.detectors.some((d) => d.test(value));
+}
+
+/**
+ * How a masked *text* value is occluded: every non-whitespace character
+ * becomes a star, so the shape of the layout survives while the content does
+ * not. (Attribute and input values use `stars`, which occludes to length.)
+ */
+function starText(value: string): string {
+  return value.replace(/[\S]/g, '*');
+}
+
+/**
+ * The single decision point for the text content rrweb records, on both the
+ * snapshot and the mutation path. It owns the whole ladder:
+ *
+ *  1. CSS is never masked, on any path -- a starred stylesheet corrupts the
+ *     replay and reveals nothing.
+ *  2. the mask decision the caller already took (`needsMask`) -- `maskTextFn`
+ *     if one is configured, stars otherwise.
+ *  3. the heuristic detectors, which are policy-independent and mask the
+ *     whole text node when they find anything sensitive. Scripts are never
+ *     scanned.
+ *
+ * @param exemptScript preserves an inherited asymmetry: the snapshot path
+ * exempts `<script>` text from the *mask* branch (2) as well as the detector
+ * branch (3), the mutation path only from (3). Passing it explicitly keeps
+ * the two callers honest about the difference instead of unifying it
+ * silently; unifying is a behavior change and is deliberately left for
+ * upstream review.
+ */
+export function resolveTextValue({
+  value,
+  parent,
+  parentTagName,
+  needsMask,
+  maskTextFn,
+  privacy,
+  exemptScript,
+}: {
+  value: string;
+  /**
+   * The text node's parent element -- the source of the STYLE/SCRIPT
+   * exemptions, and the element handed to `maskTextFn`.
+   */
+  parent: HTMLElement | null;
+  /**
+   * `untaintedTagName(parent)`, when the caller has already computed it. Both
+   * call sites sit on the serializer's hot path, so the read is not repeated.
+   */
+  parentTagName?: string;
+  needsMask: boolean;
+  maskTextFn: MaskTextFn | undefined;
+  privacy: CompiledPrivacyPolicy | undefined;
+  exemptScript: boolean;
+}): string {
+  if (!value) return value;
+  const tagName = parentTagName ?? untaintedTagName(parent);
+  if (tagName === 'STYLE') return value;
+  const isScript = tagName === 'SCRIPT';
+  if (needsMask) {
+    if (isScript && exemptScript) return value;
+    return maskTextFn ? maskTextFn(value, parent) : starText(value);
+  }
+  if (isScript) return value;
+  if (privacy && detectSensitiveValue(value, privacy)) return starText(value);
+  return value;
 }
 
 export function validateSelector(selector: string): boolean {
