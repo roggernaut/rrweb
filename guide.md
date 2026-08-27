@@ -215,7 +215,7 @@ you get by default (the `minimal` preset, below):
 - `input[type="password"]` will be masked by default.
 - Mask options to mask the content in input elements.
 
-For a consistent policy across text, inputs, and attributes, pass a
+For a consistent policy across text, inputs, attributes, and URLs, pass a
 versioned `privacyPolicy`:
 
 ```js
@@ -240,17 +240,28 @@ record({
         action: 'block',
       },
     ],
+    url: {
+      blockedQueryParameters: ['token', 'session'],
+    },
   },
 });
 ```
 
 `preset` compiles to the following, on top of the `rules` above:
 
-| preset              | behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `minimal` (default) | Inert: only the existing masking options above apply. `rules` still work (below), but the `data-privacy` attribute and cross-vendor class recognition described below are off.                                                                                                                                                                                                                                                                                                                                  |
-| `balanced`          | Masks every input value (like `maskAllInputs: true`); masks the `title`, `placeholder`, and `aria-label` attributes on every element. Page text is untouched.                                                                                                                                                                                                                                                                                                                                                   |
-| `strict`            | Everything `balanced` does, plus: all page text is masked; media element sources (`<img>`, `<video>`, `<audio>`, `<iframe>`, `<embed>`, `<object>`, `<source>`) are dropped instead of captured, except that an `<img>` source or `<video>` poster on an element with declared integer `width`/`height` attributes is replaced by a neutral same-size placeholder image so the surrounding layout does not collapse; and canvas recording is disabled outright, even with a `canvasMasking` adapter configured. |
+| preset              | behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `minimal` (default) | Inert: only the existing masking options above apply. `rules` still work (below), but the `data-privacy` attribute and cross-vendor class recognition described below are off.                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `balanced`          | Masks every input value (like `maskAllInputs: true`); masks the `title`, `placeholder`, and `aria-label` attributes on every element; sanitizes URLs -- strips `username`/`password` (userinfo), removes the value of any query parameter in a default sensitive list (`access_token`, `auth`, `code`, `key`, `password`, `secret`, `session`, `token`) plus any configured `url.blockedQueryParameters`, and removes the hash unless `url.removeHash: false`. Query parameter names stay visible. Page text is untouched.                                                                                                                     |
+| `strict`            | Everything `balanced` does, plus: all page text is masked; media element sources (`<img>`, `<video>`, `<audio>`, `<iframe>`, `<embed>`, `<object>`, `<source>`) are dropped instead of captured, except that an `<img>` source or `<video>` poster on an element with declared integer `width`/`height` attributes is replaced by a neutral same-size placeholder image so the surrounding layout does not collapse; canvas recording is disabled outright, even with a `canvasMasking` adapter configured; and URL sanitization blocks _every_ query parameter's value unless you also set `url.allowedQueryParameters` to an explicit allow-list. |
+
+> **URL sanitization is experimental.** No session-replay vendor sanitizes
+> URLs inside the recorded DOM: PostHog, Highlight, Sentry, Amplitude and
+> Mixpanel all record `href`/`src` verbatim and scrub URLs in their ingestion
+> pipeline instead, if at all. rrweb's in-DOM `sanitizeUrl` is its own design,
+> not an established pattern, and it rewrites attribute values that the replay
+> then depends on. An unparseable URL is dropped entirely (the attribute is
+> removed) rather than emptied.
 
 `minimal` is a permanent tier, not a transitional one: it is masking you
 configure yourself, through the classic options above. Password and
@@ -503,8 +514,8 @@ covers text and the preset's masked attributes (`title`, `placeholder`,
 `aria-label`) on elements inside the matched subtree -- this option, a policy
 `unmask` rule and a recognized unmask class are merged into one
 selector and behave identically. It cannot unmask input
-values, and it cannot override a protected input, a dropped media source
-under `strict`, or a `block`.
+values or a sanitized URL, and it cannot override a protected input, a
+dropped media source under `strict`, or a `block`.
 
 An invalid `maskTextSelector`, `unmaskTextSelector` or `blockSelector` --
 either the `record()`-level string option or a policy rule's selector -- is
@@ -540,11 +551,11 @@ mutually exclusive: if both are supplied, `maskAllElementAttributes` wins and
 `maskAttributeFn` is ignored, with a one-time console warning. A throwing
 `maskAttributeFn` fails closed to stars rather than leaking the original
 value. Under `minimal`, `maskAttributeFn`'s return value is used as-is; under
-`balanced`/`strict` the compiled policy still runs on top of it
-(`title`/`placeholder`/`aria-label` masking, `strict`'s media-source drop)
-and can only
-narrow what the callback chose to keep, never restore something the policy
-would otherwise mask. `style`/`_cssText` are exempt from all of this.
+`balanced`/`strict` the compiled policy still runs on top of it (URL
+sanitization, `title`/`placeholder`/`aria-label` masking, `strict`'s
+media-source drop) and can only narrow what the callback chose to keep,
+never restore something the policy would otherwise mask. `style`/`_cssText`
+are exempt from all of this.
 Likewise, under `minimal`, `maskInputFn`'s return value is trusted verbatim;
 under `balanced`/`strict`, `maskInputFn` output is star-replaced -- the
 callback controls length, never content. Every callback fails closed the

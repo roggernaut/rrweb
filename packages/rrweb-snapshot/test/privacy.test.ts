@@ -7,6 +7,7 @@ import {
   validateSelector,
   mergeSelectors,
   resolvePrivacyContext,
+  sanitizeUrl,
   splitSelectorList,
   resolveTextValue,
   isEventIgnored,
@@ -48,8 +49,9 @@ describe('compilePrivacyPolicy v2', () => {
     expect(c.maskAllInputs).toBe(false);
     expect([...c.maskedAttributes]).toEqual([]);
     expect(c.attributePolicyInert).toBe(true);
+    expect(c.sanitizeUrls).toBe(false);
   });
-  it('balanced masks inputs and attributes but not text', () => {
+  it('balanced masks inputs, attributes and URLs but not text', () => {
     const c = compilePrivacyPolicy({ version: 1, preset: 'balanced' });
     expect(c.maskAllInputs).toBe(true);
     expect([...c.maskedAttributes]).toEqual([
@@ -57,6 +59,7 @@ describe('compilePrivacyPolicy v2', () => {
       'placeholder',
       'aria-label',
     ]);
+    expect(c.sanitizeUrls).toBe(true);
     expect(c.maskTextSelector).not.toContain('*');
     expect(c.maskTextSelector).toContain('[data-privacy]');
     expect(c.maskTextSelector).toContain('.rr-mask');
@@ -131,6 +134,15 @@ describe('compilePrivacyPolicy v2', () => {
         rules: [{ target: { type: 'selector', selector: '' }, action: 'mask' }],
       }),
     ).toThrow();
+  });
+  it('precomputes lowercased query parameter sets', () => {
+    const c = compilePrivacyPolicy({
+      version: 1,
+      preset: 'strict',
+      url: { blockedQueryParameters: ['SessionID'] },
+    });
+    expect(c.blockedQueryParameters.has('sessionid')).toBe(true);
+    expect(c.blockedQueryParameters.has('token')).toBe(true); // default list
   });
 });
 /**
@@ -1187,14 +1199,52 @@ describe('merge helpers validate the record()-level selector', () => {
     expect(warn).toHaveBeenCalled();
   });
 });
-/**
- * `needMaskingText` is exported from the package root and its third parameter
- * changed shape (raw selector string -> pre-split `{maskAll, selector}`). An
- * un-updated or untyped caller still passing the string used to destructure to
- * `{maskAll: undefined, selector: undefined}`, at which point every mask
- * selector silently stopped matching -- a fail-open on the masking path, which
- * is the one direction that must never happen quietly.
- */
+
+describe('sanitizeUrl v2', () => {
+  const strict = compilePrivacyPolicy({ version: 1, preset: 'strict' });
+  const balanced = compilePrivacyPolicy({ version: 1, preset: 'balanced' });
+  const manual = compilePrivacyPolicy(undefined);
+  it('strips userinfo credentials', () => {
+    expect(
+      sanitizeUrl('https://alice:hunter2@api.example.com/x', balanced),
+    ).toBe('https://api.example.com/x');
+  });
+  it('masks blocked query parameters, case-insensitively', () => {
+    expect(sanitizeUrl('https://a.com/?Token=abc&ok=1', balanced)).toBe(
+      'https://a.com/?Token=*&ok=1',
+    );
+  });
+  it('strict masks all params unless allowlisted', () => {
+    const allow = compilePrivacyPolicy({
+      version: 1,
+      preset: 'strict',
+      url: { allowedQueryParameters: ['page'] },
+    });
+    expect(sanitizeUrl('https://a.com/?page=2&q=x', strict)).toBe(
+      'https://a.com/?page=*&q=*',
+    );
+    expect(sanitizeUrl('https://a.com/?page=2&q=x', allow)).toBe(
+      'https://a.com/?page=2&q=*',
+    );
+  });
+  it('removes hash unless disabled; manual passes through untouched', () => {
+    expect(sanitizeUrl('https://a.com/x#frag', balanced)).toBe(
+      'https://a.com/x',
+    );
+    expect(sanitizeUrl('https://alice:pw@a.com/?token=x#f', manual)).toBe(
+      'https://alice:pw@a.com/?token=x#f',
+    );
+  });
+  it('unparseable value under non-manual fails closed by dropping the attribute', () => {
+    expect(sanitizeUrl('http://[broken', balanced)).toBeNull();
+  });
+  it('empty in, empty out -- never resolved into a path', () => {
+    expect(sanitizeUrl('', balanced)).toBe('');
+    expect(sanitizeUrl('', strict)).toBe('');
+    expect(sanitizeUrl('', manual)).toBe('');
+  });
+});
+
 describe('resolveTextValue: exemptScript', () => {
   const script = document.createElement('script');
   it('exempts SCRIPT text from masking when exemptScript is true (the snapshot path)', () => {
