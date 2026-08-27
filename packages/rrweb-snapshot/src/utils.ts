@@ -473,8 +473,8 @@ export function maskInput({
 
   const presetWantsMask = !!privacy && privacy.maskAllInputs;
   if (
-    !legacyWantsInputMask(tagName, type, maskInputOptions) &&
-    !presetWantsMask
+    !presetWantsMask &&
+    !legacyWantsInputMask(tagName, type, maskInputOptions)
   )
     return value;
 
@@ -482,6 +482,34 @@ export function maskInput({
   const masked = maskInputFn(value, element);
   // fn controls length only under balanced/strict; never trust its content.
   return presetWantsMask ? stars(masked) : masked;
+}
+
+/**
+ * The predicate `maskInput` computes: must this form value be occluded at
+ * all? Exported because it is not only `maskInput` that discloses a form
+ * value -- the `<option selected>` flag discloses the parent `<select>`'s
+ * value without the value itself ever passing through `maskInput` -- and
+ * every such decision has to ask the same question rather than re-derive
+ * half of it.
+ */
+export function shouldMaskInput({
+  element,
+  tagName,
+  type,
+  maskInputOptions,
+  privacy,
+}: {
+  element: HTMLElement;
+  tagName: string;
+  type: string | null;
+  maskInputOptions: MaskInputOptions;
+  privacy: CompiledPrivacyPolicy | undefined;
+}): boolean {
+  return (
+    (!!privacy && privacy.maskAllInputs) ||
+    legacyWantsInputMask(tagName, type, maskInputOptions) ||
+    isProtectedInput(element)
+  );
 }
 
 /**

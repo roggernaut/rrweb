@@ -26,6 +26,7 @@ import {
   isElement,
   isShadowRoot,
   maskInput,
+  shouldMaskInput,
   isNativeShadowDom,
   stringifyStylesheet,
   getInputType,
@@ -756,7 +757,18 @@ function serializeElementNode(
     }
   }
   if (tagName === 'option') {
-    if ((n as HTMLOptionElement).selected && !maskInputOptions['select']) {
+    // The `selected` flag discloses the parent <select>'s value just as
+    // surely as the value attribute does, so it is governed by the <select>'s
+    // own masking decision -- policy included. Reading `maskInputOptions`
+    // alone let a balanced/strict policy record the chosen option verbatim.
+    const selectionMasked = shouldMaskInput({
+      element: n,
+      tagName: 'select',
+      type: null,
+      maskInputOptions,
+      privacy,
+    });
+    if ((n as HTMLOptionElement).selected && !selectionMasked) {
       attributes.selected = true;
     } else {
       // ignore the html attribute (which corresponds to DOM (n as HTMLOptionElement).defaultSelected)

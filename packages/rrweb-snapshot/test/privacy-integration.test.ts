@@ -1078,3 +1078,51 @@ describe('attribute finalization through the serializer', () => {
     expect(out).not.toContain('x.com');
   });
 });
+
+/**
+ * The `selected` flag on an `<option>` discloses the parent `<select>`'s
+ * value without that value ever passing through `maskInput`. The decision
+ * used to read `maskInputOptions['select']` alone, so a `balanced`/`strict`
+ * policy -- which masks every input value -- still recorded which option the
+ * user had chosen.
+ */
+describe('<option selected> follows the select value decision', () => {
+  const OPTIONS =
+    '<select><option value="a">A</option><option value="b" selected>B</option></select>';
+
+  it('balanced does not record which option is selected', () => {
+    const out = serialize(OPTIONS, { version: 1, preset: 'balanced' });
+    expect(out).not.toContain('"selected"');
+  });
+
+  it('strict does not record which option is selected', () => {
+    const out = serialize(OPTIONS, { version: 1, preset: 'strict' });
+    expect(out).not.toContain('"selected"');
+  });
+
+  /**
+   * Detectors force `maskAllInputs` whatever the preset, so the flag has to
+   * follow even on a `legacy` base.
+   */
+  it('an active detector suppresses it even under legacy', () => {
+    const out = serialize(OPTIONS, {
+      version: 1,
+      preset: 'legacy',
+      detectors: { email: true },
+    });
+    expect(out).not.toContain('"selected"');
+  });
+
+  it('legacy with no input masking still records it', () => {
+    const out = serialize(OPTIONS, { version: 1, preset: 'legacy' });
+    expect(out).toContain('"selected":true');
+  });
+
+  it('legacy honors maskInputOptions.select exactly as before', () => {
+    document.body.innerHTML = OPTIONS;
+    const out = JSON.stringify(
+      snapshot(document, { maskAllInputs: { select: true } }),
+    );
+    expect(out).not.toContain('"selected"');
+  });
+});

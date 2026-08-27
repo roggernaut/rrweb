@@ -255,6 +255,12 @@ record({
 | `balanced`         | Masks every input value (like `maskAllInputs: true`); masks the `title`, `placeholder`, and `aria-label` attributes on every element; sanitizes URLs -- strips `username`/`password` (userinfo), removes the value of any query parameter in a default sensitive list (`access_token`, `auth`, `code`, `key`, `password`, `secret`, `session`, `token`) plus any configured `url.blockedQueryParameters`, and removes the hash unless `url.removeHash: false`. Query parameter names stay visible. Page text is untouched.                                                                                                                          |
 | `strict`           | Everything `balanced` does, plus: all page text is masked; media element sources (`<img>`, `<video>`, `<audio>`, `<iframe>`, `<embed>`, `<object>`, `<source>`) are dropped instead of captured, except that an `<img>` source or `<video>` poster on an element with declared integer `width`/`height` attributes is replaced by a neutral same-size placeholder image so the surrounding layout does not collapse; canvas recording is disabled outright, even with a `canvasMasking` adapter configured; and URL sanitization blocks _every_ query parameter's value unless you also set `url.allowedQueryParameters` to an explicit allow-list. |
 
+Masking an input value also suppresses the `selected` flag on the
+`<option>` elements of a `<select>`: which option is selected discloses the
+select's value just as the value itself does, so both follow one decision.
+This applies under `balanced`/`strict`, whenever a heuristic detector is
+active, and (as before) under `maskAllInputs` or `maskInputOptions.select`.
+
 CSS is never masked, on any preset or code path: `style`/`_cssText`
 attributes and `<style>` element text are exempt from every masking branch,
 including live `characterData` mutations.

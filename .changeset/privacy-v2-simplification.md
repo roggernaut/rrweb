@@ -126,3 +126,29 @@ Additional breaking/behavior notes:
   ancestor chain a decision came from, may change between them. Same
   granularity and same justification as Datadog's per-batch
   `nodePrivacyLevelCache`.
+- BREAKING: masking a form value now also suppresses the `selected` flag on
+  a `<select>`'s `<option>` elements. That flag discloses the select's value
+  as surely as the value attribute does, but the decision used to read
+  `maskInputOptions.select` alone and ignore the policy entirely, so under
+  `balanced`/`strict` -- or with any heuristic detector active -- the chosen
+  option was recorded verbatim, contradicting the documented form-value
+  guarantee. Both decisions now go through one exported predicate,
+  `shouldMaskInput`.
+- `rrweb-snapshot`'s Privacy at Capture types (`PrivacyPolicy`,
+  `PrivacyPreset`, `PrivacyAction`, `PrivacyRule`, `PrivacyTarget`,
+  `PrivacyDetectorOptions`, `PrivacyUrlOptions`, `CompiledDetector`,
+  `CompiledPrivacyPolicy`) are re-exports of the declarations in
+  `@rrweb/types`, which is now the single declared source of truth for the
+  family. `rrweb-snapshot`'s public type surface is unchanged, but the two
+  copies can no longer drift. `CompiledPrivacyPolicy` also drops its
+  `policy` back-reference (its only readers had a compiled boolean alias to
+  read instead), turns `maskedAttributes` into a `Set<string>`, and gains a
+  precomputed `attributePolicyInert` flag.
+- `maskInputValue` is deprecated in favour of `maskInput` and is now a shim
+  over it, which means an always-protected input (password/hidden, or a
+  card/password `autocomplete`) is masked there too regardless of
+  `maskInputOptions`.
+- `needMaskingText` and `serializeNodeWithId` take the mask-text selector
+  pre-split (`{maskAll, selector}`, from the exported
+  `splitMaskAllSelector`) rather than as a raw string; positional callers of
+  the former and option-object callers of the latter need updating.

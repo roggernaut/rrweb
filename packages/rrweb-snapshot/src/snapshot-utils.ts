@@ -12,6 +12,7 @@ export {
   isElement,
   isShadowRoot,
   maskInput,
+  shouldMaskInput,
   isProtectedInput,
   isNativeShadowDom,
   stringifyStylesheet,
