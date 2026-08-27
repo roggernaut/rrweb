@@ -529,6 +529,21 @@ describe('finalizeAttribute', () => {
       ).toBe('true');
     });
 
+    it('the exemption covers only names a code path reads back', () => {
+      // `data-rrweb-id` used to sit in the set although nothing in the repo
+      // reads it. An exemption is unconditional, so a name that buys nothing
+      // is pure downside: it stays maskable.
+      expect(
+        finalizeAttribute({
+          element: el('<div data-rrweb-id="42"></div>', 'div'),
+          name: 'data-rrweb-id',
+          value: '42',
+          privacy: strict,
+          maskAllElementAttributes: true,
+        }),
+      ).toBe('**');
+    });
+
     it('maskAttributeFn is never invoked for an operational attribute', () => {
       const maskAttributeFn = vi.fn(() => 'REWRITTEN');
       expect(

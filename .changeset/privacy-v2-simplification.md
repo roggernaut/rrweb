@@ -51,11 +51,22 @@ Additional breaking/behavior notes:
   matching both a mask source (`maskTextClass`, a `mask` rule, a vendor mask
   class) and the unmask selector is masked; previously unmask won. The
   nearest-matching-ancestor rule across different levels is unchanged.
-- The recognized cross-vendor unmask tokens are now `.amp-unmask` and
-  rrweb's own `.rr-unmask`. `.sentry-unmask`/`[data-sentry-unmask]` were
-  removed: no vendor defines them (Sentry's `unmask` default is `[]`). The
-  mask and block class lists now cover eight vendors' conventions -- rrweb,
-  Mixpanel, Amplitude, PostHog, Sentry, FullStory, Datadog, and New Relic.
+- The vendor-neutral `data-privacy` attribute
+  (`mask`/`exclude`/`allow`) is the standard way to declare privacy intent:
+  it lives with the markup it protects, so it stays correct across template
+  refactors and tool changes. Selector rules cover what the markup cannot
+  reach. Recognition of other tools' class names is **migration
+  compatibility** -- a page already instrumented for another recorder keeps
+  its protection on day one -- and not the convention to adopt for new
+  markup. Their mask/block tokens are honored because doing so can only
+  increase masking; their unmask/allow tokens are never honored, because
+  honoring one could reveal something the page author masked for a reason
+  rrweb cannot know. The recognized cross-vendor unmask tokens are therefore
+  just `.amp-unmask` and rrweb's own `.rr-unmask`;
+  `.sentry-unmask`/`[data-sentry-unmask]` were removed, since no vendor
+  defines them (Sentry's `unmask` default is `[]`). The mask and block class
+  lists now cover eight vendors' conventions -- rrweb, Mixpanel, Amplitude,
+  PostHog, Sentry, FullStory, Datadog, and New Relic.
 - The preset's masked attributes (`title`, `placeholder`, `aria-label`) now
   honor the unmask selector -- whether it came from a policy `unmask`/`allow`
   rule, a recognized vendor class, or the `record()`-level
@@ -71,8 +82,9 @@ Additional breaking/behavior notes:
   `rr_open_mode`) as well as the flag, and the flag is cleared when a real
   page mutation writes that same attribute name.
 - A second, sibling exemption now covers rrweb's own _page-present_
-  operational attributes -- `data-privacy`, `data-rr-is-password` and
-  `data-rrweb-id` -- which no masking branch may touch. Previously
+  operational attributes -- `data-privacy` and `data-rr-is-password` --
+  which no masking branch may touch. The set is deliberately limited to
+  names a code path actually reads back. Previously
   `maskAllElementAttributes` would star `data-privacy="mask"` out of the
   recording (erasing the declaration that explains why the surrounding
   subtree is masked) and star `data-rr-is-password`, breaking the replay-side

@@ -7,6 +7,10 @@ import type {
 } from './types';
 import { untaintedTagName } from '@rrweb/utils';
 
+// `data-privacy` is the primary, vendor-neutral convention for declaring
+// privacy intent; the class lists below are migration compatibility for pages
+// already instrumented for another tool.
+//
 // These are the mask/exclude conventions of major session-replay tools
 // (rrweb, Mixpanel, Amplitude, PostHog, Sentry, FullStory, Datadog, New
 // Relic) that pages may already carry. Recognizing a foreign mask/block
@@ -79,7 +83,9 @@ const RENDERING_METADATA_ATTRIBUTES = new Set([
  *
  * Deliberately narrow: only rrweb-namespaced names the recorder or replayer
  * actually depends on. Nothing page-authored and potentially sensitive belongs
- * here -- an exemption is unconditional, so a wrong entry leaks verbatim.
+ * here -- an exemption is unconditional, so a wrong entry leaks verbatim. A
+ * reserved-but-unread name does not qualify: if no code path reads it, masking
+ * it breaks nothing and exempting it only widens the hole.
  */
 const OPERATIONAL_ATTRIBUTES = new Set([
   // The vendor-neutral privacy declaration the compiled policy matches on.
@@ -87,8 +93,6 @@ const OPERATIONAL_ATTRIBUTES = new Set([
   // Set by the mutation observer when it sees an input turn into a password
   // field, and read back by `getInputType` to keep masking it afterwards.
   'data-rr-is-password',
-  // rrweb's reserved node-identity attribute.
-  'data-rrweb-id',
 ]);
 
 /**
