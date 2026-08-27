@@ -670,7 +670,12 @@ export function passesLuhn(candidate: string): boolean {
 
 let maskAttributeConflictWarned = false;
 
-function stars(value: string): string {
+/**
+ * How a masked *value* is occluded: replaced by as many stars as it had
+ * characters, so its length -- and nothing else -- survives. (Text nodes use
+ * `starText`, which preserves whitespace so the layout survives too.)
+ */
+export function stars(value: string): string {
   return '*'.repeat(value.length);
 }
 
@@ -863,6 +868,47 @@ export function finalizeAttribute({
     return stars(current);
   }
   return current;
+}
+
+/**
+ * The one finalization sweep, shared by `serializeElementNode` and the
+ * mutation buffer's attribute emit: every attribute rrweb is about to record
+ * passes through `finalizeAttribute` exactly once, in place, after every
+ * other serialization stage has had its say.
+ *
+ * Non-string, non-null values (a number like `rr_scrollTop`, or `true` on a
+ * checked radio) are rrweb's own and skip the sweep.
+ */
+export function finalizeAttributes(
+  attributes: Record<string, unknown>,
+  {
+    element,
+    privacy,
+    maskAllElementAttributes,
+    maskAttributeFn,
+    generatedAttributes,
+  }: {
+    element: Element;
+    privacy: CompiledPrivacyPolicy | undefined;
+    maskAllElementAttributes?: boolean;
+    maskAttributeFn?: MaskAttributeFn;
+    /** names this serializer wrote itself; see `finalizeAttribute`'s step 1 */
+    generatedAttributes?: Set<string>;
+  },
+): void {
+  for (const name in attributes) {
+    const value = attributes[name];
+    if (typeof value !== 'string' && value !== null) continue;
+    attributes[name] = finalizeAttribute({
+      element,
+      name,
+      value,
+      privacy,
+      maskAllElementAttributes,
+      maskAttributeFn,
+      isGenerated: generatedAttributes?.has(name),
+    });
+  }
 }
 
 /**

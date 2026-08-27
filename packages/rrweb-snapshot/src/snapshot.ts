@@ -36,6 +36,7 @@ import {
 } from './snapshot-utils';
 import {
   finalizeAttribute,
+  finalizeAttributes,
   resolvePrivacyContext,
   resolveTextValue,
   resolveUnmaskTextSelector,
@@ -223,23 +224,29 @@ export function ignoreAttribute(
   return ['video', 'audio'].includes(tagName) && name === 'autoplay';
 }
 
+/**
+ * Does one of `el`'s classes match `matcher`? A string matcher is an exact
+ * class name; a RegExp is tested against each class in turn. The one spelling
+ * of the check that `blockClass`, `maskTextClass` and `classMatchesRegex` all
+ * share.
+ */
+export function classMatches(el: Element, matcher: string | RegExp): boolean {
+  const { classList } = el;
+  if (typeof matcher === 'string') return classList.contains(matcher);
+  for (let index = classList.length; index--; ) {
+    if (matcher.test(classList[index])) return true;
+  }
+  return false;
+}
+
 export function _isBlockedElement(
   element: HTMLElement,
   blockClass: string | RegExp,
   blockSelector: string | null,
 ): boolean {
   try {
-    if (typeof blockClass === 'string') {
-      if (element.classList.contains(blockClass)) {
-        return true;
-      }
-    } else {
-      for (let eIndex = element.classList.length; eIndex--; ) {
-        const className = element.classList[eIndex];
-        if (blockClass.test(className)) {
-          return true;
-        }
-      }
+    if (classMatches(element, blockClass)) {
+      return true;
     }
     if (blockSelector) {
       return element.matches(blockSelector);
@@ -262,12 +269,7 @@ export function classMatchesRegex(
     return classMatchesRegex(dom.parentNode(node), regex, checkAncestors);
   }
 
-  for (let eIndex = (node as HTMLElement).classList.length; eIndex--; ) {
-    const className = (node as HTMLElement).classList[eIndex];
-    if (regex.test(className)) {
-      return true;
-    }
-  }
+  if (classMatches(node as HTMLElement, regex)) return true;
   if (!checkAncestors) return false;
   return classMatchesRegex(dom.parentNode(node), regex, checkAncestors);
 }
@@ -308,18 +310,6 @@ export function splitMaskAllSelector(
     maskAll,
     selector: maskAll ? kept.join(',') || null : maskTextSelector,
   };
-}
-
-function classMatchesMaskTextClass(
-  el: Element,
-  maskTextClass: string | RegExp,
-): boolean {
-  if (typeof maskTextClass === 'string')
-    return el.classList.contains(maskTextClass);
-  for (let index = el.classList.length; index--; ) {
-    if (maskTextClass.test(el.classList[index])) return true;
-  }
-  return false;
 }
 
 /**
@@ -365,7 +355,7 @@ export function needMaskingText(
       // selector -- Sentry (`maskDistance <= unmaskDistance`), Amplitude and
       // Mixpanel all resolve a same-element tie to masking.
       if (
-        classMatchesMaskTextClass(current, maskTextClass) ||
+        classMatches(current, maskTextClass) ||
         (selector && current.matches(selector))
       )
         return true;
@@ -916,22 +906,15 @@ function serializeElementNode(
     delete attributes.src; // prevent auto loading
   }
 
-  // The single finalization sweep: every attribute rrweb is about to record
-  // passes through `finalizeAttribute` exactly once, here, after every other
-  // stage has had its say. No earlier stage applies privacy itself.
-  for (const [name, value] of Object.entries(attributes)) {
-    if (typeof value === 'string' || value === null) {
-      attributes[name] = finalizeAttribute({
-        element: n,
-        name,
-        value,
-        privacy,
-        maskAllElementAttributes,
-        maskAttributeFn,
-        isGenerated: generatedAttributeNames.has(name),
-      });
-    }
-  }
+  // The single finalization sweep, here at the end and nowhere else: no
+  // earlier stage applies privacy itself.
+  finalizeAttributes(attributes, {
+    element: n,
+    privacy,
+    maskAllElementAttributes,
+    maskAttributeFn,
+    generatedAttributes: generatedAttributeNames,
+  });
   serializationComplete = true;
 
   let isCustomElement: true | undefined;

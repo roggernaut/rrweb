@@ -8,7 +8,7 @@ import {
   splitMaskAllSelector,
   type MaskTextSelector,
   maskInput,
-  finalizeAttribute,
+  finalizeAttributes,
   resolveTextValue,
   resolveUnmaskTextSelector,
   FORM_VALUE_TAGS,
@@ -594,21 +594,15 @@ export default class MutationBuffer {
               }
             }
           }
-          // The single finalization sweep for the mutation path, mirroring
-          // serializeElementNode's: every attribute about to be emitted goes
-          // through `finalizeAttribute` exactly once.
-          for (const [name, value] of Object.entries(attributes)) {
-            if (typeof value !== 'string' && value !== null) continue;
-            attributes[name] = finalizeAttribute({
-              element: attribute.node as Element,
-              name,
-              value,
-              privacy: this.privacy,
-              maskAllElementAttributes: this.maskAllElementAttributes,
-              maskAttributeFn: this.maskAttributeFn,
-              isGenerated: attribute.generatedAttributes?.has(name),
-            });
-          }
+          // The single finalization sweep for the mutation path, the same one
+          // serializeElementNode runs.
+          finalizeAttributes(attributes, {
+            element: attribute.node as Element,
+            privacy: this.privacy,
+            maskAllElementAttributes: this.maskAllElementAttributes,
+            maskAttributeFn: this.maskAttributeFn,
+            generatedAttributes: attribute.generatedAttributes,
+          });
           return {
             id: this.mirror.getId(attribute.node),
             attributes: attributes,

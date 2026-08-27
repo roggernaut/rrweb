@@ -29,6 +29,7 @@ import type {
   elementNode,
 } from '@rrweb/types';
 import dom from '@rrweb/utils';
+import { stars } from './privacy';
 
 export function isElement(n: Node): n is Element {
   return n.nodeType === n.ELEMENT_NODE;
@@ -260,6 +261,16 @@ export function createMirror(): Mirror {
   return new Mirror();
 }
 
+/**
+ * @deprecated use `maskInput`, which is the single entry point for input
+ * masking and also applies the compiled privacy policy. This is a shim over
+ * that same implementation so the two can never drift apart.
+ *
+ * Note that going through `maskInput` means an always-protected input (a
+ * password or hidden field, or one whose `autocomplete` names a card or
+ * password field) is now masked here too, whatever `maskInputOptions` says.
+ * That is the reason this name is deprecated rather than merely aliased.
+ */
 export function maskInputValue({
   element,
   maskInputOptions,
@@ -275,20 +286,15 @@ export function maskInputValue({
   value: string | null;
   maskInputFn?: MaskInputFn;
 }): string {
-  let text = value || '';
-  const actualType = type && toLowerCase(type);
-
-  if (
-    maskInputOptions[tagName.toLowerCase() as keyof MaskInputOptions] ||
-    (actualType && maskInputOptions[actualType as keyof MaskInputOptions])
-  ) {
-    if (maskInputFn) {
-      text = maskInputFn(text, element);
-    } else {
-      text = '*'.repeat(text.length);
-    }
-  }
-  return text;
+  return maskInput({
+    element,
+    maskInputOptions,
+    tagName,
+    type,
+    value: value || '',
+    maskInputFn,
+    privacy: undefined,
+  });
 }
 
 export function toLowerCase<T extends string>(str: T): Lowercase<T> {
@@ -452,27 +458,35 @@ export function maskInput({
   maskInputFn?: MaskInputFn;
   privacy: CompiledPrivacyPolicy | undefined;
 }): string {
-  if (isProtectedInput(element)) return '*'.repeat(value.length);
+  if (isProtectedInput(element)) return stars(value);
 
+  const presetWantsMask = !!privacy && privacy.maskAllInputs;
+  if (
+    !legacyWantsInputMask(tagName, type, maskInputOptions) &&
+    !presetWantsMask
+  )
+    return value;
+
+  if (!maskInputFn) return stars(value);
+  const masked = maskInputFn(value, element);
+  // fn controls length only under balanced/strict; never trust its content.
+  return presetWantsMask ? stars(masked) : masked;
+}
+
+/**
+ * Whether the pre-v2 `maskInputOptions` bag opts this tag or input type in.
+ * The policy-independent half of the mask decision.
+ */
+export function legacyWantsInputMask(
+  tagName: string,
+  type: string | null,
+  maskInputOptions: MaskInputOptions,
+): boolean {
   const actualType = type && toLowerCase(type);
-  const legacyWantsMask = Boolean(
+  return Boolean(
     maskInputOptions[tagName.toLowerCase() as keyof MaskInputOptions] ||
       (actualType && maskInputOptions[actualType as keyof MaskInputOptions]),
   );
-  const presetWantsMask = !!privacy && privacy.maskAllInputs;
-
-  if (!legacyWantsMask && !presetWantsMask) return value;
-
-  let masked = maskInputFn
-    ? maskInputFn(value, element)
-    : '*'.repeat(value.length);
-  if (presetWantsMask && maskInputFn) {
-    // fn controls length only under balanced/strict; never trust its content.
-    masked = '*'.repeat(masked.length);
-  } else if (presetWantsMask && !maskInputFn) {
-    masked = '*'.repeat(value.length);
-  }
-  return masked;
 }
 
 /**

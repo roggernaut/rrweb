@@ -11,7 +11,6 @@ export {
   is2DCanvasBlank,
   isElement,
   isShadowRoot,
-  maskInputValue,
   maskInput,
   isProtectedInput,
   isNativeShadowDom,
