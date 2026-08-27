@@ -397,6 +397,174 @@ describe('finalizeAttribute', () => {
     ).toBe('https://a.com/x?page=*');
   });
 
+  describe('dimension-preserving placeholders for blocked images', () => {
+    it('swaps a blocked img src for a same-size SVG when dimensions are declared', () => {
+      const out = finalizeAttribute({
+        element: el('<img src="https://a.com/i.png" width="120" height="80">'),
+        name: 'src',
+        value: 'https://a.com/i.png',
+        privacy: strict,
+      });
+      expect(out).toMatch(/^data:image\/svg\+xml;utf8,/);
+      expect(out).toContain('width="120"');
+      expect(out).toContain('height="80"');
+      // the real source never survives into the placeholder
+      expect(out).not.toContain('a.com');
+    });
+
+    it('covers srcset on an img and poster on a video', () => {
+      expect(
+        finalizeAttribute({
+          element: el('<img srcset="a.png 1x" width="10" height="10">'),
+          name: 'srcset',
+          value: 'a.png 1x',
+          privacy: strict,
+        }),
+      ).toContain('width="10"');
+      expect(
+        finalizeAttribute({
+          element: el(
+            '<video poster="p.png" width="640" height="360"></video>',
+            'video',
+          ),
+          name: 'poster',
+          value: 'p.png',
+          privacy: strict,
+        }),
+      ).toContain('width="640"');
+    });
+
+    it('keeps returning null for an img with no declared dimensions', () => {
+      expect(
+        finalizeAttribute({
+          element: el('<img src="https://a.com/i.png">'),
+          name: 'src',
+          value: 'https://a.com/i.png',
+          privacy: strict,
+        }),
+      ).toBeNull();
+    });
+
+    /**
+     * A placeholder is only derivable from *pixels*. Percentages, keywords and
+     * a half-declared element are all rejected rather than guessed at, because
+     * `finalizeAttribute` may not measure -- it runs per attribute in the
+     * serializer's hot path.
+     */
+    it.each([
+      ['<img src="i.png" width="50%" height="80">'],
+      ['<img src="i.png" width="auto" height="auto">'],
+      ['<img src="i.png" width="-10" height="10">'],
+      ['<img src="i.png" width="120">'],
+    ])('rejects unusable dimensions: %s', (html) => {
+      expect(
+        finalizeAttribute({
+          element: el(html),
+          name: 'src',
+          value: 'i.png',
+          privacy: strict,
+        }),
+      ).toBeNull();
+    });
+
+    it('leaves non-image media sources dropped even when sized', () => {
+      // the renamed cross-origin iframe source
+      expect(
+        finalizeAttribute({
+          element: el('<iframe width="300" height="200"></iframe>', 'iframe'),
+          name: 'rr_src',
+          value: 'https://x.com/',
+          privacy: strict,
+        }),
+      ).toBeNull();
+      expect(
+        finalizeAttribute({
+          element: el('<embed src="a.swf" width="10" height="10">', 'embed'),
+          name: 'src',
+          value: 'a.swf',
+          privacy: strict,
+        }),
+      ).toBeNull();
+      expect(
+        finalizeAttribute({
+          element: el('<audio src="a.mp3"></audio>', 'audio'),
+          name: 'src',
+          value: 'a.mp3',
+          privacy: strict,
+        }),
+      ).toBeNull();
+      expect(
+        finalizeAttribute({
+          element: el('<source src="a.png" width="10" height="10">', 'source'),
+          name: 'src',
+          value: 'a.png',
+          privacy: strict,
+        }),
+      ).toBeNull();
+    });
+  });
+
+  describe('operational attributes are exempt from every masking branch', () => {
+    it('maskAllElementAttributes cannot star data-privacy', () => {
+      expect(
+        finalizeAttribute({
+          element: el('<div data-privacy="mask"></div>', 'div'),
+          name: 'data-privacy',
+          value: 'mask',
+          privacy: strict,
+          maskAllElementAttributes: true,
+        }),
+      ).toBe('mask');
+    });
+
+    it('maskAllElementAttributes cannot star data-rr-is-password', () => {
+      expect(
+        finalizeAttribute({
+          element: el('<input data-rr-is-password="true">', 'input'),
+          name: 'data-rr-is-password',
+          value: 'true',
+          privacy: strict,
+          maskAllElementAttributes: true,
+        }),
+      ).toBe('true');
+    });
+
+    it('maskAttributeFn is never invoked for an operational attribute', () => {
+      const maskAttributeFn = vi.fn(() => 'REWRITTEN');
+      expect(
+        finalizeAttribute({
+          element: el('<div data-privacy="allow"></div>', 'div'),
+          name: 'data-privacy',
+          value: 'allow',
+          privacy: strict,
+          maskAttributeFn,
+        }),
+      ).toBe('allow');
+      expect(maskAttributeFn).not.toHaveBeenCalled();
+      // ...but it still runs for an ordinary attribute on the same element
+      finalizeAttribute({
+        element: el('<div data-privacy="allow" title="x"></div>', 'div'),
+        name: 'title',
+        value: 'x',
+        privacy: legacy,
+        maskAttributeFn,
+      });
+      expect(maskAttributeFn).toHaveBeenCalledTimes(1);
+    });
+
+    it('matches the attribute name case-insensitively', () => {
+      expect(
+        finalizeAttribute({
+          element: el('<div DATA-PRIVACY="mask"></div>', 'div'),
+          name: 'DATA-PRIVACY',
+          value: 'mask',
+          privacy: strict,
+          maskAllElementAttributes: true,
+        }),
+      ).toBe('mask');
+    });
+  });
+
   it('masks value on form tags under strict only', () => {
     expect(
       finalizeAttribute({

@@ -59,6 +59,39 @@ const RENDERING_METADATA_ATTRIBUTES = new Set([
 ]);
 
 /**
+ * Attributes that are part of rrweb's own operation rather than page content,
+ * and are therefore exempt from every masking branch. This is the sibling of
+ * `RENDERING_METADATA_ATTRIBUTES` above for attributes that are *present on the
+ * page* rather than written by the serializer, so the `isGenerated` flag can
+ * never vouch for them -- the name alone has to.
+ *
+ * Coarse masking must not be able to destroy the recorder's own signals:
+ * `maskAllElementAttributes` starring `data-privacy="mask"` into `**********`
+ * would erase, from the recording, the very declaration that explains why the
+ * subtree around it is masked; starring `data-rr-is-password` would break the
+ * password re-detection `getInputType` performs on the replay side.
+ *
+ * Datadog carves out the same class of attribute for the same reason:
+ * `shouldMaskAttribute` (browser-sdk
+ * `packages/browser-rum-core/src/domain/privacy.ts:166-172`) returns `false`
+ * for its own `data-dd-privacy`, for `STABLE_ATTRIBUTES`, and for the
+ * configured `actionNameAttribute` before any masking rule is consulted.
+ *
+ * Deliberately narrow: only rrweb-namespaced names the recorder or replayer
+ * actually depends on. Nothing page-authored and potentially sensitive belongs
+ * here -- an exemption is unconditional, so a wrong entry leaks verbatim.
+ */
+const OPERATIONAL_ATTRIBUTES = new Set([
+  // The vendor-neutral privacy declaration the compiled policy matches on.
+  'data-privacy',
+  // Set by the mutation observer when it sees an input turn into a password
+  // field, and read back by `getInputType` to keep masking it afterwards.
+  'data-rr-is-password',
+  // rrweb's reserved node-identity attribute.
+  'data-rrweb-id',
+]);
+
+/**
  * Attributes whose value is a URL and therefore goes through `sanitizeUrl`.
  * `rr_src` is the name the serializer gives a cross-origin `<iframe src>` it
  * cannot see into; the rename happens before finalization, so the renamed
@@ -95,6 +128,22 @@ const MEDIA_TAGS = new Set([
   'SOURCE',
   'VIDEO',
 ]);
+
+/**
+ * Blocked media sources that can be swapped for a same-size placeholder rather
+ * than dropped, keyed by the tag the placeholder is meaningful on. Only an
+ * `<img>` source and a `<video>` poster resolve to a raster the browser lays
+ * out at the element's declared size; an `<iframe>`/`<embed>`/`<object>` source
+ * or `<audio>` source does not, and a `<source>` is a candidate its parent
+ * picks from, so those keep being dropped outright.
+ */
+const MEDIA_PLACEHOLDER_ATTRIBUTES = new Map([
+  ['IMG', new Set(['src', 'srcset', 'poster'])],
+  ['VIDEO', new Set(['poster'])],
+]);
+
+/** A `width`/`height` content attribute we are willing to trust: plain pixels. */
+const DIMENSION_ATTRIBUTE = /^\d{1,5}$/;
 
 export const FORM_VALUE_TAGS = new Set([
   'INPUT',
@@ -490,6 +539,70 @@ function isUnmasked(element: Element, privacy: CompiledPrivacyPolicy): boolean {
 }
 
 /**
+ * A neutral, same-dimension SVG to stand in for a blocked image source, so
+ * that removing the pixels does not also collapse the layout that surrounded
+ * them. Datadog ships the same idea (`censoredImageForSize`, browser-sdk
+ * `packages/browser-rum/src/domain/record/serialization/serializationUtils.ts`),
+ * which serves a flat silver rectangle at the image's size.
+ *
+ * Only `<`, `>` and `#` are percent-encoded -- the rest is already legal in a
+ * data URI, and leaving it readable keeps recorded values diffable.
+ */
+function placeholderImage(width: string, height: string): string {
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">` +
+    `<rect width="${width}" height="${height}" fill="#ddd"/></svg>`;
+  return `data:image/svg+xml;utf8,${svg
+    .replace(/</g, '%3C')
+    .replace(/>/g, '%3E')
+    .replace(/#/g, '%23')}`;
+}
+
+/**
+ * The element's *declared* dimensions, read from the `width`/`height` content
+ * attributes and nothing else.
+ *
+ * Deliberately not `getBoundingClientRect` (which is what Datadog falls back
+ * to): `finalizeAttribute` runs once per attribute on the serializer's hot
+ * path, so measuring there would trade a layout flush for every attribute of
+ * every element. Attributes are free to read.
+ *
+ * Anything that is not plain integer pixels (`50%`, `auto`, `-1`, `1e9`) is
+ * rejected rather than guessed at, and an element that declares no usable
+ * dimensions gets no placeholder -- the attribute is dropped, as before.
+ */
+function declaredDimensions(element: Element): [string, string] | null {
+  try {
+    const width = element.getAttribute('width');
+    const height = element.getAttribute('height');
+    if (width === null || height === null) return null;
+    if (!DIMENSION_ATTRIBUTE.test(width) || !DIMENSION_ATTRIBUTE.test(height))
+      return null;
+    return [width, height];
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * What a blocked media source becomes: a same-size placeholder where one is
+ * both meaningful and derivable without forcing layout, and `null` -- the
+ * attribute dropped entirely -- everywhere else, which is the original and
+ * still the fallback behaviour.
+ */
+function blockedMediaValue(
+  element: Element,
+  tagName: string,
+  normalizedName: string,
+): string | null {
+  const placeholderNames = MEDIA_PLACEHOLDER_ATTRIBUTES.get(tagName);
+  if (!placeholderNames || !placeholderNames.has(normalizedName)) return null;
+  const dimensions = declaredDimensions(element);
+  if (!dimensions) return null;
+  return placeholderImage(dimensions[0], dimensions[1]);
+}
+
+/**
  * The single decision point for every attribute rrweb records, on both the
  * snapshot and the mutation path. Called exactly once per attribute, at the
  * end of serialization, so no earlier stage needs to know about privacy.
@@ -501,14 +614,19 @@ function isUnmasked(element: Element, privacy: CompiledPrivacyPolicy): boolean {
  *     flag alone would let a single mis-set call site leak a page attribute
  *     verbatim. `rr_dataURL` and `rr_src` are deliberately off the allowlist
  *     -- they hold real page pixels and a real page URL. Returns early.
+ *  1b. a name in `OPERATIONAL_ATTRIBUTES` -- rrweb's own signals, which no
+ *     masking branch may destroy. Sits above (2) and (3) on purpose: coarse
+ *     masking is exactly what would otherwise erase them. Returns early.
  *  2. `maskAllElementAttributes` -- stars. It is the coarse kill switch and
  *     takes precedence over `maskAttributeFn`, which is then ignored with a
  *     one-time warning. Returns early.
  *  3. `maskAttributeFn` -- run in try/catch; a throwing callback fails closed
  *     to stars rather than leaking the raw value. Does NOT return early: this
  *     is a pipeline, not an escape hatch. Its output is the input to (4).
- *  4. the compiled policy, the final authority -- strict drops media sources,
- *     URL attributes are sanitized, `privacy.maskedAttributes` are starred
+ *  4. the compiled policy, the final authority -- strict drops media sources
+ *     (an `<img>` source or `<video>` poster whose element declares integer
+ *     `width`/`height` attributes becomes a neutral same-size SVG instead, so
+ *     the surrounding layout survives the drop), URL attributes are sanitized, `privacy.maskedAttributes` are starred
  *     unless the element sits inside `privacy.unmaskTextSelector` (the unmask
  *     escape, which runs *after* the media-drop and URL branches and so can
  *     never reopen either), and form `value` attributes are starred under
@@ -543,6 +661,9 @@ export function finalizeAttribute({
   // name must be known rendering metadata. Either alone is not enough.
   if (isGenerated && RENDERING_METADATA_ATTRIBUTES.has(normalizedName))
     return value;
+  // No flag to pair with here: these are page-present attributes, exempted on
+  // the name alone because rrweb's own operation depends on reading them back.
+  if (OPERATIONAL_ATTRIBUTES.has(normalizedName)) return value;
   if (CSS_ATTRIBUTES.has(normalizedName)) return value;
 
   if (maskAllElementAttributes) {
@@ -575,7 +696,7 @@ export function finalizeAttribute({
     MEDIA_TAGS.has(tagName) &&
     MEDIA_SOURCE_ATTRIBUTES.has(normalizedName)
   ) {
-    return null;
+    return blockedMediaValue(element, tagName, normalizedName);
   }
   if (URL_ATTRIBUTES.has(normalizedName)) return sanitizeUrl(current, privacy);
   if (privacy.maskedAttributes.includes(normalizedName)) {

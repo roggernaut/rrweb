@@ -70,6 +70,24 @@ Additional breaking/behavior notes:
   `rr_height`, `rr_scrollLeft`, `rr_scrollTop`, `rr_mediaState`,
   `rr_open_mode`) as well as the flag, and the flag is cleared when a real
   page mutation writes that same attribute name.
+- A second, sibling exemption now covers rrweb's own _page-present_
+  operational attributes -- `data-privacy`, `data-rr-is-password` and
+  `data-rrweb-id` -- which no masking branch may touch. Previously
+  `maskAllElementAttributes` would star `data-privacy="mask"` out of the
+  recording (erasing the declaration that explains why the surrounding
+  subtree is masked) and star `data-rr-is-password`, breaking the replay-side
+  password re-detection that reads it back. `maskAttributeFn` is no longer
+  invoked for these names at all. This mirrors Datadog's carve-out for its own
+  `data-dd-privacy`, `STABLE_ATTRIBUTES` and `actionNameAttribute`.
+- Under `strict`, a blocked `<img>` `src`/`srcset` or `<video>` `poster` on an
+  element that declares plain integer `width`/`height` attributes is now
+  replaced by a neutral same-dimension SVG data URI instead of being dropped
+  to `null`, so removing the pixels no longer collapses the layout around
+  them. Dimensions come from the content attributes only -- never from
+  `getBoundingClientRect`, which would force a layout flush per attribute --
+  so an element with no usable declared dimensions still drops the attribute
+  as before, as do all other media sources (`<iframe>`/`rr_src`, `<embed>`,
+  `<object>`, `<audio>`, `<source>`).
 - `sanitizeUrl` returns `null` rather than `''` for an unparseable URL, so
   the attribute is dropped instead of emptied -- an empty `src`/`href`
   re-resolves to the document URL at replay and gets requested.
