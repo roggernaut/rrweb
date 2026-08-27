@@ -11,6 +11,7 @@
  *   modules while keeping this module as a compatibility shim for external users
  */
 import type {
+  CompiledPrivacyPolicy,
   idNodeMap,
   MaskInputFn,
   MaskInputOptions,
@@ -28,6 +29,7 @@ import type {
   elementNode,
 } from '@rrweb/types';
 import dom from '@rrweb/utils';
+import { stars } from './privacy';
 
 export function isElement(n: Node): n is Element {
   return n.nodeType === n.ELEMENT_NODE;
@@ -259,6 +261,16 @@ export function createMirror(): Mirror {
   return new Mirror();
 }
 
+/**
+ * @deprecated use `maskInput`, which is the single entry point for input
+ * masking and also applies the compiled privacy policy. This is a shim over
+ * that same implementation so the two can never drift apart.
+ *
+ * Note that going through `maskInput` means an always-protected input (a
+ * password or hidden field, or one whose `autocomplete` names a card or
+ * password field) is now masked here too, whatever `maskInputOptions` says.
+ * That is the reason this name is deprecated rather than merely aliased.
+ */
 export function maskInputValue({
   element,
   maskInputOptions,
@@ -274,20 +286,15 @@ export function maskInputValue({
   value: string | null;
   maskInputFn?: MaskInputFn;
 }): string {
-  let text = value || '';
-  const actualType = type && toLowerCase(type);
-
-  if (
-    maskInputOptions[tagName.toLowerCase() as keyof MaskInputOptions] ||
-    (actualType && maskInputOptions[actualType as keyof MaskInputOptions])
-  ) {
-    if (maskInputFn) {
-      text = maskInputFn(text, element);
-    } else {
-      text = '*'.repeat(text.length);
-    }
-  }
-  return text;
+  return maskInput({
+    element,
+    maskInputOptions,
+    tagName,
+    type,
+    value: value || '',
+    maskInputFn,
+    privacy: undefined,
+  });
 }
 
 export function toLowerCase<T extends string>(str: T): Lowercase<T> {
@@ -377,6 +384,136 @@ export function getInputType(element: HTMLElement): Lowercase<string> | null {
     ? // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
       toLowerCase(type)
     : null;
+}
+
+/** Hoisted so the hot path does not construct it per call. Not global: a
+ * global regex carries `lastIndex` state between `test` calls. */
+const AUTOCOMPLETE_SEPARATOR = /\s+/;
+
+const PROTECTED_AUTOCOMPLETE = new Set([
+  'cc-csc',
+  'cc-exp',
+  'cc-exp-month',
+  'cc-exp-year',
+  'cc-name',
+  'cc-number',
+  'current-password',
+  'new-password',
+  'one-time-code',
+]);
+
+/**
+ * Inputs that are always masked, regardless of maskInputOptions or privacy
+ * preset: password/hidden inputs (including ones that used to be password
+ * inputs, via getInputType's data-rr-is-password check), and inputs whose
+ * autocomplete attribute names a sensitive field (credit card, password,
+ * OTP).
+ */
+export function isProtectedInput(element: HTMLElement): boolean {
+  if (dom.untaintedTagName(element) !== 'INPUT') return false;
+  const input = element as HTMLInputElement;
+  const type = getInputType(element);
+  if (type === 'password' || type === 'hidden') {
+    return true;
+  }
+  // `autocomplete` is empty on the overwhelming majority of inputs, and a
+  // single token on nearly all of the rest -- so bail, then try the whole
+  // value against the set, and only split when there is something to split.
+  const autocomplete = input.autocomplete;
+  if (!autocomplete) return false;
+  const lower = autocomplete.toLowerCase();
+  if (PROTECTED_AUTOCOMPLETE.has(lower)) return true;
+  if (!AUTOCOMPLETE_SEPARATOR.test(lower)) return false;
+  return lower
+    .split(AUTOCOMPLETE_SEPARATOR)
+    .some((token) => PROTECTED_AUTOCOMPLETE.has(token));
+}
+
+/**
+ * Single entry point for input value masking. Composes:
+ * - protected inputs (password/hidden/cc-* autocomplete): always masked,
+ *   regardless of everything else.
+ * - legacy `maskInputOptions`: mask iff the tag/type opts in; `maskInputFn`
+ *   output (if provided) is trusted verbatim, matching pre-v2 behavior.
+ * - balanced/strict privacy presets (`privacy.maskAllInputs`): always mask,
+ *   shape-free. If `maskInputFn` is provided its output length is kept but
+ *   its content is discarded and star-replaced -- the fn controls length
+ *   only, never leaks real content.
+ */
+export function maskInput({
+  element,
+  tagName,
+  type,
+  value,
+  maskInputOptions,
+  maskInputFn,
+  privacy,
+}: {
+  element: HTMLElement;
+  tagName: string;
+  type: string | null;
+  value: string;
+  maskInputOptions: MaskInputOptions;
+  maskInputFn?: MaskInputFn;
+  privacy: CompiledPrivacyPolicy | undefined;
+}): string {
+  if (isProtectedInput(element)) return stars(value);
+
+  const presetWantsMask = !!privacy && privacy.maskAllInputs;
+  if (
+    !presetWantsMask &&
+    !legacyWantsInputMask(tagName, type, maskInputOptions)
+  )
+    return value;
+
+  if (!maskInputFn) return stars(value);
+  const masked = maskInputFn(value, element);
+  // fn controls length only under balanced/strict; never trust its content.
+  return presetWantsMask ? stars(masked) : masked;
+}
+
+/**
+ * The predicate `maskInput` computes: must this form value be occluded at
+ * all? Exported because it is not only `maskInput` that discloses a form
+ * value -- the `<option selected>` flag discloses the parent `<select>`'s
+ * value without the value itself ever passing through `maskInput` -- and
+ * every such decision has to ask the same question rather than re-derive
+ * half of it.
+ */
+export function shouldMaskInput({
+  element,
+  tagName,
+  type,
+  maskInputOptions,
+  privacy,
+}: {
+  element: HTMLElement;
+  tagName: string;
+  type: string | null;
+  maskInputOptions: MaskInputOptions;
+  privacy: CompiledPrivacyPolicy | undefined;
+}): boolean {
+  return (
+    (!!privacy && privacy.maskAllInputs) ||
+    legacyWantsInputMask(tagName, type, maskInputOptions) ||
+    isProtectedInput(element)
+  );
+}
+
+/**
+ * Whether the pre-v2 `maskInputOptions` bag opts this tag or input type in.
+ * The policy-independent half of the mask decision.
+ */
+export function legacyWantsInputMask(
+  tagName: string,
+  type: string | null,
+  maskInputOptions: MaskInputOptions,
+): boolean {
+  const actualType = type && toLowerCase(type);
+  return Boolean(
+    maskInputOptions[tagName.toLowerCase() as keyof MaskInputOptions] ||
+      (actualType && maskInputOptions[actualType as keyof MaskInputOptions]),
+  );
 }
 
 /**

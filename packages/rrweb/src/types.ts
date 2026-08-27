@@ -55,6 +55,14 @@ export type recordOptions<T> = {
   ignoreSelector?: string;
   maskTextClass?: maskTextClass;
   maskTextSelector?: string;
+  /**
+   * A CSS selector whose matched elements (and their descendants) are never
+   * text-masked, even under `strict`'s mask-everything default or a policy
+   * `mask` rule. Merged with any `privacyPolicy` `unmask`/`allow` rule
+   * selectors. Only affects text masking -- it does not unmask input values,
+   * `title`/`placeholder`/`aria-label` attributes, or sanitized URLs.
+   */
+  unmaskTextSelector?: string | null;
   maskAllInputs?: boolean;
   maskInputOptions?: MaskInputOptions;
   maskInputFn?: MaskInputFn;

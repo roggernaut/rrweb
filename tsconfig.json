@@ -31,9 +31,6 @@
       "path": "packages/plugins/rrweb-plugin-network-replay"
     },
     {
-      "path": "packages/plugins/rrweb-plugin-privacy-detectors"
-    },
-    {
       "path": "packages/rrvideo"
     },
     {

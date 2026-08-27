@@ -51,6 +51,85 @@ export function computeFrameMaskRegions(
     });
 }
 
+/**
+ * The canvas backing store maps onto the element's content box (the CSS
+ * width/height it is drawn at), not its border box. `clientWidth` includes
+ * padding, so a padded canvas would otherwise skew the scale factor used to
+ * translate application-provided mask regions into backing-store pixels.
+ *
+ * Returns `null` (never a fallback size) when the content box cannot be
+ * measured or has zero area, so callers fail closed instead of silently
+ * reinterpreting CSS-pixel regions as backing-store pixels.
+ */
+export function getCanvasContentBoxSize(
+  canvas: HTMLCanvasElement,
+): { width: number; height: number } | null {
+  let rect: { width: number; height: number };
+  try {
+    rect = canvas.getBoundingClientRect();
+  } catch {
+    return null;
+  }
+  if (!rect || !Number.isFinite(rect.width) || !Number.isFinite(rect.height))
+    return null;
+
+  let style: CSSStyleDeclaration;
+  try {
+    style = getComputedStyle(canvas);
+  } catch {
+    return null;
+  }
+  if (!style) return null;
+
+  const px = (value: string): number => {
+    const parsed = parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  const width =
+    rect.width -
+    px(style.paddingLeft) -
+    px(style.paddingRight) -
+    px(style.borderLeftWidth) -
+    px(style.borderRightWidth);
+  const height =
+    rect.height -
+    px(style.paddingTop) -
+    px(style.paddingBottom) -
+    px(style.borderTopWidth) -
+    px(style.borderBottomWidth);
+
+  if (!(width > 0) || !(height > 0)) return null;
+
+  return { width, height };
+}
+
+/**
+ * The display box a frame's mask regions are scaled against.
+ *
+ * Gated on `isCanvasMaskingConfigured`, not on the provider merely being
+ * present: a provider whose `isConfigured()` currently returns false masks
+ * nothing, `computeFrameMaskRegions` will ignore the box anyway, and
+ * measuring it would cost a layout flush per frame for nothing -- and would
+ * drop the frame entirely on a canvas that cannot be measured. When masking
+ * really is in force the content box is measured precisely (the backing store
+ * maps onto it, not onto the border box `clientWidth`/`clientHeight` report),
+ * and an unmeasurable one returns `SKIP_FRAME` rather than falling back to a
+ * scale that would leave mask regions in the wrong place.
+ */
+export function resolveFrameDisplaySize(
+  masking: CanvasMasking | undefined,
+  canvas: HTMLCanvasElement,
+): { width: number; height: number } | typeof SKIP_FRAME {
+  if (!isCanvasMaskingConfigured(masking)) {
+    return {
+      width: canvas.clientWidth || canvas.width,
+      height: canvas.clientHeight || canvas.height,
+    };
+  }
+  return getCanvasContentBoxSize(canvas) ?? SKIP_FRAME;
+}
+
 export function isCanvasMaskingConfigured(
   masking: CanvasMasking | undefined,
 ): boolean {
@@ -75,4 +154,28 @@ function isValidRegion(region: unknown): region is CanvasMaskRegion {
     width >= 0 &&
     height >= 0
   );
+}
+
+/**
+ * Canvas privacy masking only redacts pixels on the FPS/OffscreenCanvas
+ * capture path (`sampling.canvas` as a number): that path renders full
+ * frames through `computeFrameMaskRegions` before they ever reach the
+ * encoding worker. The mutation-mode command stream (`sampling.canvas` as
+ * `'all'` or `undefined`) replays raw canvas API calls verbatim and has no
+ * way to redact anything.
+ *
+ * If canvas masking is configured but sampling stays in mutation mode, the
+ * masking is silently bypassed. To make that impossible, canvas masking
+ * being configured always forces numeric FPS sampling.
+ */
+export function resolveCanvasSampling(
+  requestedSampling: number | 'all' | undefined,
+  canvasMaskingConfigured: boolean,
+): number | 'all' | undefined {
+  if (!canvasMaskingConfigured) return requestedSampling;
+  if (typeof requestedSampling === 'number') return requestedSampling;
+  console.warn(
+    '[rrweb] canvasMasking requires FPS canvas capture; forcing sampling.canvas = 4',
+  );
+  return 4;
 }

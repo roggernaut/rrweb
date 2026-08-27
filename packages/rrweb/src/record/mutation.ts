@@ -5,12 +5,12 @@ import {
   ignoreAttribute,
   isShadowRoot,
   needMaskingText,
-  maskAttributeWithPrivacy,
-  protectSerializedAttribute,
-  getPrivacyAction,
-  maskInputWithPrivacy,
-  maskInputValue,
-  maskTextWithPrivacy,
+  splitMaskAllSelector,
+  type MaskTextSelector,
+  maskInput,
+  finalizeAttributes,
+  resolveTextValue,
+  FORM_VALUE_TAGS,
   Mirror,
   isNativeShadowDom,
   getInputType,
@@ -38,6 +38,15 @@ import {
   closestElementOfNode,
 } from '../utils';
 import dom from '@rrweb/utils';
+
+/**
+ * `attributeCursor` plus the names this recorder generated itself (currently
+ * only `rr_open_mode`), so the finalization sweep can exempt them without a
+ * side-table keyed by node.
+ */
+type attributeCursorWithGenerated = attributeCursor & {
+  generatedAttributes?: Set<string>;
+};
 
 type DoubleLinkedListNode = {
   previous: DoubleLinkedListNode | null;
@@ -147,9 +156,8 @@ export default class MutationBuffer {
   private locked = false;
 
   private texts: textCursor[] = [];
-  private attributes: attributeCursor[] = [];
-  private attributeMap = new WeakMap<Node, attributeCursor>();
-  private generatedAttributes = new WeakMap<Node, Set<string>>();
+  private attributes: attributeCursorWithGenerated[] = [];
+  private attributeMap = new WeakMap<Node, attributeCursorWithGenerated>();
   private removes: removedNodeMutation[] = [];
   private mapRemoves: Node[] = [];
 
@@ -182,6 +190,24 @@ export default class MutationBuffer {
   private blockSelector: observerParam['blockSelector'];
   private maskTextClass: observerParam['maskTextClass'];
   private maskTextSelector: observerParam['maskTextSelector'];
+  /**
+  /** Backing store for the `splitMaskTextSelector` getter below. */
+  private splitMaskTextSelectorCache: MaskTextSelector | null = null;
+  /**
+   * `maskTextSelector` split into its `'*'` mask-everything default and its
+   * explicit selectors.
+   *
+   * Always *derived* from the raw selector, never assigned: an unset or stale
+   * field would default to "no mask selectors at all", and reaching `emit()`
+   * without having gone through `processMutations` -- which `unfreeze()` and
+   * `unlock()` both do -- would then fail open. The raw selector is fixed for
+   * the buffer's lifetime, so one derivation per `init()` is enough.
+   */
+  private get splitMaskTextSelector(): MaskTextSelector {
+    return (this.splitMaskTextSelectorCache ??= splitMaskAllSelector(
+      this.maskTextSelector,
+    ));
+  }
   private inlineStylesheet: observerParam['inlineStylesheet'];
   private maskInputOptions: observerParam['maskInputOptions'];
   private maskTextFn: observerParam['maskTextFn'];
@@ -237,6 +263,8 @@ export default class MutationBuffer {
       // just a type trick, the runtime result is correct
       this[key] = options[key] as never;
     });
+    // Everything derived from the options above is re-derived on next use.
+    this.splitMaskTextSelectorCache = null;
   }
 
   public freeze() {
@@ -307,7 +335,9 @@ export default class MutationBuffer {
       }
       let cssCaptured = false;
       if (n.nodeType === Node.TEXT_NODE) {
-        const parentTag = (parent as Element).tagName;
+        // `parent` can be an arbitrary element (e.g. a <form>), whose
+        // `tagName` may be shadowed by a same-named descendant control.
+        const parentTag = dom.untaintedTagName(parent as Element | null);
         if (parentTag === 'TEXTAREA') {
           // genTextAreaValueMutation already called via parent
           return;
@@ -332,13 +362,16 @@ export default class MutationBuffer {
         blockClass: this.blockClass,
         blockSelector: this.blockSelector,
         maskTextClass: this.maskTextClass,
-        maskTextSelector: this.maskTextSelector,
+        maskTextSelector: this.splitMaskTextSelector,
+        unmaskTextSelector: this.privacy?.unmaskTextSelector ?? null,
         skipChild: true,
         newlyAddedElement: true,
         inlineStylesheet: this.inlineStylesheet,
         maskInputOptions: this.maskInputOptions,
         maskTextFn: this.maskTextFn,
         maskInputFn: this.maskInputFn,
+        maskAllElementAttributes: this.maskAllElementAttributes,
+        maskAttributeFn: this.maskAttributeFn,
         privacy: this.privacy,
         slimDOMOptions: this.slimDOMOptions,
         dataURLOptions: this.dataURLOptions,
@@ -469,7 +502,7 @@ export default class MutationBuffer {
         .map((text) => {
           const n = text.node;
           const parent = dom.parentNode(n);
-          if (parent && (parent as Element).tagName === 'TEXTAREA') {
+          if (dom.untaintedTagName(parent as Element | null) === 'TEXTAREA') {
             // the node is being ignored as it isn't in the mirror, so shift mutation to attributes on parent textarea
             this.genTextAreaValueMutation(parent as HTMLTextAreaElement);
           }
@@ -485,19 +518,9 @@ export default class MutationBuffer {
       attributes: this.attributes
         .map((attribute) => {
           const { attributes } = attribute;
-          const styleAction = getPrivacyAction(
-            attribute.node as Element,
-            this.privacy,
-            'style',
-            true,
-          );
-          if (
-            !this.maskAllElementAttributes &&
-            !this.maskAttributeFn &&
-            styleAction !== 'mask' &&
-            styleAction !== 'exclude' &&
-            typeof attributes.style === 'string'
-          ) {
+          // `style` is never masked by any privacy path, so the compact style
+          // mutation can always be used when it is shorter.
+          if (typeof attributes.style === 'string') {
             const diffAsStr = JSON.stringify(attribute.styleDiff);
             const unchangedAsStr = JSON.stringify(attribute._unchangedStyles);
             // check if the style diff is actually shorter than the regular string based mutation
@@ -513,23 +536,15 @@ export default class MutationBuffer {
               }
             }
           }
-          if (this.maskAllElementAttributes || this.maskAttributeFn) {
-            for (const [name, value] of Object.entries(attributes)) {
-              if (typeof value === 'string' || value === null) {
-                attributes[name] = protectSerializedAttribute({
-                  element: attribute.node as Element,
-                  name,
-                  value,
-                  privacy: this.privacy,
-                  maskAllElementAttributes: this.maskAllElementAttributes,
-                  maskAttributeFn: this.maskAttributeFn,
-                  isGenerated: this.generatedAttributes
-                    .get(attribute.node)
-                    ?.has(name),
-                });
-              }
-            }
-          }
+          // The single finalization sweep for the mutation path, the same one
+          // serializeElementNode runs.
+          finalizeAttributes(attributes, {
+            element: attribute.node as Element,
+            privacy: this.privacy,
+            maskAllElementAttributes: this.maskAllElementAttributes,
+            maskAttributeFn: this.maskAttributeFn,
+            generatedAttributes: attribute.generatedAttributes,
+          });
           return {
             id: this.mirror.getId(attribute.node),
             attributes: attributes,
@@ -555,8 +570,7 @@ export default class MutationBuffer {
     // reset
     this.texts = [];
     this.attributes = [];
-    this.attributeMap = new WeakMap<Node, attributeCursor>();
-    this.generatedAttributes = new WeakMap<Node, Set<string>>();
+    this.attributeMap = new WeakMap<Node, attributeCursorWithGenerated>();
     this.removes = [];
     this.addedSet = new Set<Node>();
     this.movedSet = new Set<Node>();
@@ -584,29 +598,21 @@ export default class MutationBuffer {
       (cn) => dom.textContent(cn) || '',
     ).join('');
     const type = getInputType(textarea);
-    if (this.privacy) {
-      const legacyMask = Boolean(
-        this.maskInputOptions.textarea ||
-          (type &&
-            this.maskInputOptions[type as keyof typeof this.maskInputOptions]),
-      );
-      item.attributes.value = maskInputWithPrivacy(
-        value,
-        textarea,
-        this.privacy,
-        legacyMask,
-        this.maskInputFn,
-      );
-    } else {
-      item.attributes.value = maskInputValue({
-        element: textarea,
-        maskInputOptions: this.maskInputOptions,
-        tagName: textarea.tagName,
-        type,
-        value,
-        maskInputFn: this.maskInputFn,
-      });
-    }
+    // `textarea.tagName` is safe unshadowed here: every caller only reaches
+    // this method after already comparing that same object's `.tagName` to
+    // the string literal `'TEXTAREA'` (see the childList/pushAdd/text-mutation
+    // call sites above, all now routed through `untaintedTagName`). A
+    // shadowed `tagName` fails that string comparison, so nothing shadowed
+    // ever reaches this call with a stale/wrong reference.
+    item.attributes.value = maskInput({
+      element: textarea,
+      maskInputOptions: this.maskInputOptions,
+      tagName: textarea.tagName,
+      type,
+      value,
+      maskInputFn: this.maskInputFn,
+      privacy: this.privacy,
+    });
   };
 
   private processMutation = (m: mutationRecord) => {
@@ -621,31 +627,25 @@ export default class MutationBuffer {
           !isBlocked(m.target, this.blockClass, this.blockSelector, false) &&
           value !== m.oldValue
         ) {
+          // The same ladder serializeTextNode runs (CSS exemption, mask
+          // branch), minus the snapshot path's extra <script> exemption on
+          // the mask branch -- see `resolveTextValue`.
           this.texts.push({
-            value:
-              value && this.privacy
-                ? maskTextWithPrivacy(
-                    value,
-                    closestElementOfNode(m.target),
-                    this.privacy,
-                    needMaskingText(
-                      m.target,
-                      this.maskTextClass,
-                      this.maskTextSelector,
-                      true, // checkAncestors
-                    ),
-                    this.maskTextFn,
-                  )
-                : needMaskingText(
+            value: value
+              ? resolveTextValue({
+                  value,
+                  parent: closestElementOfNode(m.target),
+                  needsMask: needMaskingText(
                     m.target,
                     this.maskTextClass,
-                    this.maskTextSelector,
+                    this.splitMaskTextSelector,
+                    this.privacy?.unmaskTextSelector ?? null,
                     true, // checkAncestors
-                  ) && value
-                ? this.maskTextFn
-                  ? this.maskTextFn(value, closestElementOfNode(m.target))
-                  : value.replace(/[\S]/g, '*')
-                : value,
+                  ),
+                  maskTextFn: this.maskTextFn,
+                  exemptScript: false,
+                })
+              : value,
             node: m.target,
           });
         }
@@ -656,36 +656,24 @@ export default class MutationBuffer {
         let attributeName = m.attributeName as string;
         let value = (m.target as HTMLElement).getAttribute(attributeName);
 
-        if (attributeName === 'value') {
+        // `value` only means "input value" on form controls; on e.g. `<li>` or
+        // `<param>` it is an ordinary attribute and belongs to the normal
+        // `finalizeAttribute` path instead. `untaintedTagName` reads the real
+        // tag name even when a named form control (e.g. <input name="tagName">)
+        // shadows the `tagName` property on `target`.
+        const targetTagName = dom.untaintedTagName(target);
+        if (attributeName === 'value' && FORM_VALUE_TAGS.has(targetTagName)) {
           const type = getInputType(target);
 
-          if (this.privacy) {
-            const legacyMask = Boolean(
-              this.maskInputOptions[
-                target.tagName.toLowerCase() as keyof typeof this.maskInputOptions
-              ] ||
-                (type &&
-                  this.maskInputOptions[
-                    type as keyof typeof this.maskInputOptions
-                  ]),
-            );
-            value = maskInputWithPrivacy(
-              value || '',
-              target,
-              this.privacy,
-              legacyMask,
-              this.maskInputFn,
-            );
-          } else {
-            value = maskInputValue({
-              element: target,
-              maskInputOptions: this.maskInputOptions,
-              tagName: target.tagName,
-              type,
-              value,
-              maskInputFn: this.maskInputFn,
-            });
-          }
+          value = maskInput({
+            element: target,
+            maskInputOptions: this.maskInputOptions,
+            tagName: targetTagName,
+            type,
+            value: value || '',
+            maskInputFn: this.maskInputFn,
+            privacy: this.privacy,
+          });
         }
         if (
           isBlocked(m.target, this.blockClass, this.blockSelector, false) ||
@@ -696,7 +684,7 @@ export default class MutationBuffer {
 
         let item = this.attributeMap.get(m.target);
         if (
-          target.tagName === 'IFRAME' &&
+          targetTagName === 'IFRAME' &&
           attributeName === 'src' &&
           !this.keepIframeSrcFn(value as string)
         ) {
@@ -723,28 +711,27 @@ export default class MutationBuffer {
         // This is used to ensure we do not unmask value when using e.g. a "Show password" type button
         if (
           attributeName === 'type' &&
-          target.tagName === 'INPUT' &&
+          targetTagName === 'INPUT' &&
           (m.oldValue || '').toLowerCase() === 'password'
         ) {
           target.setAttribute('data-rr-is-password', 'true');
         }
 
-        if (!ignoreAttribute(target.tagName, attributeName, value)) {
+        if (!ignoreAttribute(targetTagName, attributeName, value)) {
+          // A real page mutation is now writing this attribute name, so any
+          // "recorder generated, exempt from masking" flag left on it by an
+          // earlier write in the same flush no longer describes this value.
+          // Clear it (PostHog's `.delete(attributeName)` precedent) or a page
+          // that literally sets e.g. `rr_open_mode` would inherit the
+          // exemption and record its value unmasked.
+          item.generatedAttributes?.delete(attributeName);
           // overwrite attribute if the mutations was triggered in same time
-          const transformed = transformAttribute(
+          item.attributes[attributeName] = transformAttribute(
             this.doc,
-            toLowerCase(target.tagName),
+            toLowerCase(targetTagName),
             toLowerCase(attributeName),
             value,
           );
-          item.attributes[attributeName] = this.privacy
-            ? maskAttributeWithPrivacy(
-                target,
-                attributeName,
-                transformed,
-                this.privacy,
-              )
-            : transformed;
           if (attributeName === 'style') {
             if (!this.unattachedDoc) {
               try {
@@ -768,21 +755,9 @@ export default class MutationBuffer {
                 newPriority !== old.style.getPropertyPriority(pname)
               ) {
                 if (newPriority === '') {
-                  item.styleDiff[pname] = this.privacy
-                    ? maskTextWithPrivacy(newValue, target, this.privacy, false)
-                    : newValue;
+                  item.styleDiff[pname] = newValue;
                 } else {
-                  item.styleDiff[pname] = [
-                    this.privacy
-                      ? maskTextWithPrivacy(
-                          newValue,
-                          target,
-                          this.privacy,
-                          false,
-                        )
-                      : newValue,
-                    newPriority,
-                  ];
+                  item.styleDiff[pname] = [newValue, newPriority];
                 }
               } else {
                 // for checking
@@ -795,18 +770,14 @@ export default class MutationBuffer {
                 item.styleDiff[pname] = false; // delete
               }
             }
-          } else if (attributeName === 'open' && target.tagName === 'DIALOG') {
+          } else if (attributeName === 'open' && targetTagName === 'DIALOG') {
             if (target.matches('dialog:modal')) {
               item.attributes['rr_open_mode'] = 'modal';
             } else {
               item.attributes['rr_open_mode'] = 'non-modal';
             }
-            let generated = this.generatedAttributes.get(m.target);
-            if (!generated) {
-              generated = new Set();
-              this.generatedAttributes.set(m.target, generated);
-            }
-            generated.add('rr_open_mode');
+            // recorder-generated, never page data: exempt from masking.
+            (item.generatedAttributes ||= new Set()).add('rr_open_mode');
           }
         }
         break;
@@ -818,7 +789,7 @@ export default class MutationBuffer {
         if (isBlocked(m.target, this.blockClass, this.blockSelector, true))
           return;
 
-        if ((m.target as Element).tagName === 'TEXTAREA') {
+        if (dom.untaintedTagName(m.target as Element) === 'TEXTAREA') {
           // children would be ignored in genAdds as they aren't in the mirror
           this.genTextAreaValueMutation(m.target as HTMLTextAreaElement);
           return; // any removedNodes won't have been in mirror either

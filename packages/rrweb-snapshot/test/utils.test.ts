@@ -11,6 +11,11 @@ import {
 } from '../src/utils';
 import { NodeType } from '@rrweb/types';
 import type { serializedNode, serializedNodeWithId } from '@rrweb/types';
+// `@rrweb/utils` has no test infrastructure of its own (no vitest config /
+// test dir), so `untaintedTagName` -- shared, package-level shadowing
+// hardening added for Task 9 -- is covered here instead, importing it the
+// same way rrweb-snapshot's own source does.
+import { untaintedTagName } from '@rrweb/utils';
 
 describe('utils', () => {
   describe('isNodeMetaEqual()', () => {
@@ -324,6 +329,37 @@ describe('utils', () => {
       ).toEqual(
         "@font-face { font-family: 'MockFont'; src: url('https://example.com/fonts/mockfont.woff2') format('woff2'); font-weight: normal; font-style: normal; }",
       );
+    });
+  });
+
+  describe('untaintedTagName()', () => {
+    it('returns the real tag name even when a named form control shadows `tagName`', () => {
+      // Real browsers make named form controls reachable as own properties
+      // on their <form> (so `<form><input name="tagName">` makes
+      // `form.tagName` resolve to the <input>, not the string `'FORM'`).
+      // jsdom doesn't implement that quirk, so we reproduce the same shape
+      // of shadowing directly: an own `tagName` property that hides the
+      // inherited `Element.prototype` getter.
+      document.body.innerHTML = '<form><input name="tagName"></form>';
+      const form = document.querySelector('form')!;
+      const input = document.querySelector('input')!;
+      Object.defineProperty(form, 'tagName', {
+        value: input,
+        configurable: true,
+      });
+      // sanity check: the shadowing actually took effect
+      expect(typeof form.tagName).not.toBe('string');
+      expect(untaintedTagName(form)).toBe('FORM');
+    });
+
+    it('returns an uppercased tag name for an ordinary element', () => {
+      const div = document.createElement('div');
+      expect(untaintedTagName(div)).toBe('DIV');
+    });
+
+    it('returns an empty string for null/undefined', () => {
+      expect(untaintedTagName(null)).toBe('');
+      expect(untaintedTagName(undefined)).toBe('');
     });
   });
 });

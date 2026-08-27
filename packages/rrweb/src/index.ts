@@ -25,14 +25,10 @@ import './replay/styles/style.css';
 export type { recordOptions, ReplayPlugin } from './types';
 export type {
   PrivacyAction,
-  PrivacyDetectorOptions,
-  PrivacyMaskStyle,
   PrivacyPolicy,
   PrivacyPreset,
   PrivacyRule,
   PrivacyTarget,
-  PrivacyUrlOptions,
-  SensitiveDataKind,
 } from 'rrweb-snapshot';
 
 const { addCustomEvent } = record;

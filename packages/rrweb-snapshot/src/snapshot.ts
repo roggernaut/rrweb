@@ -25,7 +25,8 @@ import {
   is2DCanvasBlank,
   isElement,
   isShadowRoot,
-  maskInputValue,
+  maskInput,
+  shouldMaskInput,
   isNativeShadowDom,
   stringifyStylesheet,
   getInputType,
@@ -35,12 +36,12 @@ import {
   markCssSplits,
 } from './snapshot-utils';
 import {
-  compilePrivacyPolicy,
-  maskAttributeWithPrivacy,
-  maskInputWithPrivacy,
-  maskTextWithPrivacy,
-  mergeBlockSelectors,
-  protectSerializedAttribute,
+  finalizeAttribute,
+  finalizeAttributes,
+  resolvePrivacyContext,
+  resolveTextValue,
+  shouldCapturePixels,
+  splitSelectorList,
 } from './privacy';
 import dom from '@rrweb/utils';
 
@@ -223,23 +224,29 @@ export function ignoreAttribute(
   return ['video', 'audio'].includes(tagName) && name === 'autoplay';
 }
 
+/**
+ * Does one of `el`'s classes match `matcher`? A string matcher is an exact
+ * class name; a RegExp is tested against each class in turn. The one spelling
+ * of the check that `blockClass`, `maskTextClass` and `classMatchesRegex` all
+ * share.
+ */
+export function classMatches(el: Element, matcher: string | RegExp): boolean {
+  const { classList } = el;
+  if (typeof matcher === 'string') return classList.contains(matcher);
+  for (let index = classList.length; index--; ) {
+    if (matcher.test(classList[index])) return true;
+  }
+  return false;
+}
+
 export function _isBlockedElement(
   element: HTMLElement,
   blockClass: string | RegExp,
   blockSelector: string | null,
 ): boolean {
   try {
-    if (typeof blockClass === 'string') {
-      if (element.classList.contains(blockClass)) {
-        return true;
-      }
-    } else {
-      for (let eIndex = element.classList.length; eIndex--; ) {
-        const className = element.classList[eIndex];
-        if (blockClass.test(className)) {
-          return true;
-        }
-      }
+    if (classMatches(element, blockClass)) {
+      return true;
     }
     if (blockSelector) {
       return element.matches(blockSelector);
@@ -262,57 +269,116 @@ export function classMatchesRegex(
     return classMatchesRegex(dom.parentNode(node), regex, checkAncestors);
   }
 
-  for (let eIndex = (node as HTMLElement).classList.length; eIndex--; ) {
-    const className = (node as HTMLElement).classList[eIndex];
-    if (regex.test(className)) {
-      return true;
-    }
-  }
+  if (classMatches(node as HTMLElement, regex)) return true;
   if (!checkAncestors) return false;
   return classMatchesRegex(dom.parentNode(node), regex, checkAncestors);
 }
 
+/**
+ * `'*'` (compiled from the `strict` preset) is a mask-everything default rather
+ * than an explicit per-element rule: it must lose to an `unmaskTextSelector`
+ * ancestor, and it must not shadow a nearer explicit mask ancestor. So it is
+ * split out of the selector list and only applied once the ancestor walk has
+ * found nothing explicit.
+ */
+export type MaskTextSelector = {
+  /** the `'*'` mask-everything default, split out of the list */
+  maskAll: boolean;
+  /** the explicit selectors, with any `'*'` removed */
+  selector: string | null;
+};
+
+/**
+ * Split once per serialization pass -- at the top of `snapshot()` and once
+ * per mutation flush -- and threaded down from there, rather than re-parsed
+ * (or looked up in a module-global cache) for every node.
+ */
+export function splitMaskAllSelector(
+  maskTextSelector: string | null,
+): MaskTextSelector {
+  if (!maskTextSelector) return { maskAll: false, selector: null };
+  let maskAll = false;
+  const kept: string[] = [];
+  // `splitSelectorList`, not `split(',')`: a comma nested in `:is(a,b)`, in an
+  // attribute value, or escaped as `\,` is not a separator, and tearing one
+  // apart here would corrupt the selector that is put back together.
+  for (const part of splitSelectorList(maskTextSelector)) {
+    if (part.trim() === '*') maskAll = true;
+    else kept.push(part);
+  }
+  return {
+    maskAll,
+    selector: maskAll ? kept.join(',') || null : maskTextSelector,
+  };
+}
+
+/**
+ * @param inheritedNeedsMask the decision already taken for an ancestor the walk
+ * cannot reach — the caller's context crosses shadow-root/iframe boundaries
+ * that `parentElement` does not. It is the walk's default result, so a masked
+ * ancestor outside the boundary keeps masking (fail closed) while an
+ * `unmaskTextSelector` match found inside the boundary still wins.
+ */
 export function needMaskingText(
   node: Node,
   maskTextClass: string | RegExp,
-  maskTextSelector: string | null,
+  maskTextSelector: MaskTextSelector | string | null,
+  unmaskTextSelector: string | null,
   checkAncestors: boolean,
+  inheritedNeedsMask = false,
 ): boolean {
-  let el: Element;
-  if (isElement(node)) {
-    el = node;
-    if (!dom.childNodes(el).length) {
-      // optimisation: we can avoid any of the below checks on leaf elements
-      // as masking is applied to child text nodes only
-      return false;
-    }
-  } else if (dom.parentElement(node) === null) {
-    // should warn? maybe a text node isn't attached to a parent node yet?
-    return false;
-  } else {
-    el = dom.parentElement(node)!;
-  }
   try {
-    if (typeof maskTextClass === 'string') {
-      if (checkAncestors) {
-        if (el.closest(`.${maskTextClass}`)) return true;
-      } else {
-        if (el.classList.contains(maskTextClass)) return true;
+    // This parameter used to be the raw selector string, and this function is
+    // exported from the package root -- so an un-updated (or untyped) caller
+    // can still arrive with one. Coerce rather than destructure blindly: a
+    // string would otherwise yield `{maskAll: undefined, selector: undefined}`
+    // and every mask selector would silently stop matching, which is a
+    // fail-open. `null`/`undefined` go through the same path and compile to
+    // the same "no selector configured" pair the split already produces.
+    const { maskAll, selector } =
+      typeof maskTextSelector === 'string' || !maskTextSelector
+        ? splitMaskAllSelector(maskTextSelector ?? null)
+        : maskTextSelector;
+    // fast path: nothing can overrule masking when no unmasking is configured
+    if ((maskAll || inheritedNeedsMask) && !unmaskTextSelector) return true;
+    let el: Element;
+    if (isElement(node)) {
+      el = node;
+      if (!dom.childNodes(el).length) {
+        // optimisation: we can avoid any of the below checks on leaf elements
+        // as masking is applied to child text nodes only. The inherited
+        // decision is still handed on, for any shadow-root children.
+        return inheritedNeedsMask;
       }
+    } else if (dom.parentElement(node) === null) {
+      // a text node parented by a shadow root (or not attached yet): there is
+      // no chain to inspect, so fall back to the inherited decision
+      return inheritedNeedsMask || maskAll;
     } else {
-      if (classMatchesRegex(el, maskTextClass, checkAncestors)) return true;
+      el = dom.parentElement(node)!;
     }
-    if (maskTextSelector) {
-      if (checkAncestors) {
-        if (el.closest(maskTextSelector)) return true;
-      } else {
-        if (el.matches(maskTextSelector)) return true;
-      }
+    let current: Element | null = el;
+    while (current) {
+      // Nearest ancestor wins: the first explicit decision going upwards.
+      // Within a single element both sides are evaluated before the level
+      // returns, and a mask source (class or selector) beats the unmask
+      // selector -- Sentry (`maskDistance <= unmaskDistance`), Amplitude and
+      // Mixpanel all resolve a same-element tie to masking.
+      if (
+        classMatches(current, maskTextClass) ||
+        (selector && current.matches(selector))
+      )
+        return true;
+      if (unmaskTextSelector && current.matches(unmaskTextSelector))
+        return false;
+      if (!checkAncestors) break;
+      current = dom.parentElement(current);
     }
+    return maskAll || inheritedNeedsMask;
   } catch (e) {
-    //
+    // fail closed: an error in the mask decision masks
+    return true;
   }
-  return false;
 }
 
 // https://stackoverflow.com/a/36155560
@@ -492,7 +558,6 @@ function serializeNode(
         maskTextFn,
         rootId,
         cssCaptured,
-        privacy,
       });
     case n.CDATA_SECTION_NODE:
       return {
@@ -525,22 +590,18 @@ function serializeTextNode(
     maskTextFn: MaskTextFn | undefined;
     rootId: number | undefined;
     cssCaptured?: boolean;
-    privacy?: CompiledPrivacyPolicy;
   },
 ): serializedNode {
-  const { needsMask, maskTextFn, rootId, cssCaptured, privacy } = options;
-  // The parent node may not be a html element which has a tagName attribute.
-  // Named form controls can also shadow `tagName` (e.g. <input name="tagName">).
-  // So just let it be undefined which is ok in this use case.
-  const parent = dom.parentNode(n);
-  const parentTagName =
-    parent && typeof (parent as HTMLElement).tagName === 'string'
-      ? (parent as HTMLElement).tagName.toUpperCase()
-      : undefined;
+  const { needsMask, maskTextFn, rootId, cssCaptured } = options;
+  // The parent element may not be an html element which has a tagName
+  // attribute, and named form controls can shadow `tagName` (e.g. <input
+  // name="tagName"> inside a <form>). `untaintedTagName` handles both: '' for
+  // a non-element parent, the real tag name even when shadowed.
+  const parent = dom.parentElement(n);
+  const parentTagName = dom.untaintedTagName(parent);
   let textContent: string | null = '';
-  const isStyle = parentTagName === 'STYLE' ? true : undefined;
-  const isScript = parentTagName === 'SCRIPT' ? true : undefined;
-  if (isScript) {
+  const isStyle = parentTagName === 'STYLE';
+  if (parentTagName === 'SCRIPT') {
     textContent = 'SCRIPT_PLACEHOLDER';
   } else if (!cssCaptured) {
     textContent = dom.textContent(n);
@@ -552,20 +613,17 @@ function serializeTextNode(
       textContent = absolutifyURLs(textContent, getHref(options.doc));
     }
   }
-  if (!isScript && textContent) {
-    if (privacy) {
-      textContent = maskTextWithPrivacy(
-        textContent,
-        dom.parentElement(n),
-        privacy,
-        needsMask,
-        maskTextFn,
-      );
-    } else if (!isStyle && needsMask) {
-      textContent = maskTextFn
-        ? maskTextFn(textContent, dom.parentElement(n))
-        : textContent.replace(/[\S]/g, '*');
-    }
+  if (textContent) {
+    textContent = resolveTextValue({
+      value: textContent,
+      parent,
+      parentTagName,
+      needsMask,
+      maskTextFn,
+      // the snapshot path's inherited asymmetry: <script> text is exempt
+      // from the mask branch
+      exemptScript: true,
+    });
   }
 
   return {
@@ -620,11 +678,17 @@ function serializeElementNode(
   const needBlock = _isBlockedElement(n, blockClass, blockSelector);
   const tagName = getValidTagName(n);
   let attributes: attributes = {};
+  // Names the serializer itself generated, exempt from masking because their
+  // values never came from the page (`rr_dataURL` is NOT listed: it can hold
+  // real page pixels).
   const generatedAttributeNames = new Set<string>();
+  // The `img` inline-image path can write attributes from a `load` listener,
+  // i.e. after the finalization sweep below has already run. Those late writes
+  // go through the same helper so they cannot bypass it.
   let serializationComplete = false;
-  const protectLateAttribute = (name: string, value: string) =>
+  const finalizeLateAttribute = (name: string, value: string) =>
     serializationComplete
-      ? protectSerializedAttribute({
+      ? finalizeAttribute({
           element: n,
           name,
           value,
@@ -638,16 +702,12 @@ function serializeElementNode(
   for (let i = 0; i < len; i++) {
     const attr = n.attributes[i];
     if (!ignoreAttribute(tagName, attr.name, attr.value)) {
-      const transformed = transformAttribute(
+      attributes[attr.name] = transformAttribute(
         doc,
         tagName,
         toLowerCase(attr.name),
         attr.value,
       );
-      const protectedValue = privacy
-        ? maskAttributeWithPrivacy(n, attr.name, transformed, privacy)
-        : transformed;
-      if (protectedValue !== null) attributes[attr.name] = protectedValue;
     }
   }
   // remote css
@@ -689,34 +749,32 @@ function serializeElementNode(
       value
     ) {
       const type = getInputType(n);
-      if (privacy) {
-        const legacyMask = Boolean(
-          maskInputOptions[tagName as keyof MaskInputOptions] ||
-            (type && maskInputOptions[type as keyof MaskInputOptions]),
-        );
-        attributes.value = maskInputWithPrivacy(
-          value,
-          n,
-          privacy,
-          legacyMask,
-          maskInputFn,
-        );
-      } else {
-        attributes.value = maskInputValue({
-          element: n,
-          type,
-          tagName,
-          value,
-          maskInputOptions,
-          maskInputFn,
-        });
-      }
+      attributes.value = maskInput({
+        element: n,
+        type,
+        tagName,
+        value,
+        maskInputOptions,
+        maskInputFn,
+        privacy,
+      });
     } else if (checked) {
       attributes.checked = checked;
     }
   }
   if (tagName === 'option') {
-    if ((n as HTMLOptionElement).selected && !maskInputOptions['select']) {
+    // The `selected` flag discloses the parent <select>'s value just as
+    // surely as the value attribute does, so it is governed by the <select>'s
+    // own masking decision -- policy included. Reading `maskInputOptions`
+    // alone let a balanced/strict policy record the chosen option verbatim.
+    const selectionMasked = shouldMaskInput({
+      element: n,
+      tagName: 'select',
+      type: null,
+      maskInputOptions,
+      privacy,
+    });
+    if ((n as HTMLOptionElement).selected && !selectionMasked) {
       attributes.selected = true;
     } else {
       // ignore the html attribute (which corresponds to DOM (n as HTMLOptionElement).defaultSelected)
@@ -739,8 +797,7 @@ function serializeElementNode(
   if (
     tagName === 'canvas' &&
     recordCanvas &&
-    !canvasMaskingConfigured?.() &&
-    privacy?.policy.preset !== 'strict'
+    shouldCapturePixels(privacy, canvasMaskingConfigured)
   ) {
     if ((n as ICanvas).__context === '2d') {
       // only record this on 2d canvas
@@ -773,11 +830,7 @@ function serializeElementNode(
     }
   }
   // save image offline
-  if (
-    tagName === 'img' &&
-    inlineImages &&
-    privacy?.policy.preset !== 'strict'
-  ) {
+  if (tagName === 'img' && inlineImages && shouldCapturePixels(privacy)) {
     if (!canvasService) {
       canvasService = doc.createElement('canvas');
       canvasCtx = canvasService.getContext('2d');
@@ -792,7 +845,7 @@ function serializeElementNode(
         canvasService!.width = image.naturalWidth;
         canvasService!.height = image.naturalHeight;
         canvasCtx!.drawImage(image, 0, 0);
-        attributes.rr_dataURL = protectLateAttribute(
+        attributes.rr_dataURL = finalizeLateAttribute(
           'rr_dataURL',
           canvasService!.toDataURL(dataURLOptions.type, dataURLOptions.quality),
         );
@@ -811,7 +864,7 @@ function serializeElementNode(
       }
       if (image.crossOrigin === 'anonymous') {
         priorCrossOrigin
-          ? (attributes.crossOrigin = protectLateAttribute(
+          ? (attributes.crossOrigin = finalizeLateAttribute(
               'crossOrigin',
               priorCrossOrigin,
             ))
@@ -871,22 +924,15 @@ function serializeElementNode(
     delete attributes.src; // prevent auto loading
   }
 
-  // Apply runtime attribute controls to the final representation, after
-  // synthesized form/layout values. The portable policy remains the last
-  // authority inside protectSerializedAttribute.
-  for (const [name, value] of Object.entries(attributes)) {
-    if (typeof value === 'string' || value === null) {
-      attributes[name] = protectSerializedAttribute({
-        element: n,
-        name,
-        value,
-        privacy,
-        maskAllElementAttributes,
-        maskAttributeFn,
-        isGenerated: generatedAttributeNames.has(name),
-      });
-    }
-  }
+  // The single finalization sweep, here at the end and nowhere else: no
+  // earlier stage applies privacy itself.
+  finalizeAttributes(attributes, {
+    element: n,
+    privacy,
+    maskAllElementAttributes,
+    maskAttributeFn,
+    generatedAttributes: generatedAttributeNames,
+  });
   serializationComplete = true;
 
   let isCustomElement: true | undefined;
@@ -1043,7 +1089,14 @@ export function serializeNodeWithId(
     blockClass: string | RegExp;
     blockSelector: string | null;
     maskTextClass: string | RegExp;
-    maskTextSelector: string | null;
+    /**
+     * Normally the pre-split pair from `splitMaskAllSelector`. The raw string
+     * this option used to take is still accepted and coerced by
+     * `needMaskingText`, which is the only consumer -- everything in between
+     * just threads it down.
+     */
+    maskTextSelector: MaskTextSelector | string | null;
+    unmaskTextSelector: string | null;
     skipChild: boolean;
     inlineStylesheet: boolean;
     newlyAddedElement?: boolean;
@@ -1082,6 +1135,7 @@ export function serializeNodeWithId(
     blockSelector,
     maskTextClass,
     maskTextSelector,
+    unmaskTextSelector,
     skipChild = false,
     inlineStylesheet = true,
     maskInputOptions = {},
@@ -1107,14 +1161,23 @@ export function serializeNodeWithId(
   let { needsMask } = options;
   let { preserveWhiteSpace = true } = options;
 
-  if (!needsMask) {
-    // perf: if needsMask = true, children won't also need to check
-    const checkAncestors = needsMask === undefined; // if false, we've already checked ancestors
+  // perf: if needsMask = true, children won't also need to check — unless an
+  // unmaskTextSelector is configured, in which case a descendant can still
+  // escape a masked (or mask-everything) ancestor and must check for itself.
+  if (!needsMask || unmaskTextSelector) {
+    // if false, we've already checked ancestors (unless unmasking is in play,
+    // where the nearest-ancestor decision has to be recomputed per node)
+    const checkAncestors =
+      needsMask === undefined || Boolean(unmaskTextSelector);
     needsMask = needMaskingText(
       n as Element,
       maskTextClass,
       maskTextSelector,
+      unmaskTextSelector,
       checkAncestors,
+      // the inherited decision covers ancestors across shadow-root/iframe
+      // boundaries, which the per-node walk cannot see
+      needsMask === true,
     );
   }
 
@@ -1201,6 +1264,7 @@ export function serializeNodeWithId(
       needsMask,
       maskTextClass,
       maskTextSelector,
+      unmaskTextSelector,
       skipChild,
       inlineStylesheet,
       maskInputOptions,
@@ -1281,6 +1345,7 @@ export function serializeNodeWithId(
             needsMask,
             maskTextClass,
             maskTextSelector,
+            unmaskTextSelector,
             skipChild: false,
             inlineStylesheet,
             maskInputOptions,
@@ -1337,6 +1402,7 @@ export function serializeNodeWithId(
             needsMask,
             maskTextClass,
             maskTextSelector,
+            unmaskTextSelector,
             skipChild: false,
             inlineStylesheet,
             maskInputOptions,
@@ -1382,6 +1448,7 @@ function snapshot(
     blockSelector?: string | null;
     maskTextClass?: string | RegExp;
     maskTextSelector?: string | null;
+    unmaskTextSelector?: string | null;
     inlineStylesheet?: boolean;
     maskAllInputs?: boolean | MaskInputOptions;
     maskTextFn?: MaskTextFn;
@@ -1407,6 +1474,16 @@ function snapshot(
     stylesheetLoadTimeout?: number;
     keepIframeSrcFn?: KeepIframeSrcFn;
     privacyPolicy?: PrivacyPolicy;
+    /**
+     * @internal An already-compiled policy whose selectors have already been
+     * merged into the `blockSelector`/`maskTextSelector`/`unmaskTextSelector`
+     * options above. Takes precedence over `privacyPolicy`. The shared
+     * prologue (`resolvePrivacyContext`) still runs on both entry points and
+     * is idempotent, so re-merging pre-merged selectors is a no-op; passing
+     * `privacy` avoids re-COMPILING the policy on every full snapshot. The
+     * per-document unmask presence probe still runs.
+     */
+    privacy?: CompiledPrivacyPolicy;
   },
 ): serializedNodeWithId | null {
   const {
@@ -1414,7 +1491,8 @@ function snapshot(
     blockClass = 'rr-block',
     blockSelector: legacyBlockSelector = null,
     maskTextClass = 'rr-mask',
-    maskTextSelector = null,
+    maskTextSelector: legacyMaskTextSelector = null,
+    unmaskTextSelector: legacyUnmaskTextSelector = null,
     inlineStylesheet = true,
     inlineImages = false,
     recordCanvas = false,
@@ -1434,9 +1512,25 @@ function snapshot(
     stylesheetLoadTimeout,
     keepIframeSrcFn = () => false,
     privacyPolicy,
+    privacy: compiledPrivacy,
   } = options || {};
-  const privacy = compilePrivacyPolicy(privacyPolicy);
-  const blockSelector = mergeBlockSelectors(legacyBlockSelector, privacy);
+  // One prologue for both entry points. `record()` hands over an
+  // already-compiled policy whose selectors it has already merged into the
+  // options above -- merging is idempotent, so re-running it there is a no-op
+  // rather than a second concatenation; a standalone caller gets the compile
+  // as well. Hand-rolling the precedence here instead would mean a legacy
+  // selector option silently *replaced* the compiled policy's own selectors,
+  // which is not what the same call means on the `record()` path.
+  const { privacy, blockSelector, maskTextSelector, unmaskTextSelector } =
+    resolvePrivacyContext({
+      privacy: compiledPrivacy,
+      privacyPolicy,
+      blockSelector: legacyBlockSelector,
+      maskTextSelector: legacyMaskTextSelector,
+      unmaskTextSelector: legacyUnmaskTextSelector,
+    });
+  // Split once for this pass, not once per node.
+  const splitMaskTextSelector = splitMaskAllSelector(maskTextSelector);
   const maskInputOptions: MaskInputOptions =
     maskAllInputs === true
       ? {
@@ -1470,7 +1564,8 @@ function snapshot(
     blockClass,
     blockSelector,
     maskTextClass,
-    maskTextSelector,
+    maskTextSelector: splitMaskTextSelector,
+    unmaskTextSelector,
     skipChild: false,
     inlineStylesheet,
     maskInputOptions,

@@ -3,9 +3,7 @@ import {
   slimDOMDefaults,
   type MaskInputOptions,
   createMirror,
-  compilePrivacyPolicy,
-  mergeBlockSelectors,
-  sanitizeUrl,
+  resolvePrivacyContext,
 } from 'rrweb-snapshot';
 import { initObservers, mutationBuffers } from './observer';
 import {
@@ -30,12 +28,16 @@ import {
   type scrollCallback,
   type canvasMutationParam,
   type adoptedStyleSheetParam,
+  type SamplingStrategy,
 } from '@rrweb/types';
 import type { CrossOriginIframeMessageEventContent } from '../types';
 import { IframeManager } from './iframe-manager';
 import { ShadowDomManager } from './shadow-dom-manager';
 import { CanvasManager } from './observers/canvas/canvas-manager';
-import { isCanvasMaskingConfigured } from './observers/canvas/canvas-mask';
+import {
+  isCanvasMaskingConfigured,
+  resolveCanvasSampling,
+} from './observers/canvas/canvas-mask';
 import { StylesheetManager } from './stylesheet-manager';
 import ProcessedNodeManager from './processed-node-manager';
 import {
@@ -78,7 +80,8 @@ function record<T = eventWithTime>(
     ignoreClass = 'rr-ignore',
     ignoreSelector = null,
     maskTextClass = 'rr-mask',
-    maskTextSelector = null,
+    maskTextSelector: legacyMaskTextSelector = null,
+    unmaskTextSelector: legacyUnmaskTextSelector = null,
     inlineStylesheet = true,
     maskAllInputs,
     maskInputOptions: _maskInputOptions,
@@ -89,7 +92,7 @@ function record<T = eventWithTime>(
     maskAttributeFn,
     hooks,
     packFn,
-    sampling = {},
+    sampling: requestedSampling = {},
     dataURLOptions = {},
     canvasMasking,
     mousemoveWait,
@@ -109,23 +112,36 @@ function record<T = eventWithTime>(
     privacyPolicy,
   } = options;
 
-  const portablePrivacyPolicy = (plugins || []).reduce(
-    (policy, plugin) =>
-      plugin.applyPrivacyPolicy
-        ? (plugin.applyPrivacyPolicy(policy) as typeof privacyPolicy)
-        : policy,
+  // The one privacy prologue: compiles the policy, merges every legacy
+  // selector option with its compiled counterpart, and writes the merged
+  // unmask selector back onto the policy -- without that write-back the
+  // `record()`-level option would only affect text masking and would skip
+  // the masked-attribute escape `finalizeAttribute` reads off the policy.
+  // `snapshot()` is handed `privacy` directly, so it neither compiles nor
+  // merges again, and the merged unmask selector needs no separate carrier.
+  const { privacy, blockSelector, maskTextSelector } = resolvePrivacyContext({
     privacyPolicy,
-  );
-  const privacy = compilePrivacyPolicy(portablePrivacyPolicy);
-  const blockSelector = mergeBlockSelectors(legacyBlockSelector, privacy);
+    blockSelector: legacyBlockSelector,
+    maskTextSelector: legacyMaskTextSelector,
+    unmaskTextSelector: legacyUnmaskTextSelector,
+  });
   // Strict remains fail-closed for the whole canvas. Region providers are
-  // available to balanced/custom/legacy policies, where the application owns
+  // available to balanced/legacy policies, where the application owns
   // the completeness of those regions.
-  const recordCanvas =
-    requestedRecordCanvas && privacy?.policy.preset !== 'strict';
+  const recordCanvas = requestedRecordCanvas && !privacy.blockMedia;
   const canvasMaskingConfigured = canvasMasking
     ? () => isCanvasMaskingConfigured(canvasMasking)
     : undefined;
+  // Canvas masking forces the FPS capture path; `resolveCanvasSampling`
+  // carries the reasoning. `sampling` is the caller's own object, so
+  // overriding `canvas` in place would mutate the options they passed in.
+  const sampling: SamplingStrategy = {
+    ...requestedSampling,
+    canvas: resolveCanvasSampling(
+      requestedSampling.canvas,
+      isCanvasMaskingConfigured(canvasMasking),
+    ),
+  };
 
   registerErrorHandler(errorHandler);
 
@@ -298,7 +314,6 @@ function record<T = eventWithTime>(
   const stylesheetManager = new StylesheetManager({
     mutationCb: wrappedMutationEmit,
     adoptedStyleSheetCb: wrappedAdoptedStyleSheetEmit,
-    privacy,
   });
 
   const iframeManager = new IframeManager({
@@ -374,7 +389,7 @@ function record<T = eventWithTime>(
       {
         type: EventType.Meta,
         data: {
-          href: sanitizeUrl(window.location.href, privacy),
+          href: window.location.href,
           width: getWindowWidth(),
           height: getWindowHeight(),
         },
@@ -405,7 +420,7 @@ function record<T = eventWithTime>(
       recordCanvas,
       canvasMaskingConfigured,
       inlineImages,
-      privacyPolicy: portablePrivacyPolicy,
+      privacy,
       onSerialize: (n) => {
         if (isSerializedIframe(n, mirror)) {
           iframeManager.addIframe(n as HTMLIFrameElement);

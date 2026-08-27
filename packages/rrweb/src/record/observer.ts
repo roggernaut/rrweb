@@ -1,12 +1,4 @@
-import {
-  type MaskInputOptions,
-  maskInputWithPrivacy,
-  maskTextWithPrivacy,
-  shouldMaskInputWithPrivacy,
-  Mirror,
-  getInputType,
-  toLowerCase,
-} from 'rrweb-snapshot';
+import { maskInput, Mirror, getInputType, toLowerCase } from 'rrweb-snapshot';
 import type { FontFaceSet } from 'css-font-loading-module';
 import {
   throttle,
@@ -391,9 +383,9 @@ function initInputObserver({
   ignoreSelector,
   maskInputOptions,
   maskInputFn,
-  privacy,
   sampling,
   userTriggeredOnInput,
+  privacy,
 }: observerParam): listenerHandler {
   function eventHandler(event: Event) {
     let target = getEventTarget(event) as HTMLElement | null;
@@ -429,19 +421,15 @@ function initInputObserver({
     if (type === 'radio' || type === 'checkbox') {
       isChecked = (target as HTMLInputElement).checked;
     } else {
-      const legacyMask = Boolean(
-        maskInputOptions[tagName.toLowerCase() as keyof MaskInputOptions] ||
-          maskInputOptions[type as keyof MaskInputOptions],
-      );
-      if (shouldMaskInputWithPrivacy(target, privacy, legacyMask)) {
-        text = maskInputWithPrivacy(
-          text,
-          target,
-          privacy,
-          legacyMask,
-          maskInputFn,
-        );
-      }
+      text = maskInput({
+        element: target,
+        maskInputOptions,
+        tagName,
+        type,
+        value: text,
+        maskInputFn,
+        privacy,
+      });
     }
     cbWithDedup(
       target,
@@ -594,29 +582,8 @@ function getIdAndStyleId(
   };
 }
 
-function stylesheetOwnerElement(
-  sheet: CSSStyleSheet | null | undefined,
-): HTMLElement | null {
-  const owner = sheet?.ownerNode;
-  return owner instanceof Element ? (owner as HTMLElement) : null;
-}
-
-function maskCssForRecord(
-  value: string,
-  sheet: CSSStyleSheet | null | undefined,
-  privacy: observerParam['privacy'],
-): string {
-  if (!value || !privacy) return value;
-  return maskTextWithPrivacy(
-    value,
-    stylesheetOwnerElement(sheet),
-    privacy,
-    false,
-  );
-}
-
 function initStyleSheetObserver(
-  { styleSheetRuleCb, mirror, stylesheetManager, privacy }: observerParam,
+  { styleSheetRuleCb, mirror, stylesheetManager }: observerParam,
   { win }: { win: IWindow },
 ): listenerHandler {
   if (!win.CSSStyleSheet || !win.CSSStyleSheet.prototype) {
@@ -647,7 +614,7 @@ function initStyleSheetObserver(
           styleSheetRuleCb({
             id,
             styleId,
-            adds: [{ rule: maskCssForRecord(rule, thisArg, privacy), index }],
+            adds: [{ rule, index }],
           });
         }
         return target.apply(thisArg, argumentsList);
@@ -727,7 +694,7 @@ function initStyleSheetObserver(
             styleSheetRuleCb({
               id,
               styleId,
-              replace: maskCssForRecord(text, thisArg, privacy),
+              replace: text,
             });
           }
           return target.apply(thisArg, argumentsList);
@@ -759,7 +726,7 @@ function initStyleSheetObserver(
             styleSheetRuleCb({
               id,
               styleId,
-              replaceSync: maskCssForRecord(text, thisArg, privacy),
+              replaceSync: text,
             });
           }
           return target.apply(thisArg, argumentsList);
@@ -827,11 +794,7 @@ function initStyleSheetObserver(
                 styleId,
                 adds: [
                   {
-                    rule: maskCssForRecord(
-                      rule,
-                      thisArg.parentStyleSheet,
-                      privacy,
-                    ),
+                    rule,
                     index: [
                       ...getNestedCSSRulePositions(thisArg),
                       index || 0, // defaults to 0
@@ -962,7 +925,6 @@ function initStyleDeclarationObserver(
     mirror,
     ignoreCSSAttributes,
     stylesheetManager,
-    privacy,
   }: observerParam,
   { win }: { win: IWindow },
 ): listenerHandler {
@@ -992,11 +954,7 @@ function initStyleDeclarationObserver(
             styleId,
             set: {
               property,
-              value: maskCssForRecord(
-                value,
-                thisArg.parentRule?.parentStyleSheet,
-                privacy,
-              ),
+              value,
               priority,
             },
             // eslint-disable-next-line @typescript-eslint/no-non-null-assertion

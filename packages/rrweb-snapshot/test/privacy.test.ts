@@ -1,709 +1,364 @@
 /**
  * @vitest-environment jsdom
  */
-import { beforeEach, describe, expect, it } from 'vitest';
-import snapshot from '../src/snapshot';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
-  applyPrivacyDetectors,
   compilePrivacyPolicy,
-  detectSensitiveText,
-  getPrivacyAction,
-  maskInputWithPrivacy,
-  maskTextWithPrivacy,
-  passesLuhn,
-  sanitizeUrl,
+  validateSelector,
+  mergeSelectors,
+  resolvePrivacyContext,
+  splitSelectorList,
 } from '../src/privacy';
+import snapshot, {
+  needMaskingText,
+  splitMaskAllSelector,
+} from '../src/snapshot';
 
-const balanced = () =>
-  compilePrivacyPolicy(
-    applyPrivacyDetectors({ version: 1, preset: 'balanced' }),
-  )!;
-
-describe('privacy policy', () => {
-  beforeEach(() => {
-    document.documentElement.innerHTML = '<head></head><body></body>';
+describe('compilePrivacyPolicy v2', () => {
+  it('legacy preset compiles to inert options', () => {
+    const c = compilePrivacyPolicy(undefined);
+    expect(c.preset).toBe('legacy');
+    expect(c.maskTextSelector).toBeNull();
+    expect(c.blockSelector).toBeNull();
+    expect(c.maskAllInputs).toBe(false);
+    expect([...c.maskedAttributes]).toEqual([]);
   });
-
-  it('detects cards with Luhn instead of masking every long number', () => {
-    const privacy = balanced();
-    const value = 'valid 4111 1111 1111 1111 invalid 4111 1111 1111 1112';
-    const matches = detectSensitiveText(value, privacy);
-
-    expect(passesLuhn('4111 1111 1111 1111')).toBe(true);
-    expect(passesLuhn('4111 1111 1111 1112')).toBe(false);
-    expect(
-      matches.filter((match) => match.detector === 'payment-card'),
-    ).toEqual([
-      expect.objectContaining({
-        start: value.indexOf('4111 1111 1111 1111'),
-        end: value.indexOf('4111 1111 1111 1111') + 19,
-      }),
+  it('balanced masks inputs and attributes but not text', () => {
+    const c = compilePrivacyPolicy({ version: 1, preset: 'balanced' });
+    expect(c.maskAllInputs).toBe(true);
+    expect([...c.maskedAttributes]).toEqual([
+      'title',
+      'placeholder',
+      'aria-label',
     ]);
+    expect(c.maskTextSelector).not.toContain('*');
+    expect(c.maskTextSelector).toContain('[data-privacy="mask"]');
+    expect(c.maskTextSelector).toContain('.ph-mask'); // cross-vendor classes
+    expect(c.maskTextSelector).toContain('.dd-privacy-mask'); // Datadog
+    expect(c.maskTextSelector).toContain('[data-nr-mask]'); // New Relic
+    expect(c.blockSelector).toContain('[data-privacy="exclude"]');
+    expect(c.blockSelector).toContain('.dd-privacy-hidden'); // Datadog
+    expect(c.blockSelector).toContain('[data-nr-block]'); // New Relic
   });
-
-  it('masks only detected ranges in balanced text', () => {
-    const element = document.createElement('p');
-    expect(
-      maskTextWithPrivacy(
-        'Contact person@example.com about order 12345',
-        element,
-        balanced(),
-        false,
-      ),
-    ).toBe('Contact xxxxxx@xxxxxxx.xxx about order 12345');
+  it('strict masks all text and blocks media', () => {
+    const c = compilePrivacyPolicy({ version: 1, preset: 'strict' });
+    expect(c.maskTextSelector).toBe('*');
+    expect(c.blockMedia).toBe(true);
   });
-
-  it('does not enable heuristic detectors from the balanced preset alone', () => {
-    const element = document.createElement('p');
-    const privacy = compilePrivacyPolicy({
+  it('compiles rules into selector lists, unmask as alias of allow', () => {
+    const c = compilePrivacyPolicy({
       version: 1,
       preset: 'balanced',
+      rules: [
+        { target: { type: 'selector', selector: '.pii' }, action: 'mask' },
+        { target: { type: 'selector', selector: '.safe' }, action: 'unmask' },
+        { target: { type: 'selector', selector: '.gone' }, action: 'exclude' },
+      ],
     });
-    expect(
-      maskTextWithPrivacy(
-        'Contact person@example.com about order 12345',
-        element,
-        privacy,
-        false,
-      ),
-    ).toBe('Contact person@example.com about order 12345');
-    expect(privacy.detectors).toEqual([]);
+    expect(c.maskTextSelector).toContain('.pii');
+    expect(c.unmaskTextSelector).toContain('.safe');
+    expect(c.blockSelector).toContain('.gone');
   });
-
-  it('lets applyPrivacyDetectors opt into heuristic matching', () => {
-    expect(
-      applyPrivacyDetectors(
-        {
-          version: 1,
-          preset: 'balanced',
-          detectors: { email: false },
-        },
-        { email: true },
-      ).detectors,
-    ).toMatchObject({
-      email: false,
-      phone: true,
-      paymentCard: true,
-    });
+  it('recognizes only real vendor unmask tokens plus rrweb’s own', () => {
+    // Amplitude is the only vendor shipping an unmask class. Sentry's
+    // `unmask` default is `[]` -- there is no `.sentry-unmask` convention to
+    // be compatible with, so claiming one would be fiction.
+    const c = compilePrivacyPolicy({ version: 1, preset: 'balanced' });
+    expect(c.unmaskTextSelector).toContain('.rr-unmask');
+    expect(c.unmaskTextSelector).toContain('.amp-unmask');
+    expect(c.unmaskTextSelector).not.toContain('sentry-unmask');
+    // the mask/block lists stay full cross-vendor compat
+    expect(c.maskTextSelector).toContain('.sentry-mask');
+    expect(c.blockSelector).toContain('.sentry-block');
   });
-
-  it('runs configured detectors in custom policies', () => {
-    const element = document.createElement('p');
-    const privacy = compilePrivacyPolicy({
+  it('drops invalid selectors individually with a warning, keeps the rest', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const c = compilePrivacyPolicy({
       version: 1,
-      preset: 'custom',
-      detectors: {
-        custom: [{ name: 'account-id', pattern: 'acct_[0-9]+' }],
-      },
-    });
-
-    expect(
-      maskTextWithPrivacy(
-        'Account acct_12345 is active',
-        element,
-        privacy,
-        false,
-      ),
-    ).toBe('Account xxxx_00000 is active');
-  });
-
-  it('rejects unsafe or unbounded custom detector configurations', () => {
-    const policyWith = (pattern: string, flags?: string) => () =>
-      compilePrivacyPolicy({
-        version: 1,
-        preset: 'custom',
-        detectors: {
-          custom: [{ name: 'unsafe', pattern, flags }],
+      preset: 'balanced',
+      rules: [
+        {
+          target: { type: 'selector', selector: ':::garbage' },
+          action: 'exclude',
         },
-      });
-
-    expect(policyWith('(a+)+$')).toThrow('ambiguous nested repetition');
-    expect(policyWith('(a|aa)+$')).toThrow('ambiguous nested repetition');
-    expect(policyWith('(a+){1,20}')).toThrow('ambiguous nested repetition');
-    expect(policyWith('(a{1,10})+')).toThrow('ambiguous nested repetition');
-    expect(policyWith('(?:a+)+')).toThrow('ambiguous nested repetition');
-    expect(policyWith('(a)\\1')).toThrow('backreferences');
-    expect(policyWith('(?<x>a)\\k<x>')).toThrow('backreferences');
-    expect(policyWith('(?=secret)')).toThrow('lookaround');
-    expect(policyWith('(?!secret)')).toThrow('lookaround');
-    expect(policyWith('a*')).toThrow('cannot match empty text');
-    expect(policyWith('account', 'y')).toThrow('unsupported regex flags');
-    expect(policyWith('a'.repeat(257))).toThrow('must be 1-256 characters');
-    expect(policyWith('a?'.repeat(13))).toThrow('too many quantifiers');
+        { target: { type: 'selector', selector: '.valid' }, action: 'exclude' },
+      ],
+    });
+    expect(c.blockSelector).toContain('.valid');
+    expect(c.blockSelector).not.toContain(':::garbage');
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(':::garbage'));
+    warn.mockRestore();
+  });
+  it('throws on bad version/preset/empty selector', () => {
+    expect(() =>
+      compilePrivacyPolicy({ version: 2 as never, preset: 'legacy' }),
+    ).toThrow();
+    expect(() =>
+      compilePrivacyPolicy({ version: 1, preset: 'custom' as never }),
+    ).toThrow();
     expect(() =>
       compilePrivacyPolicy({
-        version: 1,
-        preset: 'custom',
-        detectors: {
-          custom: [
-            {
-              name: 'too-wide',
-              pattern: 'account_[0-9]+',
-              maximumMatchLength: 1_025,
-            },
-          ],
-        },
-      }),
-    ).toThrow('maximumMatchLength');
-    expect(() =>
-      compilePrivacyPolicy({
-        version: 1,
-        preset: 'custom',
-        detectors: {
-          custom: [
-            {
-              name: 'inverted',
-              pattern: 'account_[0-9]+',
-              minimumLength: 32,
-              maximumMatchLength: 8,
-            },
-          ],
-        },
-      }),
-    ).toThrow('minimumLength cannot exceed maximumMatchLength');
-
-    expect(() =>
-      compilePrivacyPolicy({
-        version: 1,
-        preset: 'custom',
-        detectors: {
-          custom: [
-            { name: 'account-id', pattern: 'acct_[0-9]+' },
-            { name: 'optional-colour', pattern: 'colou?r' },
-            { name: 'grouped', pattern: '(?:acct_)[0-9]{4,12}' },
-            { name: 'repeated-atom', pattern: '(foo)+' },
-          ],
-        },
-      }),
-    ).not.toThrow();
-  });
-
-  it('uses detector length fast paths and finds matches across scan chunks', () => {
-    const custom = compilePrivacyPolicy({
-      version: 1,
-      preset: 'custom',
-      detectors: {
-        custom: [
-          {
-            name: 'account-id',
-            pattern: 'acct_[0-9]+',
-            minimumLength: 12,
-            maximumMatchLength: 32,
-          },
-        ],
-      },
-    });
-    expect(detectSensitiveText('acct_1', custom)).toEqual([]);
-    const customBoundaryValue = `${'x'.repeat(508)}acct_12345`;
-    expect(detectSensitiveText(customBoundaryValue, custom)).toEqual([
-      expect.objectContaining({ start: 508, end: customBoundaryValue.length }),
-    ]);
-
-    const value = `${'x'.repeat(8_187)}4111 1111 1111 1111`;
-    expect(
-      detectSensitiveText(value, balanced()).some(
-        (match) => match.detector === 'payment-card' && match.start === 8_187,
-      ),
-    ).toBe(true);
-  });
-
-  it('fails closed when a value produces too many detector matches', () => {
-    const privacy = compilePrivacyPolicy({
-      version: 1,
-      preset: 'custom',
-      detectors: {
-        custom: [
-          {
-            name: 'digit',
-            pattern: '[0-9]',
-            maximumMatchLength: 1,
-          },
-        ],
-      },
-    });
-    const value = '1'.repeat(1_500);
-    expect(detectSensitiveText(value, privacy)).toEqual([
-      expect.objectContaining({ start: 0, end: value.length }),
-    ]);
-
-    const oversize = compilePrivacyPolicy({
-      version: 1,
-      preset: 'custom',
-      detectors: {
-        custom: [
-          {
-            name: 'bounded-digits',
-            pattern: '[0-9]+',
-            maximumMatchLength: 4,
-          },
-        ],
-      },
-    });
-    const oversizeValue = 'public 12345 trailing text';
-    expect(detectSensitiveText(oversizeValue, oversize)).toEqual([
-      expect.objectContaining({ start: 0, end: oversizeValue.length }),
-    ]);
-  });
-
-  it('masks style text under policy while keeping script placeholders', () => {
-    const style = document.createElement('style');
-    const script = document.createElement('script');
-    expect(
-      maskTextWithPrivacy(
-        '.person@example.com { color: red }',
-        style,
-        balanced(),
-        false,
-      ),
-    ).toBe('.xxxxxx@xxxxxxx.xxx { color: red }');
-    expect(
-      maskTextWithPrivacy(
-        '.person@example.com { color: red }',
-        style,
-        compilePrivacyPolicy({ version: 1, preset: 'strict' }),
-        false,
-      ),
-    ).toBe('.xxxxxx@xxxxxxx.xxx { xxxxx: xxx }');
-    expect(
-      maskTextWithPrivacy(
-        'window.secret = "person@example.com"',
-        script,
-        balanced(),
-        false,
-      ),
-    ).toBe('SCRIPT_PLACEHOLDER');
-  });
-
-  it('detects emails with more than four domain labels', () => {
-    const value = 'Contact first.last@sub.mail.company.co.uk today';
-    expect(
-      detectSensitiveText(value, balanced()).some(
-        (match) =>
-          match.detector === 'email' &&
-          value.slice(match.start, match.end) ===
-            'first.last@sub.mail.company.co.uk',
-      ),
-    ).toBe(true);
-  });
-
-  it('uses nearest explicit rules and safer action for ties', () => {
-    document.body.innerHTML = `
-      <main class="allow mask">
-        <section class="allow"><span id="target">secret</span></section>
-      </main>`;
-    const target = document.querySelector('#target')!;
-    const privacy = compilePrivacyPolicy({
-      version: 1,
-      preset: 'custom',
-      rules: [
-        {
-          target: { type: 'selector', selector: '.allow' },
-          action: 'allow',
-        },
-        {
-          target: { type: 'selector', selector: '.mask' },
-          action: 'mask',
-        },
-      ],
-    });
-
-    expect(getPrivacyAction(target, privacy)).toBe('allow');
-    expect(
-      getPrivacyAction(
-        document.querySelector('main'),
-        compilePrivacyPolicy({
-          version: 1,
-          preset: 'custom',
-          rules: [
-            {
-              target: { type: 'selector', selector: '.allow' },
-              action: 'allow',
-            },
-            {
-              target: { type: 'selector', selector: '.mask' },
-              action: 'mask',
-            },
-          ],
-        }),
-      ),
-    ).toBe('mask');
-  });
-
-  it('recognizes data-privacy without recorder configuration', () => {
-    document.body.innerHTML = `
-      <section data-privacy="mask" title="Private title">
-        <p>Private customer <span data-privacy="allow">Public label</span></p>
-        <input type="text" value="Private input" />
-        <input data-privacy="allow" type="password" value="secret-password" />
-      </section>
-      <section data-privacy="exclude">Excluded account 12345</section>`;
-
-    const payload = JSON.stringify(snapshot(document));
-
-    expect(payload).not.toContain('Private title');
-    expect(payload).not.toContain('Private customer');
-    expect(payload).not.toContain('Private input');
-    expect(payload).not.toContain('secret-password');
-    expect(payload).not.toContain('Excluded account 12345');
-    expect(payload).toContain('Public label');
-  });
-
-  it('inherits past invalid data-privacy values and resolves ties safely', () => {
-    document.body.innerHTML = `
-      <main data-privacy="mask">
-        <span id="invalid" data-privacy="unknown">Private</span>
-        <span id="tie" data-privacy="allow" class="policy-mask">Private</span>
-      </main>`;
-    const privacy = compilePrivacyPolicy({
-      version: 1,
-      preset: 'custom',
-      rules: [
-        {
-          target: { type: 'selector', selector: '.policy-mask' },
-          action: 'mask',
-        },
-      ],
-    });
-
-    expect(getPrivacyAction(document.querySelector('#invalid'), privacy)).toBe(
-      'mask',
-    );
-    expect(getPrivacyAction(document.querySelector('#tie'), privacy)).toBe(
-      'mask',
-    );
-  });
-
-  it('maps exclude policy rules to rrweb blocking', () => {
-    document.body.innerHTML =
-      '<section class="private">Excluded by policy</section>';
-    const privacyPolicy = {
-      version: 1 as const,
-      preset: 'custom' as const,
-      rules: [
-        {
-          target: { type: 'selector' as const, selector: '.private' },
-          action: 'exclude' as const,
-        },
-      ],
-    };
-    const privacy = compilePrivacyPolicy(privacyPolicy);
-    const payload = JSON.stringify(snapshot(document, { privacyPolicy }));
-
-    expect(privacy.blockSelector).toContain('.private');
-    expect(payload).not.toContain('Excluded by policy');
-  });
-
-  it('preserves structural attributes unless they are explicitly targeted', () => {
-    document.body.innerHTML = `
-      <input class="private layout" type="text" data-secret="account-123" value="Private value" />`;
-    const payload = JSON.stringify(
-      snapshot(document, {
-        privacyPolicy: {
-          version: 1,
-          preset: 'custom',
-          rules: [
-            {
-              target: { type: 'selector', selector: '.private' },
-              action: 'mask',
-            },
-            {
-              target: {
-                type: 'selector',
-                selector: '.private',
-                attributes: ['data-secret'],
-              },
-              action: 'mask',
-            },
-          ],
-        },
-      }),
-    );
-
-    expect(payload).toContain('private layout');
-    expect(payload).toContain('"type":"text"');
-    expect(payload).not.toContain('account-123');
-    expect(payload).not.toContain('Private value');
-  });
-
-  it('does not allow protected inputs to be unmasked', () => {
-    const input = document.createElement('input');
-    input.type = 'password';
-    input.className = 'record';
-    const privacy = compilePrivacyPolicy({
-      version: 1,
-      preset: 'custom',
-      rules: [
-        {
-          target: { type: 'selector', selector: '.record' },
-          action: 'allow',
-        },
-      ],
-    });
-
-    expect(
-      maskInputWithPrivacy('secret', input, privacy, false, () => 'secret'),
-    ).toBe('xxxxxx');
-
-    input.type = 'text';
-    input.setAttribute('data-rr-is-password', 'true');
-    expect(
-      maskInputWithPrivacy('visible', input, privacy, false, () => 'visible'),
-    ).toBe('xxxxxxx');
-
-    input.type = 'password';
-    input.removeAttribute('data-rr-is-password');
-    input.setAttribute('data-privacy', 'allow');
-    expect(
-      maskInputWithPrivacy(
-        'protected',
-        input,
-        compilePrivacyPolicy(undefined),
-        false,
-        () => 'protected',
-      ),
-    ).toBe('xxxxxxxxx');
-  });
-
-  it('removes sensitive URL values while retaining routing context', () => {
-    expect(
-      sanitizeUrl(
-        'https://example.com/account?tab=billing&token=secret#profile',
-        balanced(),
-      ),
-    ).toBe('https://example.com/account?tab=billing&token=*');
-
-    expect(
-      sanitizeUrl(
-        'https://example.com/account?tab=billing',
-        compilePrivacyPolicy({ version: 1, preset: 'strict' }),
-      ),
-    ).toBe('https://example.com/account?tab=*');
-  });
-
-  it('inherits rules across a shadow-root boundary', () => {
-    const host = document.createElement('div');
-    host.className = 'private';
-    const shadow = host.attachShadow({ mode: 'open' });
-    const child = document.createElement('span');
-    shadow.appendChild(child);
-    document.body.appendChild(host);
-
-    expect(
-      getPrivacyAction(
-        child,
-        compilePrivacyPolicy({
-          version: 1,
-          preset: 'custom',
-          rules: [
-            {
-              target: { type: 'selector', selector: '.private' },
-              action: 'mask',
-            },
-          ],
-        }),
-      ),
-    ).toBe('mask');
-  });
-
-  it('masks CSS text, inline style, and stylesheet snapshots', () => {
-    document.body.innerHTML = `
-      <style>.hero { content: "person@example.com"; }</style>
-      <div style="--owner: person@example.com"></div>`;
-
-    const balancedPayload = JSON.stringify(
-      snapshot(document, {
-        privacyPolicy: applyPrivacyDetectors({
-          version: 1,
-          preset: 'balanced',
-        }),
-      }),
-    );
-    expect(balancedPayload).not.toContain('person@example.com');
-    expect(balancedPayload).toContain('xxxxxx@xxxxxxx.xxx');
-
-    const strictPayload = JSON.stringify(
-      snapshot(document, {
-        privacyPolicy: { version: 1, preset: 'strict' },
-      }),
-    );
-    expect(strictPayload).not.toContain('person@example.com');
-  });
-
-  it('applies policy before a snapshot is serialized', () => {
-    document.body.innerHTML = `
-      <p title="person@example.com">Contact person@example.com</p>
-      <input type="text" value="private input" />
-      <input type="password" class="record" value="secret-password" />
-      <a href="https://example.com/?token=secret">Account</a>`;
-
-    const serialized = snapshot(document, {
-      privacyPolicy: applyPrivacyDetectors({
         version: 1,
         preset: 'balanced',
-        rules: [
-          {
-            target: { type: 'selector', selector: '.record' },
-            action: 'allow',
-          },
-        ],
+        rules: [{ target: { type: 'selector', selector: '' }, action: 'mask' }],
       }),
+    ).toThrow();
+  });
+});
+describe('validateSelector', () => {
+  it('accepts valid, rejects invalid', () => {
+    expect(validateSelector('.a > [data-x="1"]')).toBe(true);
+    expect(validateSelector(':::nope')).toBe(false);
+  });
+});
+/**
+ * The splitter exists so that merging and deduplicating selector lists never
+ * rewrites what a fragment means. Every case here is a comma that is NOT a
+ * separator.
+ */
+describe('splitSelectorList', () => {
+  it('splits an ordinary list on its separators', () => {
+    expect(splitSelectorList('.a,.b,.c')).toEqual(['.a', '.b', '.c']);
+    expect(splitSelectorList('.only')).toEqual(['.only']);
+  });
+
+  it('keeps commas nested in a functional pseudo-class', () => {
+    expect(splitSelectorList(':is(.a,.b)')).toEqual([':is(.a,.b)']);
+    expect(splitSelectorList(':not(.a,.b),.c')).toEqual([':not(.a,.b)', '.c']);
+  });
+
+  it('keeps commas inside an attribute value', () => {
+    expect(splitSelectorList('[data-x="p,q"]')).toEqual(['[data-x="p,q"]']);
+    expect(splitSelectorList("[data-x='p,q'],.c")).toEqual([
+      "[data-x='p,q']",
+      '.c',
+    ]);
+  });
+
+  it('keeps an escaped comma, quoted or not', () => {
+    // `.a\,b` is a single class selector for the class name "a,b" -- the
+    // backslash escape is valid outside quotes too, and tearing it here let
+    // the stray `b` fragment collide with an unrelated `b` selector.
+    expect(splitSelectorList('.a\\,b')).toEqual(['.a\\,b']);
+    expect(splitSelectorList('.a\\,b,b')).toEqual(['.a\\,b', 'b']);
+    expect(splitSelectorList('[data-x="p\\"q,r"]')).toEqual([
+      '[data-x="p\\"q,r"]',
+    ]);
+  });
+
+  it('does not run past the end on a trailing backslash', () => {
+    expect(splitSelectorList('.a\\')).toEqual(['.a\\']);
+  });
+});
+
+describe('resolvePrivacyContext', () => {
+  it('joins legacy selector with compiled blockSelector', () => {
+    const { blockSelector } = resolvePrivacyContext({
+      privacyPolicy: { version: 1, preset: 'balanced' },
+      blockSelector: '.legacy',
     });
-    const payload = JSON.stringify(serialized);
-
-    expect(payload).not.toContain('person@example.com');
-    expect(payload).not.toContain('private input');
-    expect(payload).not.toContain('secret-password');
-    expect(payload).not.toContain('token=secret');
-    expect(payload).toContain('Contact xxxxxx@xxxxxxx.xxx');
-    expect(payload).toContain('token=*');
+    expect(blockSelector).toContain('.legacy');
+    expect(blockSelector).toContain('[data-privacy="exclude"]');
   });
 
-  it('masks every form value attribute in strict mode', () => {
-    document.body.innerHTML = `
-      <input type="radio" value="private-radio-value" />
-      <select><option value="private-option-value">Private option</option></select>`;
-    const payload = JSON.stringify(
-      snapshot(document, {
-        privacyPolicy: { version: 1, preset: 'strict' },
-      }),
+  /**
+   * `finalizeAttribute` reads the *compiled policy's* `unmaskTextSelector`,
+   * so the record()-level option has to be written back onto the policy or it
+   * would only ever affect text masking.
+   */
+  it('writes the merged unmask selector back onto the compiled policy', () => {
+    const { privacy, unmaskTextSelector } = resolvePrivacyContext({
+      privacyPolicy: { version: 1, preset: 'balanced' },
+      unmaskTextSelector: '.mine',
+    });
+    expect(privacy.unmaskTextSelector).toBe(unmaskTextSelector);
+    expect(privacy.unmaskTextSelector).toContain('.mine');
+    expect(privacy.unmaskTextSelector).toContain('[data-privacy="allow"]');
+  });
+
+  it('leaves the compiled policy untouched when nothing was merged in', () => {
+    const compiled = compilePrivacyPolicy({ version: 1, preset: 'balanced' });
+    expect(resolvePrivacyContext({ privacy: compiled }).privacy).toBe(compiled);
+  });
+});
+
+/**
+ * The `record()`-level selector options used to be concatenated onto the
+ * compiled policy without ever being probed. One malformed selector then made
+ * every downstream `matches()` throw, and the runtime catch-to-mask starred
+ * the entire page. They now go through the same drop-and-warn validation as
+ * policy rule selectors.
+ */
+describe('merge helpers validate the record()-level selector', () => {
+  const balanced = compilePrivacyPolicy({ version: 1, preset: 'balanced' });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+    vi.restoreAllMocks();
+  });
+
+  it.each([
+    ['maskTextSelector', balanced.maskTextSelector],
+    ['unmaskTextSelector', balanced.unmaskTextSelector],
+    ['blockSelector', balanced.blockSelector],
+  ])('%s drops an invalid legacy half with a warning', (_name, compiled) => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const merged = mergeSelectors(':::garbage', compiled);
+    expect(merged).not.toContain(':::garbage');
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('dropping invalid selector'),
     );
-
-    expect(payload).not.toContain('private-radio-value');
-    expect(payload).not.toContain('private-option-value');
-    expect(payload).not.toContain('Private option');
   });
 
-  it('supports coarse masking of final source attributes', () => {
-    document.body.innerHTML = `
-      <div class="customer-name" style="--owner: person@example.com" title="person@example.com"></div>
-      <input value="private synthesized value" />`;
-    const payload = JSON.stringify(
-      snapshot(document, { maskAllElementAttributes: true }),
+  it('keeps the valid half of a partly-malformed legacy selector', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    // ':::garbage,.valid' is a single invalid selector string, so it is
+    // dropped whole; the caller keeps the compiled policy's own selectors.
+    const merged = mergeSelectors(
+      ':::garbage,.valid',
+      balanced.maskTextSelector,
     );
-
-    expect(payload).not.toContain('customer-name');
-    expect(payload).not.toContain('person@example.com');
-    expect(payload).not.toContain('private synthesized value');
+    expect(merged).toBe(balanced.maskTextSelector);
+    expect(warn).toHaveBeenCalled();
   });
 
-  it('lets a callback mask final attributes but never override policy', () => {
-    document.body.innerHTML = `
-      <div data-owner="person@example.com" title="person@example.com"></div>`;
-    const payload = JSON.stringify(
-      snapshot(document, {
-        privacyPolicy: applyPrivacyDetectors({
-          version: 1,
-          preset: 'balanced',
-        }),
-        maskAttributeFn: (name, value) =>
-          name === 'data-owner' ? '[OWNER]' : value,
-      }),
+  /**
+   * `record()` merges the policy's selectors into the options it hands to
+   * `snapshot()`, which compiles the same policy and merges a second time.
+   * Without deduplication every fragment would be repeated on each pass.
+   */
+  it('is idempotent: re-merging an already-merged selector adds nothing', () => {
+    const once = mergeSelectors(null, balanced.unmaskTextSelector);
+    const twice = mergeSelectors(once, balanced.unmaskTextSelector);
+    expect(twice).toBe(once);
+    expect(mergeSelectors(twice, balanced.unmaskTextSelector)).toBe(once);
+  });
+
+  it('deduplicates a fragment the legacy half repeats from the policy', () => {
+    const merged = mergeSelectors('.rr-mask,.mine', balanced.maskTextSelector);
+    expect(merged!.split(',').filter((p) => p === '.rr-mask')).toHaveLength(1);
+    expect(merged).toContain('.mine');
+  });
+
+  /**
+   * Regression: the splitter used to honor a backslash escape only inside
+   * quotes, so `.a\,b` was torn into `.a\` and `b`. The stray `b` then
+   * collided in the dedupe `Set` with the independently supplied `b`
+   * selector and silently swallowed it -- a dropped mask selector, i.e. a
+   * fail-open. Both must survive the merge and still match.
+   */
+  it('an escaped comma does not swallow an unrelated selector in the dedupe', () => {
+    const legacy = compilePrivacyPolicy(undefined);
+    const merged = mergeSelectors('.a\\,b,b', legacy.maskTextSelector)!;
+
+    document.body.innerHTML = '<div class="a,b">x</div><b>y</b>';
+    const commaClassEl = document.querySelector('div')!;
+    const bEl = document.querySelector('b')!;
+
+    expect(commaClassEl.matches(merged)).toBe(true);
+    expect(bEl.matches(merged)).toBe(true);
+  });
+
+  it('keeps both halves when they arrive from different merge sources', () => {
+    // the escaped-comma selector comes in as the record()-level option, the
+    // colliding `b` from a policy rule
+    const policy = compilePrivacyPolicy({
+      version: 1,
+      preset: 'legacy',
+      rules: [{ target: { type: 'selector', selector: 'b' }, action: 'mask' }],
+    });
+    const merged = mergeSelectors('.a\\,b', policy.maskTextSelector)!;
+
+    document.body.innerHTML = '<div class="a,b">x</div><b>y</b>';
+    expect(document.querySelector('div')!.matches(merged)).toBe(true);
+    expect(document.querySelector('b')!.matches(merged)).toBe(true);
+  });
+
+  it('does not tear a selector whose commas are nested', () => {
+    // a naive split(',') would produce ':is(.a' and '.b)' -- rejoining
+    // deduplicated halves of those would corrupt the selector
+    const merged = mergeSelectors(
+      ':is(.a,.b),[data-x="p,q"]',
+      balanced.maskTextSelector,
     );
-
-    expect(payload).toContain('[OWNER]');
-    expect(payload).not.toContain('person@example.com');
-    expect(payload).toContain('xxxxxx@xxxxxxx.xxx');
+    expect(merged).toContain(':is(.a,.b)');
+    expect(merged).toContain('[data-x="p,q"]');
+    expect(() => document.querySelector(merged!)).not.toThrow();
   });
 
-  it('fails closed when an attribute callback throws', () => {
-    document.body.innerHTML = '<div title="private-title"></div>';
-    const payload = JSON.stringify(
-      snapshot(document, {
-        maskAttributeFn: () => {
-          throw new Error('boom');
-        },
-      }),
-    );
-
-    expect(payload).not.toContain('private-title');
-  });
-
-  it('suppresses full-snapshot canvas pixels while region masking is configured', () => {
-    const canvas = document.createElement('canvas');
-    (canvas as HTMLCanvasElement & { __context?: string }).__context = '2d';
-    canvas.getContext = (() => ({
-      getImageData: () => ({ data: new Uint8ClampedArray([255, 0, 0, 255]) }),
-    })) as unknown as typeof canvas.getContext;
-    canvas.toDataURL = () => 'data:image/webp;base64,unmasked-pixels';
-    document.body.appendChild(canvas);
-
-    const unprotected = JSON.stringify(
-      snapshot(document, {
-        recordCanvas: true,
-        canvasMaskingConfigured: () => false,
-      }),
-    );
-    const protectedSnapshot = JSON.stringify(
-      snapshot(document, {
-        recordCanvas: true,
-        canvasMaskingConfigured: () => true,
-      }),
-    );
-
-    expect(unprotected).toContain('rr_dataURL');
-    expect(protectedSnapshot).not.toContain('rr_dataURL');
-  });
-
-  it('does not throw when a form control shadows HTMLFormElement.tagName', () => {
-    const form = document.createElement('form');
-    const input = document.createElement('input');
-    input.setAttribute('name', 'tagName');
-    const text = document.createTextNode('visible email person@example.com');
-    form.appendChild(input);
-    form.appendChild(text);
-    document.body.appendChild(form);
-
-    expect(() =>
-      maskTextWithPrivacy(
-        'visible email person@example.com',
-        form,
-        balanced(),
-        false,
-      ),
-    ).not.toThrow();
-    expect(() => snapshot(document)).not.toThrow();
-  });
-
-  it('walks ancestors when getRootNode has been monkey-patched', () => {
-    const originalGetRootNode = Node.prototype.getRootNode;
-    Node.prototype.getRootNode = function () {
-      throw new Error('getRootNode was hijacked by framework');
-    };
-    try {
-      document.body.innerHTML =
-        '<main data-privacy="mask"><span id="target">secret</span></main>';
-      const target = document.querySelector('#target')!;
-      const privacy = compilePrivacyPolicy({
-        version: 1,
-        preset: 'balanced',
-        rules: [
-          {
-            target: { type: 'selector', selector: '[data-privacy="mask"]' },
-            action: 'mask',
-          },
-        ],
-      });
-      expect(() => getPrivacyAction(target, privacy)).not.toThrow();
-      expect(getPrivacyAction(target, privacy)).toBe('mask');
-      expect(() => snapshot(document)).not.toThrow();
-    } finally {
-      Node.prototype.getRootNode = originalGetRootNode;
-    }
-  });
-
-  it('keeps the legacy path unchanged when no policy is supplied', () => {
+  it('a malformed record()-level maskTextSelector no longer stars the page', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     document.body.innerHTML =
-      '<p>Visible text</p><input type="hidden" value="legacy-hidden-value">';
-    const payload = JSON.stringify(snapshot(document));
-    expect(payload).toContain('Visible text');
-    expect(payload).toContain('legacy-hidden-value');
+      '<p>keep this text</p><p class="valid">also kept</p>';
+
+    const out = JSON.stringify(
+      snapshot(document, {
+        privacyPolicy: { version: 1, preset: 'balanced' },
+        maskTextSelector: mergeSelectors(
+          ':::garbage,.valid',
+          balanced.maskTextSelector,
+        ),
+      }),
+    );
+
+    expect(out).toContain('keep this text');
+    expect(out).not.toContain('****');
+    expect(warn).toHaveBeenCalled();
+  });
+});
+/**
+ * `needMaskingText` is exported from the package root and its third parameter
+ * changed shape (raw selector string -> pre-split `{maskAll, selector}`). An
+ * un-updated or untyped caller still passing the string used to destructure to
+ * `{maskAll: undefined, selector: undefined}`, at which point every mask
+ * selector silently stopped matching -- a fail-open on the masking path, which
+ * is the one direction that must never happen quietly.
+ */
+describe('needMaskingText accepts the legacy selector string', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  const target = (html: string): Node => {
+    document.body.innerHTML = html;
+    return document.querySelector('#t')!;
+  };
+
+  it('masks through a raw selector string, as the split pair does', () => {
+    const node = target('<div class="secret"><span id="t">x</span></div>');
+    expect(needMaskingText(node, 'rr-mask', '.secret', null, true)).toBe(true);
     expect(
-      maskInputWithPrivacy(
-        'legacy value',
-        document.createElement('input'),
-        undefined,
+      needMaskingText(
+        node,
+        'rr-mask',
+        splitMaskAllSelector('.secret'),
+        null,
         true,
       ),
-    ).toBe('************');
+    ).toBe(true);
+  });
+
+  it("honors a raw '*' mask-everything string", () => {
+    const node = target('<div><span id="t">x</span></div>');
+    expect(needMaskingText(node, 'rr-mask', '*', null, true)).toBe(true);
+  });
+
+  it("still splits '*' out of a raw list so an unmask ancestor can win", () => {
+    const node = target('<div class="ok"><span id="t">x</span></div>');
+    expect(needMaskingText(node, 'rr-mask', '*', '.ok', true)).toBe(false);
+  });
+
+  it('treats a null/undefined selector as "none configured", not as a throw', () => {
+    const node = target('<div><span id="t">x</span></div>');
+    expect(needMaskingText(node, 'rr-mask', null, null, true)).toBe(false);
+    expect(
+      needMaskingText(
+        node,
+        'rr-mask',
+        undefined as unknown as null,
+        null,
+        true,
+      ),
+    ).toBe(false);
   });
 });
