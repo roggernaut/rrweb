@@ -8,7 +8,10 @@ snapshot and later live text mutations.
 
 **Input values are never scanned. While this plugin is loaded, every input
 value is occluded to its length instead** (`'*'.repeat(value.length)`),
-whatever privacy preset you configured — including none at all. See
+whatever privacy preset you configured — including none at all. The one
+exception follows from how the guarantee works: occlusion is driven by the
+compiled detector set, so loading the plugin with every detector flag
+disabled compiles to no detectors and does not force input occlusion. See
 [Why inputs are occluded rather than scanned](#why-inputs-are-occluded-rather-than-scanned).
 
 Attribute values are not scanned either -- attribute masking is handled by
