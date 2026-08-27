@@ -12,7 +12,10 @@ import {
   sanitizeUrl,
   splitSelectorList,
 } from '../src/privacy';
-import snapshot from '../src/snapshot';
+import snapshot, {
+  needMaskingText,
+  splitMaskAllSelector,
+} from '../src/snapshot';
 
 describe('compilePrivacyPolicy v2', () => {
   it('legacy preset compiles to inert options', () => {
@@ -484,5 +487,62 @@ describe('sanitizeUrl v2', () => {
     expect(sanitizeUrl('', balanced)).toBe('');
     expect(sanitizeUrl('', strict)).toBe('');
     expect(sanitizeUrl('', legacy)).toBe('');
+  });
+});
+
+/**
+ * `needMaskingText` is exported from the package root and its third parameter
+ * changed shape (raw selector string -> pre-split `{maskAll, selector}`). An
+ * un-updated or untyped caller still passing the string used to destructure to
+ * `{maskAll: undefined, selector: undefined}`, at which point every mask
+ * selector silently stopped matching -- a fail-open on the masking path, which
+ * is the one direction that must never happen quietly.
+ */
+describe('needMaskingText accepts the legacy selector string', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  const target = (html: string): Node => {
+    document.body.innerHTML = html;
+    return document.querySelector('#t')!;
+  };
+
+  it('masks through a raw selector string, as the split pair does', () => {
+    const node = target('<div class="secret"><span id="t">x</span></div>');
+    expect(needMaskingText(node, 'rr-mask', '.secret', null, true)).toBe(true);
+    expect(
+      needMaskingText(
+        node,
+        'rr-mask',
+        splitMaskAllSelector('.secret'),
+        null,
+        true,
+      ),
+    ).toBe(true);
+  });
+
+  it("honors a raw '*' mask-everything string", () => {
+    const node = target('<div><span id="t">x</span></div>');
+    expect(needMaskingText(node, 'rr-mask', '*', null, true)).toBe(true);
+  });
+
+  it("still splits '*' out of a raw list so an unmask ancestor can win", () => {
+    const node = target('<div class="ok"><span id="t">x</span></div>');
+    expect(needMaskingText(node, 'rr-mask', '*', '.ok', true)).toBe(false);
+  });
+
+  it('treats a null/undefined selector as "none configured", not as a throw', () => {
+    const node = target('<div><span id="t">x</span></div>');
+    expect(needMaskingText(node, 'rr-mask', null, null, true)).toBe(false);
+    expect(
+      needMaskingText(
+        node,
+        'rr-mask',
+        undefined as unknown as null,
+        null,
+        true,
+      ),
+    ).toBe(false);
   });
 });

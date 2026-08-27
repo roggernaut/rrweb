@@ -104,6 +104,32 @@ export function getCanvasContentBoxSize(
   return { width, height };
 }
 
+/**
+ * The display box a frame's mask regions are scaled against.
+ *
+ * Gated on `isCanvasMaskingConfigured`, not on the provider merely being
+ * present: a provider whose `isConfigured()` currently returns false masks
+ * nothing, `computeFrameMaskRegions` will ignore the box anyway, and
+ * measuring it would cost a layout flush per frame for nothing -- and would
+ * drop the frame entirely on a canvas that cannot be measured. When masking
+ * really is in force the content box is measured precisely (the backing store
+ * maps onto it, not onto the border box `clientWidth`/`clientHeight` report),
+ * and an unmeasurable one returns `SKIP_FRAME` rather than falling back to a
+ * scale that would leave mask regions in the wrong place.
+ */
+export function resolveFrameDisplaySize(
+  masking: CanvasMasking | undefined,
+  canvas: HTMLCanvasElement,
+): { width: number; height: number } | typeof SKIP_FRAME {
+  if (!isCanvasMaskingConfigured(masking)) {
+    return {
+      width: canvas.clientWidth || canvas.width,
+      height: canvas.clientHeight || canvas.height,
+    };
+  }
+  return getCanvasContentBoxSize(canvas) ?? SKIP_FRAME;
+}
+
 export function isCanvasMaskingConfigured(
   masking: CanvasMasking | undefined,
 ): boolean {

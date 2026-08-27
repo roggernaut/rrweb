@@ -8,6 +8,7 @@ import {
   getCanvasContentBoxSize,
   isCanvasMaskingConfigured,
   resolveCanvasSampling,
+  resolveFrameDisplaySize,
   SKIP_FRAME,
 } from '../../src/record/observers/canvas/canvas-mask';
 
@@ -259,5 +260,68 @@ describe('canvas sampling keys on configured semantics, not presence', () => {
     expect(resolveFor('all', undefined)).toBe('all');
     expect(warn).not.toHaveBeenCalled();
     warn.mockRestore();
+  });
+});
+
+/**
+ * The frame loop used to measure the content box whenever a `canvasMasking`
+ * object was merely *present*. A provider whose `isConfigured()` returns false
+ * masks nothing, so the measurement was unused -- and on a canvas that cannot
+ * be measured (zero content box) the frame was dropped anyway, losing capture
+ * for no privacy gain.
+ */
+describe('resolveFrameDisplaySize', () => {
+  const canvasOf = (width: number, height: number) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    return canvas;
+  };
+
+  it('uses cheap client dimensions, and does not measure, with no provider', () => {
+    const canvas = canvasOf(300, 150);
+    const rect = vi.spyOn(canvas, 'getBoundingClientRect');
+    expect(resolveFrameDisplaySize(undefined, canvas)).toEqual({
+      width: 300,
+      height: 150,
+    });
+    expect(rect).not.toHaveBeenCalled();
+  });
+
+  it('captures the frame from client dimensions when isConfigured() is false', () => {
+    const canvas = canvasOf(300, 150);
+    const rect = vi.spyOn(canvas, 'getBoundingClientRect');
+    const style = vi.spyOn(window, 'getComputedStyle');
+
+    const size = resolveFrameDisplaySize(
+      { maskRegions: () => [], isConfigured: () => false },
+      canvas,
+    );
+
+    // not SKIP_FRAME: the frame is still captured, unmeasurable or not
+    expect(size).toEqual({ width: 300, height: 150 });
+    expect(rect).not.toHaveBeenCalled();
+    expect(style).not.toHaveBeenCalled();
+    style.mockRestore();
+  });
+
+  it('measures the content box when masking is in force', () => {
+    const canvas = canvasOf(300, 150);
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({
+      width: 200,
+      height: 100,
+    } as DOMRect);
+    expect(resolveFrameDisplaySize({ maskRegions: () => [] }, canvas)).toEqual({
+      width: 200,
+      height: 100,
+    });
+  });
+
+  /** Fail closed: a wrong scale would leave mask regions off their target. */
+  it('skips the frame when masking is in force but the box is unmeasurable', () => {
+    const canvas = canvasOf(300, 150);
+    expect(resolveFrameDisplaySize({ maskRegions: () => [] }, canvas)).toBe(
+      SKIP_FRAME,
+    );
   });
 });

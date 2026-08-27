@@ -191,22 +191,50 @@ export default class MutationBuffer {
   private blockSelector: observerParam['blockSelector'];
   private maskTextClass: observerParam['maskTextClass'];
   private maskTextSelector: observerParam['maskTextSelector'];
+  /** Backing store for the `effectiveUnmaskTextSelector` getter below. */
+  private unmaskProbe: { probed: boolean; value: string | null } = {
+    probed: false,
+    value: null,
+  };
   /**
    * The compiled policy's `unmaskTextSelector` re-resolved once per mutation
-   * flush (see
-   * `resolveUnmaskTextSelector`): null when nothing in the live document
-   * currently matches it, so the per-node ancestor walk it otherwise forces
-   * in `needMaskingText`/`serializeNodeWithId` can short-circuit again.
+   * flush (see `resolveUnmaskTextSelector`): null when nothing in the live
+   * document currently matches it, so the per-node ancestor walk it otherwise
+   * forces in `needMaskingText`/`serializeNodeWithId` can short-circuit again.
+   *
+   * Derived on first use and invalidated per flush rather than assigned at the
+   * top of `processMutations`: `emit()` is also reachable from `unfreeze()`
+   * and `unlock()`, which do not go through a flush, and a value left over
+   * from a previous flush is a decision taken against a DOM that has since
+   * been free to change.
    */
-  private effectiveUnmaskTextSelector: string | null = null;
+  private get effectiveUnmaskTextSelector(): string | null {
+    if (!this.unmaskProbe.probed) {
+      this.unmaskProbe.value = resolveUnmaskTextSelector(
+        this.doc,
+        this.privacy?.unmaskTextSelector ?? null,
+      );
+      this.unmaskProbe.probed = true;
+    }
+    return this.unmaskProbe.value;
+  }
+  /** Backing store for the `splitMaskTextSelector` getter below. */
+  private splitMaskTextSelectorCache: MaskTextSelector | null = null;
   /**
    * `maskTextSelector` split into its `'*'` mask-everything default and its
-   * explicit selectors, once per flush rather than once per node.
+   * explicit selectors.
+   *
+   * Always *derived* from the raw selector, never assigned: an unset or stale
+   * field would default to "no mask selectors at all", and reaching `emit()`
+   * without having gone through `processMutations` -- which `unfreeze()` and
+   * `unlock()` both do -- would then fail open. The raw selector is fixed for
+   * the buffer's lifetime, so one derivation per `init()` is enough.
    */
-  private splitMaskTextSelector: MaskTextSelector = {
-    maskAll: false,
-    selector: null,
-  };
+  private get splitMaskTextSelector(): MaskTextSelector {
+    return (this.splitMaskTextSelectorCache ??= splitMaskAllSelector(
+      this.maskTextSelector,
+    ));
+  }
   /**
    * `needMaskingText` results memoised for the duration of one synchronous
    * mutation flush, keyed by the element the ancestor walk starts from.
@@ -277,6 +305,9 @@ export default class MutationBuffer {
       // just a type trick, the runtime result is correct
       this[key] = options[key] as never;
     });
+    // Everything derived from the options above is re-derived on next use.
+    this.splitMaskTextSelectorCache = null;
+    this.unmaskProbe.probed = false;
   }
 
   public freeze() {
@@ -311,15 +342,11 @@ export default class MutationBuffer {
   }
 
   public processMutations = (mutations: mutationRecord[]) => {
-    // Re-probe once per flush rather than per node -- see
-    // `resolveUnmaskTextSelector`. Cheap when `unmaskTextSelector` is unset
-    // (returns null immediately); only walks the live tree when a preset
-    // actually configured one.
-    this.effectiveUnmaskTextSelector = resolveUnmaskTextSelector(
-      this.doc,
-      this.privacy?.unmaskTextSelector ?? null,
-    );
-    this.splitMaskTextSelector = splitMaskAllSelector(this.maskTextSelector);
+    // Invalidate, don't assign: the getter re-probes on first use, so a flush
+    // that never asks pays nothing and a caller that reaches `emit()` outside
+    // a flush still gets an answer taken against the current DOM. Once per
+    // flush rather than per node -- see `resolveUnmaskTextSelector`.
+    this.unmaskProbe.probed = false;
     this.maskDecisionCache.clear();
     try {
       mutations.forEach(this.processMutation); // adds mutations to the buffer
@@ -327,6 +354,7 @@ export default class MutationBuffer {
     } finally {
       // The decisions are only sound for this flush; see the field's comment.
       this.maskDecisionCache.clear();
+      this.unmaskProbe.probed = false;
     }
   };
 

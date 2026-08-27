@@ -151,4 +151,14 @@ Additional breaking/behavior notes:
 - `needMaskingText` and `serializeNodeWithId` take the mask-text selector
   pre-split (`{maskAll, selector}`, from the exported
   `splitMaskAllSelector`) rather than as a raw string; positional callers of
-  the former and option-object callers of the latter need updating.
+  the former and option-object callers of the latter should be updated. Both
+  still accept the raw string (and `null`) and coerce it, so an un-updated
+  caller keeps masking instead of silently matching nothing.
+- A `canvasMasking` provider that is present but switched off
+  (`isConfigured()` returning `false`) no longer costs a per-frame content-box
+  measurement, and no longer drops the frame when that measurement fails. Such
+  a provider masks nothing, so the measured box was unused and the frame was
+  being discarded for no privacy gain; capture now falls back to the canvas's
+  client dimensions, exactly as it does when no provider is configured at all.
+  A provider that *is* in force still measures precisely and still fails
+  closed on an unmeasurable canvas.

@@ -323,13 +323,23 @@ export function splitMaskAllSelector(
 export function needMaskingText(
   node: Node,
   maskTextClass: string | RegExp,
-  maskTextSelector: MaskTextSelector,
+  maskTextSelector: MaskTextSelector | string | null,
   unmaskTextSelector: string | null,
   checkAncestors: boolean,
   inheritedNeedsMask = false,
 ): boolean {
   try {
-    const { maskAll, selector } = maskTextSelector;
+    // This parameter used to be the raw selector string, and this function is
+    // exported from the package root -- so an un-updated (or untyped) caller
+    // can still arrive with one. Coerce rather than destructure blindly: a
+    // string would otherwise yield `{maskAll: undefined, selector: undefined}`
+    // and every mask selector would silently stop matching, which is a
+    // fail-open. `null`/`undefined` go through the same path and compile to
+    // the same "no selector configured" pair the split already produces.
+    const { maskAll, selector } =
+      typeof maskTextSelector === 'string' || !maskTextSelector
+        ? splitMaskAllSelector(maskTextSelector ?? null)
+        : maskTextSelector;
     // fast path: nothing can overrule masking when no unmasking is configured
     if ((maskAll || inheritedNeedsMask) && !unmaskTextSelector) return true;
     let el: Element;
@@ -1083,7 +1093,13 @@ export function serializeNodeWithId(
     blockClass: string | RegExp;
     blockSelector: string | null;
     maskTextClass: string | RegExp;
-    maskTextSelector: MaskTextSelector;
+    /**
+     * Normally the pre-split pair from `splitMaskAllSelector`. The raw string
+     * this option used to take is still accepted and coerced by
+     * `needMaskingText`, which is the only consumer -- everything in between
+     * just threads it down.
+     */
+    maskTextSelector: MaskTextSelector | string | null;
     unmaskTextSelector: string | null;
     skipChild: boolean;
     inlineStylesheet: boolean;
@@ -1528,27 +1544,25 @@ function snapshot(
     privacyPolicy,
     privacy: compiledPrivacy,
   } = options || {};
-  // `record()` hands over an already-compiled policy whose selectors it has
-  // already merged into the options above; a standalone caller gets the full
-  // compile-and-merge prologue.
+  // One prologue for both entry points. `record()` hands over an
+  // already-compiled policy whose selectors it has already merged into the
+  // options above -- merging is idempotent, so re-running it there is a no-op
+  // rather than a second concatenation; a standalone caller gets the compile
+  // as well. Hand-rolling the precedence here instead would mean a legacy
+  // selector option silently *replaced* the compiled policy's own selectors,
+  // which is not what the same call means on the `record()` path.
   const {
     privacy,
     blockSelector,
     maskTextSelector,
     unmaskTextSelector: mergedUnmaskTextSelector,
-  } = compiledPrivacy
-    ? {
-        privacy: compiledPrivacy,
-        blockSelector: legacyBlockSelector,
-        maskTextSelector: legacyMaskTextSelector,
-        unmaskTextSelector: compiledPrivacy.unmaskTextSelector,
-      }
-    : resolvePrivacyContext({
-        privacyPolicy,
-        blockSelector: legacyBlockSelector,
-        maskTextSelector: legacyMaskTextSelector,
-        unmaskTextSelector: legacyUnmaskTextSelector,
-      });
+  } = resolvePrivacyContext({
+    privacy: compiledPrivacy,
+    privacyPolicy,
+    blockSelector: legacyBlockSelector,
+    maskTextSelector: legacyMaskTextSelector,
+    unmaskTextSelector: legacyUnmaskTextSelector,
+  });
   // The policy above keeps the *unresolved* selector: `resolveUnmaskTextSelector`
   // is a presence probe scoped to this document, and the same policy object is
   // threaded into nested iframe documents, where a match may well exist.

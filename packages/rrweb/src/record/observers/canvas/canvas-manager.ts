@@ -20,8 +20,7 @@ import ImageBitmapDataURLWorker from '../../workers/image-bitmap-data-url-worker
 import type { ImageBitmapDataURLRequestWorker } from '../../workers/image-bitmap-data-url-worker';
 import {
   computeFrameMaskRegions,
-  getCanvasContentBoxSize,
-  isCanvasMaskingConfigured,
+  resolveFrameDisplaySize,
   SKIP_FRAME,
 } from './canvas-mask';
 
@@ -279,36 +278,21 @@ export class CanvasManager {
                 context.clear(context.COLOR_BUFFER_BIT);
               }
             }
-            let displayWidth = canvas.clientWidth || canvas.width;
-            let displayHeight = canvas.clientHeight || canvas.height;
-            // Gate on `isCanvasMaskingConfigured`, not truthiness: a
-            // provider whose `isConfigured()` currently returns false masks
-            // nothing, so `computeFrameMaskRegions` will ignore the measured
-            // box anyway -- measuring (and failing closed on an unmeasurable
-            // canvas) would cost a layout flush per frame for nothing.
-            if (isCanvasMaskingConfigured(options.canvasMasking)) {
-              // The backing store maps onto the content box, not the
-              // border box that `clientWidth`/`clientHeight` report -
-              // measure it precisely whenever masking is configured so
-              // mask regions never get scaled against the wrong box. A
-              // canvas whose content box can't be measured (or has zero
-              // area) fails closed: skip the frame rather than fall back
-              // to a potentially wrong scale.
-              const contentBox = getCanvasContentBoxSize(canvas);
-              if (!contentBox) {
-                snapshotInProgressMap.set(id, false);
-                return;
-              }
-              displayWidth = contentBox.width;
-              displayHeight = contentBox.height;
+            const displaySize = resolveFrameDisplaySize(
+              options.canvasMasking,
+              canvas,
+            );
+            if (displaySize === SKIP_FRAME) {
+              snapshotInProgressMap.set(id, false);
+              return;
             }
             const maskRegions = computeFrameMaskRegions(
               options.canvasMasking,
               canvas,
               canvas.width,
               canvas.height,
-              displayWidth,
-              displayHeight,
+              displaySize.width,
+              displaySize.height,
             );
             if (maskRegions === SKIP_FRAME) {
               snapshotInProgressMap.set(id, false);
