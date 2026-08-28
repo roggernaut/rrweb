@@ -42,13 +42,7 @@ export class CanvasManager {
   private locked = false;
   private resetFrameDedup?: () => void;
 
-  /**
-   * Shadow roots the shadow-DOM manager is actively observing. FPS canvas
-   * discovery searches these directly instead of recursively re-walking
-   * `querySelectorAll('*')` for shadow hosts on every animation frame -
-   * nested shadow roots are tracked in turn as the shadow-DOM manager
-   * starts observing them, so no recursion is needed here.
-   */
+  /** Shadow roots FPS canvas discovery searches directly, kept in sync by the shadow-DOM manager. */
   private trackedShadowRoots = new Set<ShadowRoot>();
 
   public reset() {

@@ -11,6 +11,8 @@ import {
   buildDetectors,
   sanitizeUrl,
   splitSelectorList,
+  resolveTextValue,
+  resolveUnmaskTextSelector,
 } from '../src/privacy';
 import snapshot, {
   needMaskingText,
@@ -27,6 +29,7 @@ describe('compilePrivacyPolicy v2', () => {
     expect([...c.maskedAttributes]).toEqual([]);
     expect(c.sanitizeUrls).toBe(false);
     expect(c.detectors).toEqual([]);
+    expect(c.attributePolicyInert).toBe(true);
   });
   it('any active detector forces maskAllInputs, even on a legacy base', () => {
     const c = compilePrivacyPolicy({
@@ -73,6 +76,7 @@ describe('compilePrivacyPolicy v2', () => {
     expect(c.blockSelector).toContain('[data-privacy="exclude"]');
     expect(c.blockSelector).toContain('.dd-privacy-hidden'); // Datadog
     expect(c.blockSelector).toContain('[data-nr-block]'); // New Relic
+    expect(c.attributePolicyInert).toBe(false);
   });
   it('strict masks all text and blocks media', () => {
     const c = compilePrivacyPolicy({ version: 1, preset: 'strict' });
@@ -176,9 +180,6 @@ describe('splitSelectorList', () => {
   });
 
   it('keeps an escaped comma, quoted or not', () => {
-    // `.a\,b` is a single class selector for the class name "a,b" -- the
-    // backslash escape is valid outside quotes too, and tearing it here let
-    // the stray `b` fragment collide with an unrelated `b` selector.
     expect(splitSelectorList('.a\\,b')).toEqual(['.a\\,b']);
     expect(splitSelectorList('.a\\,b,b')).toEqual(['.a\\,b', 'b']);
     expect(splitSelectorList('[data-x="p\\"q,r"]')).toEqual([
@@ -476,8 +477,6 @@ describe('sanitizeUrl v2', () => {
     );
   });
   it('unparseable value under non-legacy fails closed by dropping the attribute', () => {
-    // null, not '': an empty `src`/`href` re-resolves to the document URL at
-    // replay and gets requested. Dropping matches the blockMedia semantics.
     expect(sanitizeUrl('http://[broken', balanced)).toBeNull();
   });
   it('empty in, empty out -- never resolved into a path', () => {
@@ -487,14 +486,58 @@ describe('sanitizeUrl v2', () => {
   });
 });
 
-/**
- * `needMaskingText` is exported from the package root and its third parameter
- * changed shape (raw selector string -> pre-split `{maskAll, selector}`). An
- * un-updated or untyped caller still passing the string used to destructure to
- * `{maskAll: undefined, selector: undefined}`, at which point every mask
- * selector silently stopped matching -- a fail-open on the masking path, which
- * is the one direction that must never happen quietly.
- */
+describe('resolveTextValue: exemptScript', () => {
+  const script = document.createElement('script');
+  it('exempts SCRIPT text from masking when exemptScript is true (the snapshot path)', () => {
+    expect(
+      resolveTextValue({
+        value: 'secret',
+        parent: script,
+        needsMask: true,
+        maskTextFn: undefined,
+        privacy: undefined,
+        exemptScript: true,
+      }),
+    ).toBe('secret');
+  });
+
+  it('masks SCRIPT text like any other node when exemptScript is false (the mutation path)', () => {
+    expect(
+      resolveTextValue({
+        value: 'secret',
+        parent: script,
+        needsMask: true,
+        maskTextFn: undefined,
+        privacy: undefined,
+        exemptScript: false,
+      }),
+    ).toBe('******');
+  });
+});
+
+describe('resolveUnmaskTextSelector', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('finds a target hidden inside an open shadow root', () => {
+    document.body.innerHTML = '<div id="host"></div>';
+    const host = document.querySelector('#host') as HTMLElement;
+    host.attachShadow({ mode: 'open' }).innerHTML =
+      '<p class="rr-unmask">x</p>';
+    expect(resolveUnmaskTextSelector(document, '.rr-unmask')).toBe(
+      '.rr-unmask',
+    );
+  });
+
+  it('resolves to null when the selector matches nowhere, including inside shadow roots', () => {
+    document.body.innerHTML = '<div id="host"></div>';
+    const host = document.querySelector('#host') as HTMLElement;
+    host.attachShadow({ mode: 'open' }).innerHTML = '<p>x</p>';
+    expect(resolveUnmaskTextSelector(document, '.rr-unmask')).toBeNull();
+  });
+});
+
 describe('needMaskingText accepts the legacy selector string', () => {
   afterEach(() => {
     document.body.innerHTML = '';

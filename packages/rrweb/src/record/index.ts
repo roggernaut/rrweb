@@ -126,12 +126,6 @@ function record<T = eventWithTime>(
   try {
     compiledPrivacy = compilePrivacyPolicy(portablePrivacyPolicy);
   } catch (error) {
-    // A plugin's `applyPrivacyPolicy` transform produced something
-    // `compilePrivacyPolicy` can't compile. That's the plugin's bug, not the
-    // user's -- fall back to the user's own (untransformed) policy so a
-    // broken plugin can't take recording down entirely. If the user's own
-    // policy is itself invalid, that's a programmer error and should still
-    // throw.
     if (portablePrivacyPolicy !== privacyPolicy) {
       console.error(
         '[rrweb] plugin-transformed privacy policy failed to compile; using the user policy',
@@ -142,27 +136,18 @@ function record<T = eventWithTime>(
       throw error;
     }
   }
-  // The one privacy prologue: merges every legacy selector option with its
-  // compiled counterpart and writes the merged unmask selector back onto the
-  // policy. `snapshot()` is handed `privacy` directly, so it neither compiles
-  // nor merges again. The merged unmask selector needs no separate carrier of
-  // its own -- it rides on `privacy`, and every consumer reads it from there.
   const { privacy, blockSelector, maskTextSelector } = resolvePrivacyContext({
     privacy: compiledPrivacy,
     blockSelector: legacyBlockSelector,
     maskTextSelector: legacyMaskTextSelector,
     unmaskTextSelector: legacyUnmaskTextSelector,
   });
-  // Strict remains fail-closed for the whole canvas. Region providers are
-  // available to balanced/legacy policies, where the application owns
-  // the completeness of those regions.
+  // Strict stays fail-closed for the whole canvas; region providers apply
+  // only to balanced/legacy, where the application owns region completeness.
   const recordCanvas = requestedRecordCanvas && !privacy.blockMedia;
   const canvasMaskingConfigured = canvasMasking
     ? () => isCanvasMaskingConfigured(canvasMasking)
     : undefined;
-  // Canvas masking forces the FPS capture path; `resolveCanvasSampling`
-  // carries the reasoning. `sampling` is the caller's own object, so
-  // overriding `canvas` in place would mutate the options they passed in.
   const sampling: SamplingStrategy = {
     ...requestedSampling,
     canvas: resolveCanvasSampling(
@@ -417,9 +402,8 @@ function record<T = eventWithTime>(
       {
         type: EventType.Meta,
         data: {
-          // `sanitizeUrl` drops an unparseable URL (null) so an attribute is
-          // omitted rather than emptied; a Meta event's `href` is a required
-          // string, and an empty one there is inert (nothing re-resolves it).
+          // Meta's `href` is a required string; '' is the inert fallback for
+          // an unparseable URL, which `sanitizeUrl` otherwise drops (null).
           href: sanitizeUrl(window.location.href, privacy) ?? '',
           width: getWindowWidth(),
           height: getWindowHeight(),

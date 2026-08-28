@@ -247,20 +247,11 @@ export function querySelectorAll(
   return getUntaintedAccessor('Element', n, 'querySelectorAll')(selectors);
 }
 
-/**
- * `tagName` can be shadowed by a same-named form control (e.g.
- * `<form><input name="tagName"></form>` makes `form.tagName` resolve to the
- * input element instead of the string `'FORM'`). Reading through the
- * untainted `Element.prototype` getter defeats that shadowing so callers get
- * the real tag name regardless of what user content declared on the element.
- * Returns `''` for a null/undefined element, uppercased otherwise.
- */
+/** Reads `tagName` through the untainted accessor, defeating shadowing by a same-named form control (e.g. `<form><input name="tagName">`). */
 export function untaintedTagName(element: Element | null | undefined): string {
   if (!element) return '';
   const tagName: unknown = element.tagName;
   if (typeof tagName === 'string') return tagName.toUpperCase();
-  // Not a string and not actually an Element (e.g. a Document/DocumentFragment
-  // passed in from a loosely-typed `ParentNode`): there is no tag name.
   if (!(element instanceof Element)) return '';
   return getUntaintedAccessor('Element', element, 'tagName').toUpperCase();
 }

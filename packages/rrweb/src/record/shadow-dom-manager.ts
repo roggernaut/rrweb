@@ -28,9 +28,7 @@ export class ShadowDomManager {
   private bypassOptions: BypassOptions;
   private mirror: Mirror;
   private restoreHandlers: (() => void)[] = [];
-  // `shadowDoms` is a WeakSet purely for dedup and isn't iterable, so a
-  // separate iterable set tracks which shadow roots the canvas manager
-  // currently knows about, to be told when observation of them stops.
+  /** Iterable (unlike the `shadowDoms` WeakSet), so the canvas manager can be told when observation stops. */
   private canvasTrackedShadowRoots = new Set<ShadowRoot>();
 
   constructor(options: {

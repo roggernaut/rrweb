@@ -74,13 +74,7 @@ export type MaskAttributeFn = (
   element: Element,
 ) => string;
 
-/**
- * The Privacy at Capture type family lives in `@rrweb/types`, which is the
- * single declared source of truth for it: the policy is a portable, versioned
- * document that travels between the recorder, the plugins and any consumer,
- * so no one of those packages should own its shape. Re-exported here so
- * `rrweb-snapshot`'s own public surface is unchanged.
- */
+/** Declared in `@rrweb/types`, the source of truth; re-exported so this package's public surface is unchanged. */
 export type {
   PrivacyPolicy,
   PrivacyPreset,

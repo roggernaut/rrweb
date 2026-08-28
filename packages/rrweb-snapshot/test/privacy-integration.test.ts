@@ -288,8 +288,6 @@ describe('maskInput v2', () => {
         privacy: withDetectors,
       }),
     ).toBe('*'.repeat('bob@example.com'.length));
-    // A value no detector matches is occluded just the same: input values are
-    // never scanned, so a clean scan is never the reason one gets recorded.
     expect(
       maskInput({
         element: input(),
@@ -302,8 +300,6 @@ describe('maskInput v2', () => {
     ).toBe('*****');
   });
   it('every keystroke prefix is occluded at its own length', () => {
-    // The leak this replaced: a value scanned per input event records every
-    // prefix shorter than the first Luhn-valid length verbatim.
     const withDetectors = compilePrivacyPolicy({
       version: 1,
       preset: 'legacy',
@@ -324,9 +320,6 @@ describe('maskInput v2', () => {
     }
   });
   it('a maskInputFn controls length only while detectors are on', () => {
-    // Under a bare legacy policy the fn's output is trusted verbatim; with
-    // detectors active the policy forces the balanced/strict posture, so the
-    // fn keeps its say over length and loses its say over content.
     const withDetectors = compilePrivacyPolicy({
       version: 1,
       preset: 'legacy',
@@ -502,12 +495,6 @@ describe('finalizeAttribute', () => {
       ).toBeNull();
     });
 
-    /**
-     * A placeholder is only derivable from *pixels*. Percentages, keywords and
-     * a half-declared element are all rejected rather than guessed at, because
-     * `finalizeAttribute` may not measure -- it runs per attribute in the
-     * serializer's hot path.
-     */
     it.each([
       ['<img src="i.png" width="50%" height="80">'],
       ['<img src="i.png" width="auto" height="auto">'],
@@ -522,6 +509,18 @@ describe('finalizeAttribute', () => {
           privacy: strict,
         }),
       ).toBeNull();
+    });
+
+    it('derives placeholder dimensions from content attributes only, never a layout measurement', () => {
+      const rect = vi.spyOn(Element.prototype, 'getBoundingClientRect');
+      finalizeAttribute({
+        element: el('<img src="https://a.com/i.png" width="120" height="80">'),
+        name: 'src',
+        value: 'https://a.com/i.png',
+        privacy: strict,
+      });
+      expect(rect).not.toHaveBeenCalled();
+      rect.mockRestore();
     });
 
     it('leaves non-image media sources dropped even when sized', () => {
@@ -785,7 +784,6 @@ describe('finalizeAttribute', () => {
         privacy: balanced,
       }),
     ).toBe('Bob');
-    // no unmask ancestor -> unchanged behavior
     expect(
       finalizeAttribute({
         element: el('<img title="Bob">'),
@@ -796,13 +794,23 @@ describe('finalizeAttribute', () => {
     ).toBe('***');
   });
 
-  /**
-   * `finalizeAttribute` reads the *compiled policy's* `unmaskTextSelector`,
-   * so the `record()`-level string option has to be written back onto the
-   * policy by `snapshot()`/`record()`. Without that write-back the option
-   * would silently only affect text, and the documented attribute escape
-   * would not exist for it.
-   */
+  it('a selector that throws grants no unmask escape; the attribute stays masked', () => {
+    const closest = vi
+      .spyOn(Element.prototype, 'closest')
+      .mockImplementation(() => {
+        throw new Error('boom');
+      });
+    expect(
+      finalizeAttribute({
+        element: el('<img title="Bob" class="rr-unmask">'),
+        name: 'title',
+        value: 'Bob',
+        privacy: balanced,
+      }),
+    ).toBe('***');
+    closest.mockRestore();
+  });
+
   it('honors a record()-level unmaskTextSelector, not just policy selectors', () => {
     document.body.innerHTML =
       '<div class="support-widget"><img title="Bob"></div>' +

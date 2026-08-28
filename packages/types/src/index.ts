@@ -311,12 +311,7 @@ export interface ICrossOriginIframeMirror {
   reset(iframe?: HTMLIFrameElement): void;
 }
 
-/**
- * A versioned, portable Privacy at Capture policy understood by rrweb.
- * Mirrors `rrweb-snapshot`'s internal `PrivacyPolicy` (the source of truth);
- * kept here so consumers of `@rrweb/types` alone can type a policy without
- * depending on `rrweb-snapshot` directly.
- */
+/** A versioned, portable Privacy at Capture policy; mirrors `rrweb-snapshot`'s internal `PrivacyPolicy`, the source of truth. */
 export type PrivacyPolicy = {
   version: 1;
   preset: PrivacyPreset;
@@ -341,12 +336,8 @@ export type PrivacyTarget = {
   selector: string;
 };
 
+/** Explicit opt-in flags for built-in heuristic detectors; presets do not enable these. */
 export type PrivacyDetectorOptions = Partial<{
-  /**
-   * Explicit opt-in flags for built-in heuristic detectors. Presets do not
-   * enable these; use `@rrweb/rrweb-plugin-privacy-detectors` or
-   * `applyPrivacyDetectors`.
-   */
   email: boolean;
   phone: boolean;
   paymentCard: boolean;
@@ -357,10 +348,7 @@ export type PrivacyDetectorOptions = Partial<{
 export type PrivacyUrlOptions = {
   /** Query parameter names whose values are always removed. */
   blockedQueryParameters?: string[];
-  /**
-   * When supplied, all query parameter values except these are removed.
-   * Parameter names remain visible so replays retain useful routing context.
-   */
+  /** When supplied, all query parameter values except these are removed. */
   allowedQueryParameters?: string[];
   removeHash?: boolean;
 };
@@ -379,20 +367,11 @@ export type CompiledPrivacyPolicy = {
   unmaskTextSelector: string | null;
   /** 'exclude' rules + [data-privacy="exclude"] + vendor block classes */
   blockSelector: string | null;
-  /**
-   * true under balanced/strict, and whenever any heuristic detector is
-   * active: detectors scan text content only, so input values are occluded
-   * to length rather than scanned as they are typed.
-   */
+  /** true under balanced/strict, and whenever any heuristic detector is active. */
   maskAllInputs: boolean;
   /** ['title','placeholder','aria-label'] under balanced/strict, else empty */
   maskedAttributes: Set<string>;
-  /**
-   * true when the policy has nothing at all to say about attributes, so
-   * `finalizeAttribute` can return its input untouched without reading the
-   * name or the element. Precomputed because it is asked once per attribute
-   * of every element rrweb records.
-   */
+  /** true when the policy has nothing to say about attributes; lets `finalizeAttribute` return its input untouched. */
   attributePolicyInert: boolean;
   /** true under strict; the `strict` preset alias every media gate reads */
   blockMedia: boolean;
@@ -402,10 +381,7 @@ export type CompiledPrivacyPolicy = {
   blockedQueryParameters: Set<string>;
   allowedQueryParameters: Set<string> | null;
   removeHash: boolean;
-  /**
-   * populated by an opt-in detector plugin (e.g. the privacy-detectors
-   * plugin); [] otherwise. Scans text content only -- never input values.
-   */
+  /** Populated by an opt-in detector plugin; [] otherwise. */
   detectors: CompiledDetector[];
 };
 
@@ -706,25 +682,14 @@ export type CanvasMaskRegion = {
 
 /** Runtime canvas adapter for applications whose sensitive pixels are not DOM nodes. */
 export type CanvasMasking = {
-  /**
-   * Return rectangles to paint black, `[]` to capture the frame unchanged, or
-   * `null`/`undefined` when a safe answer cannot be produced. Unanswerable
-   * frames are skipped rather than captured without masking.
-   */
+  /** Rectangles to paint black, `[]` to capture unchanged, or `null`/`undefined` to skip an unanswerable frame rather than capture it unmasked. */
   maskRegions: (
     canvas: HTMLCanvasElement,
   ) => CanvasMaskRegion[] | null | undefined;
   /**
-   * Optional dynamic switch. When omitted, supplying `canvasMasking` means it
-   * is configured. Throwing is treated as configured so snapshots fail closed.
+   * Optional dynamic switch; omitting it means supplying `canvasMasking` alone counts as configured, and a throw counts as configured too (fail closed).
    *
-   * **Must be stable as of the `record()` call.** It is consulted once at
-   * setup to choose the canvas capture mode, because the mode cannot be
-   * switched mid-session: `false` at that moment leaves `sampling.canvas` in
-   * mutation mode, and a later flip to `true` will mask snapshot pixels but
-   * cannot retroactively move capture onto the maskable FPS path. If the
-   * answer is not known yet at `record()` time, return `true` (fail closed)
-   * or set `sampling.canvas` to a number yourself.
+   * **Must be stable as of the `record()` call** -- it picks the canvas capture mode once at setup and the mode cannot switch mid-session. If the answer isn't known yet, return `true` or set `sampling.canvas` to a number yourself.
    */
   isConfigured?: () => boolean;
 };
