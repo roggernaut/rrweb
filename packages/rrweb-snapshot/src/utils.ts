@@ -416,9 +416,8 @@ export function isProtectedInput(element: HTMLElement): boolean {
   if (type === 'password' || type === 'hidden') {
     return true;
   }
-  // `autocomplete` is empty on the overwhelming majority of inputs, and a
-  // single token on nearly all of the rest -- so bail, then try the whole
-  // value against the set, and only split when there is something to split.
+  // Bail on empty, then try the whole value before splitting -- both are the
+  // common case for `autocomplete`.
   const autocomplete = input.autocomplete;
   if (!autocomplete) return false;
   const lower = autocomplete.toLowerCase();
@@ -430,27 +429,12 @@ export function isProtectedInput(element: HTMLElement): boolean {
 }
 
 /**
- * Single entry point for input value masking. Composes:
- * - protected inputs (password/hidden/cc-* autocomplete): always masked,
- *   regardless of everything else.
- * - legacy `maskInputOptions`: mask iff the tag/type opts in; `maskInputFn`
- *   output (if provided) is trusted verbatim, matching pre-v2 behavior.
- * - balanced/strict privacy presets, and any active heuristic detector
- *   (`privacy.maskAllInputs`): always mask, shape-free. If `maskInputFn` is
- *   provided its output length is kept but its content is discarded and
- *   star-replaced -- the fn controls length only, never leaks real content.
- *
- * Input values are never scanned by the heuristic detectors, on any path.
- * Scanning a value that is being typed records every raw prefix before the
- * pattern can match, and a disclosure gated on a clean scan still reveals
- * every kind of PII the pattern set does not model. While any detector is
- * active the compiled policy sets `maskAllInputs`, so this function occludes
- * the value to its length instead.
- *
- * Note that the mask decision here is deliberately blind to the unmask
- * selector: `presetWantsMask` is consulted directly, with no
- * `unmaskTextSelector` escape. An unmask annotation reopens text and the
- * preset's masked attributes, never an input value.
+ * Single entry point for input value masking: protected inputs always mask;
+ * otherwise legacy `maskInputOptions` or an active preset/detector
+ * (`privacy.maskAllInputs`) decides, and in the latter case a supplied
+ * `maskInputFn`'s output is star-replaced (length only, never content).
+ * Deliberately blind to the unmask selector -- no annotation reopens an
+ * input value. See guide.md's privacy chapter.
  */
 export function maskInput({
   element,

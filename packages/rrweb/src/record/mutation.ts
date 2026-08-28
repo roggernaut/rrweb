@@ -197,16 +197,11 @@ export default class MutationBuffer {
     value: null,
   };
   /**
-   * The compiled policy's `unmaskTextSelector` re-resolved once per mutation
-   * flush (see `resolveUnmaskTextSelector`): null when nothing in the live
-   * document currently matches it, so the per-node ancestor walk it otherwise
-   * forces in `needMaskingText`/`serializeNodeWithId` can short-circuit again.
-   *
-   * Derived on first use and invalidated per flush rather than assigned at the
-   * top of `processMutations`: `emit()` is also reachable from `unfreeze()`
-   * and `unlock()`, which do not go through a flush, and a value left over
-   * from a previous flush is a decision taken against a DOM that has since
-   * been free to change.
+   * The compiled policy's `unmaskTextSelector` re-resolved once per flush
+   * (see `resolveUnmaskTextSelector`). Derived lazily and invalidated per
+   * flush, not assigned at the top of `processMutations`: `emit()` is also
+   * reachable from `unfreeze()`/`unlock()`, which skip the flush, and a
+   * stale value would be a decision taken against a DOM that has since moved.
    */
   private get effectiveUnmaskTextSelector(): string | null {
     if (!this.unmaskProbe.probed) {
@@ -222,13 +217,9 @@ export default class MutationBuffer {
   private splitMaskTextSelectorCache: MaskTextSelector | null = null;
   /**
    * `maskTextSelector` split into its `'*'` mask-everything default and its
-   * explicit selectors.
-   *
-   * Always *derived* from the raw selector, never assigned: an unset or stale
-   * field would default to "no mask selectors at all", and reaching `emit()`
-   * without having gone through `processMutations` -- which `unfreeze()` and
-   * `unlock()` both do -- would then fail open. The raw selector is fixed for
-   * the buffer's lifetime, so one derivation per `init()` is enough.
+   * explicit selectors. Always derived, never assigned: a stale/unset field
+   * would fail open to "no mask selectors" if `emit()` runs outside
+   * `processMutations` (via `unfreeze()`/`unlock()`).
    */
   private get splitMaskTextSelector(): MaskTextSelector {
     return (this.splitMaskTextSelectorCache ??= splitMaskAllSelector(
@@ -236,18 +227,10 @@ export default class MutationBuffer {
     ));
   }
   /**
-   * `needMaskingText` results memoised for the duration of one synchronous
-   * mutation flush, keyed by the element the ancestor walk starts from.
-   *
-   * Datadog memoises at exactly this granularity, for exactly this reason --
-   * one `Map` per synchronous mutation batch, valid "because we process
-   * incremental mutations synchronously, [so] we know that privacy levels
-   * cannot change during the process" (browser-sdk
-   * `packages/browser-rum/src/domain/record/serialization/serializeMutations.ts:95-102`).
-   *
-   * Deliberately not shared across flushes: between them the DOM, and so every
-   * ancestor chain a decision was derived from, is free to change. Holding the
-   * node keys any longer would also pin removed nodes in memory.
+   * `needMaskingText` results memoised for one synchronous mutation flush,
+   * keyed by the ancestor walk's starting element. Not shared across
+   * flushes: the DOM, and so every ancestor chain, is free to change between
+   * them (Datadog memoises at the same granularity, for the same reason).
    */
   private maskDecisionCache = new Map<Node, boolean>();
   private inlineStylesheet: observerParam['inlineStylesheet'];
@@ -342,37 +325,25 @@ export default class MutationBuffer {
   }
 
   public processMutations = (mutations: mutationRecord[]) => {
-    // Invalidate, don't assign: the getter re-probes on first use, so a flush
-    // that never asks pays nothing and a caller that reaches `emit()` outside
-    // a flush still gets an answer taken against the current DOM. Once per
-    // flush rather than per node -- see `resolveUnmaskTextSelector`.
+    // Invalidate, don't assign: the getter re-probes lazily, so a flush that
+    // never asks pays nothing (see `resolveUnmaskTextSelector`).
     this.unmaskProbe.probed = false;
     this.maskDecisionCache.clear();
     try {
       mutations.forEach(this.processMutation); // adds mutations to the buffer
       this.emit(); // clears buffer if not locked/frozen
     } finally {
-      // The decisions are only sound for this flush; see the field's comment.
+      // Decisions are only sound for this flush.
       this.maskDecisionCache.clear();
       this.unmaskProbe.probed = false;
     }
   };
 
   /**
-   * `needMaskingText` for the target of a `characterData` mutation, memoised
-   * for this flush.
-   *
-   * With `checkAncestors` on and no inherited decision, `needMaskingText`
-   * starts its walk at the node's parent element and its result is a pure
-   * function of that element -- so the parent, not the mutated text node, is
-   * the key, and N text mutations under one parent share a single walk.
-   * (A character-data node with no parent element has no chain to walk; it
-   * gets a constant answer and is keyed by itself.)
-   *
-   * This composes with `resolveUnmaskTextSelector` rather than duplicating it:
-   * when the probe has nulled the selector for this flush the walk already
-   * short-circuits, and the cache costs one `Map` lookup on top of nearly
-   * nothing.
+   * `needMaskingText` for a `characterData` mutation's target, memoised for
+   * this flush. Keyed by parent element, not the text node: with
+   * `checkAncestors` on, the walk starts at the parent and is a pure function
+   * of it, so N mutations sharing a parent share one walk.
    */
   private needMaskingTextForCharacterData = (node: Node): boolean => {
     const key: Node = dom.parentElement(node) || node;

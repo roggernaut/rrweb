@@ -8,30 +8,15 @@ import type {
 } from './types';
 import { untaintedTagName } from '@rrweb/utils';
 
-// `data-privacy` is the primary, vendor-neutral convention for declaring
-// privacy intent; the class lists below are migration compatibility for pages
-// already instrumented for another tool.
-//
-// These are the mask/exclude conventions of major session-replay tools
+// Migration compatibility for other tools' mask/exclude class conventions
 // (rrweb, Mixpanel, Amplitude, PostHog, Sentry, FullStory, Datadog, New
-// Relic) that pages may already carry. Recognizing a foreign mask/block
-// token is protective-only -- it can only increase masking. Foreign
-// UNMASK/allow tokens are deliberately never honored (they could reveal).
-//
-// Sources:
-// - Datadog `browser-sdk packages/browser-rum-core/src/domain/privacyConstants.ts`
-//   (`data-dd-privacy` attr; `dd-privacy-` class prefix; `mask`/
-//   `mask-user-input`/`hidden` values; `allow` and `mask-unless-allowlisted`
-//   deliberately excluded)
-// - New Relic `newrelic-browser-agent src/common/config/init.js`
-//   (`[data-nr-mask]`, `nr-mask`, `nr-block`, `[data-nr-block]`; `nr-unmask`/
-//   `nr-ignore` deliberately excluded)
+// Relic); `data-privacy` is the primary convention. Foreign mask/block
+// tokens are protective-only. See guide.md's "Vendor class recognition"
+// section for sourcing.
 const VENDOR_MASK_CLASSES =
   '.rr-mask,.mp-mask,.fs-mask,.amp-mask,.ph-mask,.sentry-mask,[data-sentry-mask],.dd-privacy-mask,[data-dd-privacy="mask"],.dd-privacy-mask-user-input,[data-dd-privacy="mask-user-input"],.nr-mask,[data-nr-mask]';
-// Unmasking is intentionally limited to rrweb's own convention, the neutral
-// `data-privacy="allow"` attribute, and explicit policy/record() selectors.
-// A foreign unmask token may have been safe only under its original recorder's
-// defaults, so migration compatibility must never grant it authority here.
+// Never a foreign token: it may have been safe only under its own recorder's
+// defaults, so migration compatibility must not grant it authority here.
 const RRWEB_UNMASK_CLASS = '.rr-unmask';
 const VENDOR_BLOCK_CLASSES =
   '.rr-block,.mp-block,.fs-exclude,.amp-block,.ph-no-capture,.sentry-block,.dd-privacy-hidden,[data-dd-privacy="hidden"],.nr-block,[data-nr-block]';
@@ -45,14 +30,9 @@ const MASKED_ATTRIBUTE_DEFAULTS = ['title', 'placeholder', 'aria-label'];
 const CSS_ATTRIBUTES = new Set(['style', '_csstext']);
 
 /**
- * The only attribute names the serializer's `isGenerated` flag may exempt from
- * masking. The flag says "rrweb wrote this value", but a flag alone is a
- * single point of failure: a mis-set flag on a page-authored attribute would
- * leak it verbatim. PostHog gates the same exemption on a fixed name
- * allowlist, so both must agree.
- *
- * Deliberately excluded: `rr_dataURL` and `rr_src`, whose values are real page
- * pixels and a real page URL respectively.
+ * The only names `isGenerated` may exempt from masking -- the flag alone is a
+ * single point of failure, so both it and this allowlist must agree.
+ * Deliberately excludes `rr_dataURL`/`rr_src`: real page pixels and a URL.
  */
 const RENDERING_METADATA_ATTRIBUTES = new Set([
   'rr_width',
@@ -64,29 +44,12 @@ const RENDERING_METADATA_ATTRIBUTES = new Set([
 ]);
 
 /**
- * Attributes that are part of rrweb's own operation rather than page content,
- * and are therefore exempt from every masking branch. This is the sibling of
- * `RENDERING_METADATA_ATTRIBUTES` above for attributes that are *present on the
- * page* rather than written by the serializer, so the `isGenerated` flag can
- * never vouch for them -- the name alone has to.
- *
- * Coarse masking must not be able to destroy the recorder's own signals:
- * `maskAllElementAttributes` starring `data-privacy="mask"` into `**********`
- * would erase, from the recording, the very declaration that explains why the
- * subtree around it is masked; starring `data-rr-is-password` would break the
- * password re-detection `getInputType` performs on the replay side.
- *
- * Datadog carves out the same class of attribute for the same reason:
- * `shouldMaskAttribute` (browser-sdk
- * `packages/browser-rum-core/src/domain/privacy.ts:166-172`) returns `false`
- * for its own `data-dd-privacy`, for `STABLE_ATTRIBUTES`, and for the
- * configured `actionNameAttribute` before any masking rule is consulted.
- *
- * Deliberately narrow: only rrweb-namespaced names the recorder or replayer
- * actually depends on. Nothing page-authored and potentially sensitive belongs
- * here -- an exemption is unconditional, so a wrong entry leaks verbatim. A
- * reserved-but-unread name does not qualify: if no code path reads it, masking
- * it breaks nothing and exempting it only widens the hole.
+ * rrweb's own operational attributes, present on the page rather than
+ * serializer-written, so `isGenerated` can't vouch for them -- exempt from
+ * every masking branch or coarse masking would erase the recorder's own
+ * signals (e.g. star `data-privacy="mask"` itself, or break replay-side
+ * password re-detection on `data-rr-is-password`). Keep this narrow: an
+ * exemption is unconditional, so a wrong entry leaks verbatim.
  */
 const OPERATIONAL_ATTRIBUTES = new Set([
   // The vendor-neutral privacy declaration the compiled policy matches on.
@@ -281,22 +244,14 @@ function starText(value: string): string {
 
 /**
  * The single decision point for the text content rrweb records, on both the
- * snapshot and the mutation path. It owns the whole ladder:
+ * snapshot and the mutation path: CSS is never masked, on any path, then the
+ * mask decision the caller already took (`needsMask`) applies `maskTextFn`
+ * if configured, or stars, then the heuristic detectors (policy-independent)
+ * mask the whole text node on a match. Scripts are never scanned.
  *
- *  1. CSS is never masked, on any path -- a starred stylesheet corrupts the
- *     replay and reveals nothing.
- *  2. the mask decision the caller already took (`needsMask`) -- `maskTextFn`
- *     if one is configured, stars otherwise.
- *  3. the heuristic detectors, which are policy-independent and mask the
- *     whole text node when they find anything sensitive. Scripts are never
- *     scanned.
- *
- * @param exemptScript preserves an inherited asymmetry: the snapshot path
- * exempts `<script>` text from the *mask* branch (2) as well as the detector
- * branch (3), the mutation path only from (3). Passing it explicitly keeps
- * the two callers honest about the difference instead of unifying it
- * silently; unifying is a behavior change and is deliberately left for
- * upstream review.
+ * @param exemptScript the snapshot path exempts `<script>` from the mask
+ * branch as well as the detector branch, the mutation path only from the
+ * detector branch -- pass explicitly, don't unify.
  */
 export function resolveTextValue({
   value,
@@ -308,15 +263,9 @@ export function resolveTextValue({
   exemptScript,
 }: {
   value: string;
-  /**
-   * The text node's parent element -- the source of the STYLE/SCRIPT
-   * exemptions, and the element handed to `maskTextFn`.
-   */
+  /** Source of the STYLE/SCRIPT exemptions and the element passed to `maskTextFn`. */
   parent: HTMLElement | null;
-  /**
-   * `untaintedTagName(parent)`, when the caller has already computed it. Both
-   * call sites sit on the serializer's hot path, so the read is not repeated.
-   */
+  /** `untaintedTagName(parent)`, if the caller already computed it (hot path). */
   parentTagName?: string;
   needsMask: boolean;
   maskTextFn: MaskTextFn | undefined;
@@ -337,17 +286,9 @@ export function resolveTextValue({
 }
 
 /**
- * Whether real pixels may be recorded for `element`'s content.
- *
- * Two independent reasons to say no, folded into one call so both snapshot
- * pixel sites ask the same question the same way:
- *  - `strict` blocks media wholesale (`blockMedia` is the preset alias);
- *  - a configured canvas masking provider means the only capture path that
- *    can redact anything is the FPS one, so the snapshot's own `toDataURL`
- *    must not run alongside it.
- *
- * The second reason is a canvas concern only, so the `<img>` inlining site
- * passes no thunk.
+ * Whether real pixels may be recorded for `element`'s content: `strict`
+ * blocks media wholesale, and a configured canvas masking provider means only
+ * the FPS capture path can redact, so `toDataURL` must not run alongside it.
  */
 export function shouldCapturePixels(
   privacy: CompiledPrivacyPolicy | undefined,
@@ -385,20 +326,10 @@ function selectorMatchesAnywhere(
 }
 
 /**
- * Every non-legacy preset sets `unmaskTextSelector`, which forces
- * `needMaskingText` to re-walk ancestors for every node instead of trusting
- * the inherited "already masked" decision (see `serializeNodeWithId`'s
- * `checkAncestors` comment). Most pages never put anything under an unmask
- * selector, so that walk buys nothing.
- *
- * Call this once per full snapshot and once per mutation flush -- not per
- * node -- to check whether the selector currently matches *anything* in the
- * document (including inside open shadow roots). When it matches nothing,
- * the caller can pass `null` downward for that pass and the cheap
- * short-circuit is restored; when a match exists, the original selector is
- * returned unchanged and per-node checking still happens exactly as before.
- * A selector that throws (e.g. detached/invalid document) is assumed present
- * so behaviour fails closed to masking.
+ * EXPERIMENTAL: resolves `unmaskTextSelector` to `null` when nothing in
+ * `doc` currently matches it, restoring the cheap masking short-circuit;
+ * call once per snapshot/mutation flush, not per node. Fails closed
+ * (returns the selector) on error. See the changeset for the full rationale.
  */
 export function resolveUnmaskTextSelector(
   doc: Document,
@@ -415,16 +346,8 @@ export function resolveUnmaskTextSelector(
 }
 
 /**
- * Split a selector list on its *top-level* commas only, so that merging and
- * deduplicating lists never rewrites what a fragment means.
- *
- * The three things a naive `split(',')` gets wrong, all of which round-trip
- * through `joinSelectors`:
- *  - `:is(a,b)` / `:not(a,b)` -- commas nested in a functional pseudo-class
- *  - `[data-x="a,b"]` -- commas inside an attribute value string
- *  - `.a\,b` -- an *escaped* comma, which is a literal character in the class
- *    name (this selector matches `class="a,b"`), not a separator
- *
+ * Split a selector list on top-level commas only -- not `split(',')`, which
+ * mishandles `:is(a,b)`, `[data-x="a,b"]`, and an escaped `.a\,b`.
  * @internal exported for direct unit testing; not part of the privacy API.
  */
 export function splitSelectorList(selector: string): string[] {
@@ -434,11 +357,8 @@ export function splitSelectorList(selector: string): string[] {
   let start = 0;
   for (let index = 0; index < selector.length; index += 1) {
     const char = selector[index];
-    // A backslash escapes the next character *anywhere* in a selector, inside
-    // a quoted string or not. Handling it only inside quotes would tear
-    // `.a\,b` in two, and the stray `b` fragment would then collide in the
-    // dedupe with an unrelated `b` selector and silently swallow it -- a
-    // dropped mask selector is a fail-open, so this case must come first.
+    // Must come first: a backslash escapes anywhere, not just inside quotes,
+    // or `.a\,b` tears in two and the stray `b` silently swallows another rule.
     if (char === '\\') {
       index += 1;
       continue;
@@ -460,14 +380,11 @@ export function splitSelectorList(selector: string): string[] {
 }
 
 /**
- * Validates each incoming selector as a whole (a list containing one broken
- * compound is dropped entirely, warning as it goes), then merges the surviving
- * lists into one deduplicated list.
- *
- * Deduplication is what makes this idempotent, and it has to be:
- * `record()` merges the policy's selectors into the options it hands to
- * `snapshot()`, which compiles the same policy again and merges a second
- * time. Without a `Set` every fragment would be repeated on each pass.
+ * Validates each selector as a whole (drops and warns on a broken one), then
+ * merges the survivors into one deduplicated list. Dedup makes this
+ * idempotent, which it must be: `record()` and `snapshot()` both merge the
+ * same policy's selectors, so a `Set` is what keeps the second pass from
+ * repeating every fragment.
  */
 function joinSelectors(
   selectors: Array<string | null | undefined>,
@@ -502,15 +419,9 @@ export function compilePrivacyPolicy(
   const preset = effective.preset;
   const nonLegacy = preset !== 'legacy';
   const detectors = buildDetectors(effective.detectors);
-  // Heuristic detectors scan text content only; no code path scans an input
-  // value. Scanning one as it is typed would record every raw prefix before
-  // the pattern could match -- a card number is fully reconstructable from
-  // the keystrokes that precede the first Luhn-valid length -- and even a
-  // value that scans clean at every length still discloses whatever kind of
-  // PII the fixed pattern set does not model. So while any detector is
-  // active, every input value is occluded to its length, whatever the preset
-  // (including a `legacy` base). Non-plugin users configure no detectors, so
-  // this leaves the preset-only semantics untouched.
+  // Detectors never scan input values (see guide.md "Heuristic PII
+  // detectors"); while any is active every input is occluded to its length
+  // instead, on any preset.
   const maskAllInputs = nonLegacy || detectors.length > 0;
   const maskedAttributes = new Set(nonLegacy ? MASKED_ATTRIBUTE_DEFAULTS : []);
   const blockMedia = preset === 'strict';
@@ -593,13 +504,9 @@ export function compilePrivacyPolicy(
 }
 
 /**
- * The `record()`-level selector options go through the same `validateSelector`
- * drop-and-warn path as policy rule selectors. Merging an unvalidated selector
- * would make every later `matches()` call throw, and the runtime catch-to-mask
- * would then star the whole page off one typo. That catch stays as the
- * backstop for a selector that validates but throws while matching; this just
- * stops a syntactically broken selector from ever reaching it. The compiled
- * halves are already validated, so re-probing them is only a cheap no-op.
+ * `record()`-level selector options go through the same validate-drop-warn
+ * path as policy rule selectors, so a syntactically broken one can't reach
+ * the runtime catch-to-mask and star the whole page off one typo.
  */
 export function mergeSelectors(
   legacySelector: string | null | undefined,
@@ -617,18 +524,10 @@ export type PrivacyContext = {
 };
 
 /**
- * The one privacy prologue: compile the portable policy (unless an
- * already-compiled one is handed in), merge every `record()`-level selector
- * option with its compiled counterpart, and write the merged unmask selector
- * back onto the policy.
- *
- * The write-back is what makes "one unmask selector, honored everywhere" true.
- * `finalizeAttribute` reads the *compiled policy's* `unmaskTextSelector`, so
- * without it the `record()`-level string option would only ever affect text
- * masking and would silently skip the masked-attribute escape.
- *
- * Both `record()` and a standalone `snapshot()` call go through here, which is
- * why merging has to be idempotent -- see `joinSelectors`.
+ * The one privacy prologue: compile the policy, merge every `record()`-level
+ * selector option with its compiled counterpart, and write the merged unmask
+ * selector back onto the policy so `finalizeAttribute` (which reads it from
+ * there) also honors a `record()`-level `unmaskTextSelector`.
  */
 export function resolvePrivacyContext({
   privacy: compiled,
@@ -721,14 +620,9 @@ function isUnmasked(
 type UnmaskMemo = { element: Element | null; answer: boolean };
 
 /**
- * A neutral, same-dimension SVG to stand in for a blocked image source, so
- * that removing the pixels does not also collapse the layout that surrounded
- * them. Datadog ships the same idea (`censoredImageForSize`, browser-sdk
- * `packages/browser-rum/src/domain/record/serialization/serializationUtils.ts`),
- * which serves a flat silver rectangle at the image's size.
- *
- * Only `<`, `>` and `#` are percent-encoded -- the rest is already legal in a
- * data URI, and leaving it readable keeps recorded values diffable.
+ * A neutral, same-dimension SVG standing in for a blocked image source, so
+ * removing the pixels doesn't collapse the surrounding layout. Only `<`, `>`
+ * and `#` are percent-encoded; the rest is already legal in a data URI.
  */
 const URI_UNSAFE = /[<>#]/g;
 const URI_ESCAPES: Record<string, string> = {
@@ -736,11 +630,7 @@ const URI_ESCAPES: Record<string, string> = {
   '>': '%3E',
   '#': '%23',
 };
-/**
- * A blocked page usually repeats a handful of image sizes, so the encoded
- * string is memoised on `WxH`. Bounded like every other cache here: a page
- * with unbounded distinct dimensions stops caching rather than growing.
- */
+/** Memoised on `WxH`; bounded like every other cache here. */
 const placeholderCache = new Map<string, string>();
 
 function placeholderImage(width: string, height: string): string {
@@ -759,17 +649,9 @@ function placeholderImage(width: string, height: string): string {
 }
 
 /**
- * The element's *declared* dimensions, read from the `width`/`height` content
- * attributes and nothing else.
- *
- * Deliberately not `getBoundingClientRect` (which is what Datadog falls back
- * to): `finalizeAttribute` runs once per attribute on the serializer's hot
- * path, so measuring there would trade a layout flush for every attribute of
- * every element. Attributes are free to read.
- *
- * Anything that is not plain integer pixels (`50%`, `auto`, `-1`, `1e9`) is
- * rejected rather than guessed at, and an element that declares no usable
- * dimensions gets no placeholder -- the attribute is dropped, as before.
+ * Declared `width`/`height` content attributes only -- never
+ * `getBoundingClientRect`, which would force a layout flush per attribute on
+ * this hot path. Anything not plain integer pixels is rejected, not guessed.
  */
 function declaredDimensions(element: Element): [string, string] | null {
   try {
@@ -803,39 +685,19 @@ function blockedMediaValue(
 }
 
 /**
- * The single decision point for every attribute rrweb records, on both the
- * snapshot and the mutation path. Called exactly once per attribute, at the
- * end of serialization, so no earlier stage needs to know about privacy.
- *
- * Decision order:
- *  1. `isGenerated` AND a name in `RENDERING_METADATA_ATTRIBUTES` -- the
- *     serializer wrote this value itself (rr_width, rr_scrollTop, ...), so it
- *     is safe by construction and never masked. Both gates are required: the
- *     flag alone would let a single mis-set call site leak a page attribute
- *     verbatim. `rr_dataURL` and `rr_src` are deliberately off the allowlist
- *     -- they hold real page pixels and a real page URL. Returns early.
- *  1b. a name in `OPERATIONAL_ATTRIBUTES` -- rrweb's own signals, which no
- *     masking branch may destroy. Sits above (2) and (3) on purpose: coarse
- *     masking is exactly what would otherwise erase them. Returns early.
- *  2. `maskAllElementAttributes` -- stars. It is the coarse kill switch and
- *     takes precedence over `maskAttributeFn`, which is then ignored with a
- *     one-time warning. Returns early.
- *  3. `maskAttributeFn` -- run in try/catch; a throwing callback fails closed
- *     to stars rather than leaking the raw value. Does NOT return early: this
- *     is a pipeline, not an escape hatch. Its output is the input to (4).
- *  4. the compiled policy, the final authority -- strict drops media sources
- *     (an `<img>` source or `<video>` poster whose element declares integer
- *     `width`/`height` attributes becomes a neutral same-size SVG instead, so
- *     the surrounding layout survives the drop), URL attributes are sanitized, `privacy.maskedAttributes` are starred
- *     unless the element sits inside `privacy.unmaskTextSelector` (the unmask
- *     escape, which runs *after* the media-drop and URL branches and so can
- *     never reopen either), and form `value` attributes are starred under
- *     strict. Under `legacy` this block is the identity, so a callback's
- *     output survives verbatim; under balanced/strict the policy applies on
- *     top of it and can only narrow what the callback chose to keep.
- *
- * `style`/`_cssText` are exempt from every branch: masked CSS breaks the
- * replay and reveals nothing.
+ * The single decision point for every attribute rrweb records, called once
+ * per attribute at the end of serialization. Order matters:
+ *  1. rendering metadata (`isGenerated` + `RENDERING_METADATA_ATTRIBUTES`),
+ *     then 1b. `OPERATIONAL_ATTRIBUTES` -- rrweb's own signals, exempt before
+ *     coarse masking can destroy them. Both return early.
+ *  2. `maskAllElementAttributes` -- coarse kill switch, wins over
+ *     `maskAttributeFn` (warned once). Returns early.
+ *  3. `maskAttributeFn` -- try/catch, fails closed to stars; not an escape
+ *     hatch, its output feeds (4).
+ *  4. the compiled policy, final authority: media drop/placeholder, URL
+ *     sanitization, then the unmask escape (so it can't reopen either), then
+ *     strict's form-value stars. Identity under `legacy`.
+ * `style`/`_cssText` are exempt from every branch: CSS is never masked.
  */
 export function finalizeAttribute({
   element,
@@ -911,10 +773,8 @@ export function finalizeAttribute({
   }
   if (URL_ATTRIBUTES.has(normalizedName)) return sanitizeUrl(current, privacy);
   if (privacy.maskedAttributes.has(normalizedName)) {
-    // An unmask ancestor is an explicit "this subtree is safe" statement and
-    // escapes the preset's masked-attribute defaults, matching Sentry's
-    // `maskAttribute` precedent. It cannot reach the branches above: a URL is
-    // still sanitized and a blocked media source is still dropped.
+    // Unmask escapes only the masked-attribute default, never the URL/media
+    // branches above it.
     return isUnmasked(element, privacy, unmaskMemo) ? current : stars(current);
   }
   if (
@@ -928,13 +788,9 @@ export function finalizeAttribute({
 }
 
 /**
- * The one finalization sweep, shared by `serializeElementNode` and the
- * mutation buffer's attribute emit: every attribute rrweb is about to record
- * passes through `finalizeAttribute` exactly once, in place, after every
- * other serialization stage has had its say.
- *
- * Non-string, non-null values (a number like `rr_scrollTop`, or `true` on a
- * checked radio) are rrweb's own and skip the sweep.
+ * Runs every attribute through `finalizeAttribute` once, in place, after
+ * serialization. Non-string, non-null values (e.g. `rr_scrollTop`) are
+ * rrweb's own and skip the sweep.
  */
 export function finalizeAttributes(
   attributes: Record<string, unknown>,

@@ -300,9 +300,7 @@ export function splitMaskAllSelector(
   if (!maskTextSelector) return { maskAll: false, selector: null };
   let maskAll = false;
   const kept: string[] = [];
-  // `splitSelectorList`, not `split(',')`: a comma nested in `:is(a,b)`, in an
-  // attribute value, or escaped as `\,` is not a separator, and tearing one
-  // apart here would corrupt the selector that is put back together.
+  // `splitSelectorList`, not `split(',')` -- see its docstring.
   for (const part of splitSelectorList(maskTextSelector)) {
     if (part.trim() === '*') maskAll = true;
     else kept.push(part);
@@ -314,11 +312,10 @@ export function splitMaskAllSelector(
 }
 
 /**
- * @param inheritedNeedsMask the decision already taken for an ancestor the walk
- * cannot reach — the caller's context crosses shadow-root/iframe boundaries
- * that `parentElement` does not. It is the walk's default result, so a masked
- * ancestor outside the boundary keeps masking (fail closed) while an
- * `unmaskTextSelector` match found inside the boundary still wins.
+ * @param inheritedNeedsMask the decision for an ancestor outside
+ * `parentElement`'s reach (a shadow-root/iframe boundary); it's the walk's
+ * default, so it keeps masking (fail closed) unless an in-boundary
+ * `unmaskTextSelector` match overrides it.
  */
 export function needMaskingText(
   node: Node,
@@ -329,13 +326,9 @@ export function needMaskingText(
   inheritedNeedsMask = false,
 ): boolean {
   try {
-    // This parameter used to be the raw selector string, and this function is
-    // exported from the package root -- so an un-updated (or untyped) caller
-    // can still arrive with one. Coerce rather than destructure blindly: a
-    // string would otherwise yield `{maskAll: undefined, selector: undefined}`
-    // and every mask selector would silently stop matching, which is a
-    // fail-open. `null`/`undefined` go through the same path and compile to
-    // the same "no selector configured" pair the split already produces.
+    // Coerce rather than destructure blindly: an un-updated caller may still
+    // pass the raw selector string, and destructuring that yields
+    // `{maskAll: undefined, ...}` -- a silent fail-open.
     const { maskAll, selector } =
       typeof maskTextSelector === 'string' || !maskTextSelector
         ? splitMaskAllSelector(maskTextSelector ?? null)
@@ -1131,19 +1124,11 @@ export function serializeNodeWithId(
     cssCaptured?: boolean;
     privacy?: CompiledPrivacyPolicy;
     /**
-     * `needMaskingText` results memoised for the duration of one `snapshot()`
-     * call, keyed by the element its ancestor walk starts from -- the mirror
-     * of `MutationBuffer`'s per-flush cache, for the same reason and with the
-     * same lifetime discipline. The DOM cannot change while a synchronous
-     * walk is in progress, so every decision derived from an ancestor chain
-     * stays valid for exactly as long as that walk.
-     *
-     * The walk starts at the node itself for an element and at its parent
-     * element otherwise, so an element and its text/comment children share
-     * one key and one walk. The two *deferred* re-serializations below (an
-     * iframe or stylesheet that finishes loading after the snapshot has
-     * returned) deliberately do not receive the cache: by then the DOM is
-     * free to have moved on.
+     * `needMaskingText` results memoised for one `snapshot()` call, keyed by
+     * the ancestor walk's starting element (mirrors `MutationBuffer`'s
+     * per-flush cache). Not passed to the two deferred re-serializations
+     * below (a late-loading iframe/stylesheet), since the DOM may have moved
+     * on by then.
      */
     maskDecisionCache?: Map<Node, boolean>;
   },

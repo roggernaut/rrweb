@@ -102,3 +102,11 @@ is why scanning still applies there.
 If you know a field is sensitive, say so directly with `data-privacy="mask"`,
 a policy rule, or a `balanced`/`strict` preset. Detectors are a backstop, not
 a control.
+
+## Known limitations
+
+- If `applyPrivacyPolicy` returns something that fails to compile, `record()`
+  falls back to the un-transformed policy and only logs a `console.error` --
+  that fallback also drops the forced input occlusion.
+- Text longer than `MAX_SCAN_LENGTH` (10,000 characters) is masked wholesale
+  instead of scanned.

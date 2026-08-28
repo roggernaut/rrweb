@@ -52,14 +52,9 @@ export function computeFrameMaskRegions(
 }
 
 /**
- * The canvas backing store maps onto the element's content box (the CSS
- * width/height it is drawn at), not its border box. `clientWidth` includes
- * padding, so a padded canvas would otherwise skew the scale factor used to
- * translate application-provided mask regions into backing-store pixels.
- *
- * Returns `null` (never a fallback size) when the content box cannot be
- * measured or has zero area, so callers fail closed instead of silently
- * reinterpreting CSS-pixel regions as backing-store pixels.
+ * The canvas backing store maps onto the content box, not the border box
+ * `clientWidth` reports (which includes padding and would skew the scale
+ * factor). Returns `null`, never a fallback size, so callers fail closed.
  */
 export function getCanvasContentBoxSize(
   canvas: HTMLCanvasElement,
@@ -105,17 +100,11 @@ export function getCanvasContentBoxSize(
 }
 
 /**
- * The display box a frame's mask regions are scaled against.
- *
- * Gated on `isCanvasMaskingConfigured`, not on the provider merely being
- * present: a provider whose `isConfigured()` currently returns false masks
- * nothing, `computeFrameMaskRegions` will ignore the box anyway, and
- * measuring it would cost a layout flush per frame for nothing -- and would
- * drop the frame entirely on a canvas that cannot be measured. When masking
- * really is in force the content box is measured precisely (the backing store
- * maps onto it, not onto the border box `clientWidth`/`clientHeight` report),
- * and an unmeasurable one returns `SKIP_FRAME` rather than falling back to a
- * scale that would leave mask regions in the wrong place.
+ * The display box a frame's mask regions are scaled against. Gated on
+ * `isCanvasMaskingConfigured`, not mere presence: an unconfigured provider
+ * masks nothing, so skip the per-frame layout-flush cost of measuring it.
+ * When masking is in force, an unmeasurable box fails closed to `SKIP_FRAME`
+ * rather than guessing a scale that misplaces the regions.
  */
 export function resolveFrameDisplaySize(
   masking: CanvasMasking | undefined,
@@ -157,16 +146,10 @@ function isValidRegion(region: unknown): region is CanvasMaskRegion {
 }
 
 /**
- * Canvas privacy masking only redacts pixels on the FPS/OffscreenCanvas
- * capture path (`sampling.canvas` as a number): that path renders full
- * frames through `computeFrameMaskRegions` before they ever reach the
- * encoding worker. The mutation-mode command stream (`sampling.canvas` as
- * `'all'` or `undefined`) replays raw canvas API calls verbatim and has no
- * way to redact anything.
- *
- * If canvas masking is configured but sampling stays in mutation mode, the
- * masking is silently bypassed. To make that impossible, canvas masking
- * being configured always forces numeric FPS sampling.
+ * Only the FPS/OffscreenCanvas capture path can redact pixels; the mutation
+ * command-stream path replays raw canvas calls verbatim. So a configured
+ * canvas masking provider always forces numeric FPS sampling -- otherwise
+ * masking would be silently bypassed. See guide.md's "Canvas masking".
  */
 export function resolveCanvasSampling(
   requestedSampling: number | 'all' | undefined,
