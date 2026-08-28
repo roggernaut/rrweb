@@ -416,9 +416,8 @@ export function isProtectedInput(element: HTMLElement): boolean {
   if (type === 'password' || type === 'hidden') {
     return true;
   }
-  // `autocomplete` is empty on the overwhelming majority of inputs, and a
-  // single token on nearly all of the rest -- so bail, then try the whole
-  // value against the set, and only split when there is something to split.
+  // Bail on empty, then try the whole value before splitting -- both are the
+  // common case for `autocomplete`.
   const autocomplete = input.autocomplete;
   if (!autocomplete) return false;
   const lower = autocomplete.toLowerCase();
@@ -430,15 +429,10 @@ export function isProtectedInput(element: HTMLElement): boolean {
 }
 
 /**
- * Single entry point for input value masking. Composes:
- * - protected inputs (password/hidden/cc-* autocomplete): always masked,
- *   regardless of everything else.
- * - legacy `maskInputOptions`: mask iff the tag/type opts in; `maskInputFn`
- *   output (if provided) is trusted verbatim, matching pre-v2 behavior.
- * - balanced/strict privacy presets (`privacy.maskAllInputs`): always mask,
- *   shape-free. If `maskInputFn` is provided its output length is kept but
- *   its content is discarded and star-replaced -- the fn controls length
- *   only, never leaks real content.
+ * Single entry point for input value masking: protected inputs always mask;
+ * otherwise legacy `maskInputOptions` or an active preset decides, and under
+ * the preset a supplied `maskInputFn`'s output is star-replaced (length
+ * only, never content).
  */
 export function maskInput({
   element,

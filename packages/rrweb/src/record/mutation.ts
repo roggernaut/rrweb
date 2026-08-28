@@ -190,18 +190,13 @@ export default class MutationBuffer {
   private blockSelector: observerParam['blockSelector'];
   private maskTextClass: observerParam['maskTextClass'];
   private maskTextSelector: observerParam['maskTextSelector'];
-  /**
   /** Backing store for the `splitMaskTextSelector` getter below. */
   private splitMaskTextSelectorCache: MaskTextSelector | null = null;
   /**
    * `maskTextSelector` split into its `'*'` mask-everything default and its
-   * explicit selectors.
-   *
-   * Always *derived* from the raw selector, never assigned: an unset or stale
-   * field would default to "no mask selectors at all", and reaching `emit()`
-   * without having gone through `processMutations` -- which `unfreeze()` and
-   * `unlock()` both do -- would then fail open. The raw selector is fixed for
-   * the buffer's lifetime, so one derivation per `init()` is enough.
+   * explicit selectors. Always derived, never assigned: a stale/unset field
+   * would fail open to "no mask selectors" if `emit()` runs outside
+   * `processMutations` (via `unfreeze()`/`unlock()`).
    */
   private get splitMaskTextSelector(): MaskTextSelector {
     return (this.splitMaskTextSelectorCache ??= splitMaskAllSelector(

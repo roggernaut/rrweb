@@ -433,6 +433,46 @@ record({
 });
 ```
 
+##### Migrating to Privacy at Capture
+
+Breaking changes versus pre-2.0 masking, for anyone upgrading:
+
+- `needMaskingText` and `serializeNodeWithId` (from `rrweb-snapshot`) take the
+  mask-text selector pre-split (`{maskAll, selector}`, from the exported
+  `splitMaskAllSelector`) instead of a raw string; both still accept a raw
+  string or `null` and coerce it, so an unmigrated caller keeps masking
+  rather than silently matching nothing.
+- `<style>` text inside masked subtrees is never masked, on any path: CSS is
+  never masked.
+- `maskInputFn` output is star-replaced under `balanced`/`strict` (length
+  only, never content); `maskAttributeFn` output is policy-final and mutually
+  exclusive with `maskAllElementAttributes` (the latter wins, with a one-time
+  warning).
+- `password`/`hidden` inputs and autocomplete `cc-*`/`current-password`/
+  `new-password`/`one-time-code` fields are now always masked regardless of
+  `maskInputOptions`; previously some could record raw under `legacy`.
+- An invalid `maskTextSelector`/`unmaskTextSelector`/`blockSelector` is now
+  dropped with a `console.warn` at setup instead of silently ignored.
+- Same-element mask/unmask ties now resolve to masking (previously unmask
+  won).
+- Unmasking recognizes only `.rr-unmask`, `data-privacy="allow"`, and
+  explicit policy/`record()` selectors; no foreign vendor unmask class is
+  ever honored (a page author's mask decision is never overridden by a
+  convention rrweb cannot verify).
+- Masking a form value also suppresses a `<select>` option's `selected` flag,
+  via the new exported `shouldMaskInput` predicate.
+- `maskInputValue` is deprecated in favor of `maskInput`.
+- `canvasMasking` only forces the FPS capture path when masking is actually
+  in force; `record()` no longer mutates the `sampling` object it was passed
+  and no longer re-exports `resolveCanvasSampling`.
+- `rrweb-snapshot`'s privacy types are re-exports from `@rrweb/types`, the new
+  source of truth; `rrweb-snapshot`'s public type surface is unchanged.
+- `ImageBitmapDataURLWorkerParams` (`@rrweb/types`) is now a union; privacy
+  rule `style`/`classification`, heuristic detectors, and the `'custom'`
+  preset are removed from the policy schema. Heuristic detectors return as
+  an opt-in `@rrweb/rrweb-plugin-privacy-detectors` package in a follow-up
+  change.
+
 #### Checkout
 
 By default, all the emitted events are required to replay a session and if you do not want to store all the events, you can use the checkout config.
