@@ -50,17 +50,17 @@ record({
 });
 ```
 
-If `privacyPolicy` is omitted, the plugin keeps the `legacy` preset (existing
+If `privacyPolicy` is omitted, the plugin keeps the `manual` preset (existing
 `maskTextFn` / `maskInputOptions` behavior) -- and still detects: detection is
 independent of preset, so a bare `record({ plugins: [getRecordPrivacyDetectorsPlugin()] })`
 with no `privacyPolicy` at all masks any page text node a detector matches,
 at snapshot time and on live text mutations, on top of whatever `maskTextFn`
 already does. Detectors only inspect text that would otherwise be recorded
-unmasked: where a legacy option already masks (e.g. a trusted `maskTextFn`
+unmasked: where a manual option already masks (e.g. a trusted `maskTextFn`
 composition), that output is kept as-is.
 
 Input values are the exception to "independent of preset": the plugin's
-policy compiles to `maskAllInputs: true` even on a `legacy` base, so form
+policy compiles to `maskAllInputs: true` even on a `manual` base, so form
 values are occluded to length regardless of what you configured.
 
 For snapshot-only use (no recorder):

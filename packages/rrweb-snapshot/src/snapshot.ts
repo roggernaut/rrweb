@@ -1422,10 +1422,10 @@ function snapshot(
   const {
     mirror = new Mirror(),
     blockClass = 'rr-block',
-    blockSelector: legacyBlockSelector = null,
+    blockSelector: manualBlockSelector = null,
     maskTextClass = 'rr-mask',
-    maskTextSelector: legacyMaskTextSelector = null,
-    unmaskTextSelector: legacyUnmaskTextSelector = null,
+    maskTextSelector: manualMaskTextSelector = null,
+    unmaskTextSelector: manualUnmaskTextSelector = null,
     inlineStylesheet = true,
     inlineImages = false,
     recordCanvas = false,
@@ -1455,9 +1455,9 @@ function snapshot(
   } = resolvePrivacyContext({
     privacy: compiledPrivacy,
     privacyPolicy,
-    blockSelector: legacyBlockSelector,
-    maskTextSelector: legacyMaskTextSelector,
-    unmaskTextSelector: legacyUnmaskTextSelector,
+    blockSelector: manualBlockSelector,
+    maskTextSelector: manualMaskTextSelector,
+    unmaskTextSelector: manualUnmaskTextSelector,
   });
   // Resolved per document: the same (unresolved) policy is also threaded into
   // nested iframe documents, where a currently-absent selector may match.

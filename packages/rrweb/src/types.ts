@@ -67,7 +67,7 @@ export type recordOptions<T> = {
   maskAttributeFn?: MaskAttributeFn;
   /**
    * Opt-in, versioned privacy policy. Existing masking options continue to
-   * provide the legacy baseline and are compiled alongside this policy.
+   * provide the manual baseline and are compiled alongside this policy.
    */
   privacyPolicy?: PrivacyPolicy;
   slimDOMOptions?: SlimDOMOptions | 'all' | true;

@@ -79,12 +79,12 @@ function record<T = eventWithTime>(
     checkoutEveryNms,
     checkoutEveryNth,
     blockClass = 'rr-block',
-    blockSelector: legacyBlockSelector = null,
+    blockSelector: manualBlockSelector = null,
     ignoreClass = 'rr-ignore',
     ignoreSelector = null,
     maskTextClass = 'rr-mask',
-    maskTextSelector: legacyMaskTextSelector = null,
-    unmaskTextSelector: legacyUnmaskTextSelector = null,
+    maskTextSelector: manualMaskTextSelector = null,
+    unmaskTextSelector: manualUnmaskTextSelector = null,
     inlineStylesheet = true,
     maskAllInputs,
     maskInputOptions: _maskInputOptions,
@@ -138,12 +138,12 @@ function record<T = eventWithTime>(
   }
   const { privacy, blockSelector, maskTextSelector } = resolvePrivacyContext({
     privacy: compiledPrivacy,
-    blockSelector: legacyBlockSelector,
-    maskTextSelector: legacyMaskTextSelector,
-    unmaskTextSelector: legacyUnmaskTextSelector,
+    blockSelector: manualBlockSelector,
+    maskTextSelector: manualMaskTextSelector,
+    unmaskTextSelector: manualUnmaskTextSelector,
   });
   // Strict stays fail-closed for the whole canvas; region providers apply
-  // only to balanced/legacy, where the application owns region completeness.
+  // only to balanced/manual, where the application owns region completeness.
   const recordCanvas = requestedRecordCanvas && !privacy.blockMedia;
   const canvasMaskingConfigured = canvasMasking
     ? () => isCanvasMaskingConfigured(canvasMasking)

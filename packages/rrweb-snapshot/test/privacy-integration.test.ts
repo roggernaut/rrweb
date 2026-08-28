@@ -122,10 +122,10 @@ describe('text masking v2', () => {
     expect(out).not.toContain('hidden');
   });
 
-  it('detectors mask the whole text node under legacy when configured', () => {
+  it('detectors mask the whole text node under manual when configured', () => {
     const withDetectors: PrivacyPolicy = {
       version: 1,
-      preset: 'legacy',
+      preset: 'manual',
       detectors: { paymentCard: true, phone: true },
     };
     const out = serialize(
@@ -138,7 +138,7 @@ describe('text masking v2', () => {
   it('detectors occlude every input value at snapshot time, clean or not', () => {
     const withDetectors: PrivacyPolicy = {
       version: 1,
-      preset: 'legacy',
+      preset: 'manual',
       detectors: { email: true },
     };
     const out = serialize(
@@ -157,7 +157,7 @@ describe('text masking v2', () => {
   it('an unmask rule cannot reveal an input value while detectors are on', () => {
     const withDetectors: PrivacyPolicy = {
       version: 1,
-      preset: 'legacy',
+      preset: 'manual',
       detectors: { email: true },
       rules: [
         {
@@ -210,7 +210,7 @@ describe('text masking v2', () => {
     expect(out).not.toContain('secret');
   });
 
-  it('legacy without detectors leaves text untouched', () => {
+  it('manual without detectors leaves text untouched', () => {
     expect(serialize('<p>bob@example.com</p>', undefined)).toContain(
       'bob@example.com',
     );
@@ -219,7 +219,7 @@ describe('text masking v2', () => {
 
 describe('maskInput v2', () => {
   const balanced = compilePrivacyPolicy({ version: 1, preset: 'balanced' });
-  const legacy = compilePrivacyPolicy(undefined);
+  const manual = compilePrivacyPolicy(undefined);
   const input = (attrs = '') => {
     document.body.innerHTML = `<input ${attrs} value="4111 1111 1111 1111">`;
     return document.querySelector('input') as HTMLInputElement;
@@ -247,7 +247,7 @@ describe('maskInput v2', () => {
     });
     expect(out).toBe('*'.repeat('[redacted]'.length));
   });
-  it('legacy + maskInputFn trusted verbatim when legacy options mask', () => {
+  it('manual + maskInputFn trusted verbatim when manual options mask', () => {
     const out = maskInput({
       element: input(),
       tagName: 'input',
@@ -255,11 +255,11 @@ describe('maskInput v2', () => {
       value: 'secret',
       maskInputOptions: { text: true },
       maskInputFn: () => '[redacted]',
-      privacy: legacy,
+      privacy: manual,
     });
     expect(out).toBe('[redacted]');
   });
-  it('legacy without options passes value through', () => {
+  it('manual without options passes value through', () => {
     expect(
       maskInput({
         element: input(),
@@ -267,14 +267,14 @@ describe('maskInput v2', () => {
         type: 'text',
         value: 'plain',
         maskInputOptions: {},
-        privacy: legacy,
+        privacy: manual,
       }),
     ).toBe('plain');
   });
   it('detectors occlude every input value to length, matched or not', () => {
     const withDetectors = compilePrivacyPolicy({
       version: 1,
-      preset: 'legacy',
+      preset: 'manual',
       detectors: { email: true },
     });
     expect(withDetectors.maskAllInputs).toBe(true);
@@ -302,7 +302,7 @@ describe('maskInput v2', () => {
   it('every keystroke prefix is occluded at its own length', () => {
     const withDetectors = compilePrivacyPolicy({
       version: 1,
-      preset: 'legacy',
+      preset: 'manual',
       detectors: { paymentCard: true },
     });
     const card = '4111111111111111';
@@ -322,7 +322,7 @@ describe('maskInput v2', () => {
   it('a maskInputFn controls length only while detectors are on', () => {
     const withDetectors = compilePrivacyPolicy({
       version: 1,
-      preset: 'legacy',
+      preset: 'manual',
       detectors: { email: true },
     });
     expect(
@@ -337,7 +337,7 @@ describe('maskInput v2', () => {
       }),
     ).toBe('*'.repeat('[redacted]'.length));
   });
-  it('protected inputs always mask, even legacy with no options', () => {
+  it('protected inputs always mask, even manual with no options', () => {
     expect(
       maskInput({
         element: input('type="password"'),
@@ -345,7 +345,7 @@ describe('maskInput v2', () => {
         type: 'password',
         value: 'pw',
         maskInputOptions: {},
-        privacy: legacy,
+        privacy: manual,
       }),
     ).toBe('**');
     expect(isProtectedInput(input('autocomplete="cc-number"'))).toBe(true);
@@ -355,7 +355,7 @@ describe('maskInput v2', () => {
 describe('finalizeAttribute', () => {
   const strict = compilePrivacyPolicy({ version: 1, preset: 'strict' });
   const balanced = compilePrivacyPolicy({ version: 1, preset: 'balanced' });
-  const legacy = compilePrivacyPolicy({ version: 1, preset: 'legacy' });
+  const manual = compilePrivacyPolicy({ version: 1, preset: 'manual' });
 
   const el = (
     html = '<img title="Bob" style="color:red" src="https://u:p@a.com/i.png?token=t">',
@@ -414,7 +414,7 @@ describe('finalizeAttribute', () => {
         element: el(),
         name: 'aria-label',
         value: 'Bob',
-        privacy: legacy,
+        privacy: manual,
       }),
     ).toBe('Bob');
   });
@@ -617,7 +617,7 @@ describe('finalizeAttribute', () => {
         element: el('<div data-privacy="allow" title="x"></div>', 'div'),
         name: 'title',
         value: 'x',
-        privacy: legacy,
+        privacy: manual,
         maskAttributeFn,
       });
       expect(maskAttributeFn).toHaveBeenCalledTimes(1);
@@ -922,14 +922,14 @@ describe('finalizeAttribute', () => {
         maskAttributeFn: () => '[MASKED]',
       }),
     ).toBe('*'.repeat('[MASKED]'.length));
-    // Under legacy the policy block is the identity, so the callback's output
+    // Under manual the policy block is the identity, so the callback's output
     // survives verbatim.
     expect(
       finalizeAttribute({
         element: el(),
         name: 'title',
         value: 'Bob',
-        privacy: legacy,
+        privacy: manual,
         maskAttributeFn: () => '[MASKED]',
       }),
     ).toBe('[MASKED]');
@@ -996,7 +996,7 @@ describe('finalizeAttribute', () => {
         element: el(),
         name: 'data-x',
         value: 'Bob',
-        privacy: legacy,
+        privacy: manual,
         maskAttributeFn: () => undefined as unknown as string,
       }),
     ).toBe('***');
@@ -1118,23 +1118,23 @@ describe('<option selected> follows the select value decision', () => {
 
   /**
    * Detectors force `maskAllInputs` whatever the preset, so the flag has to
-   * follow even on a `legacy` base.
+   * follow even on a `manual` base.
    */
-  it('an active detector suppresses it even under legacy', () => {
+  it('an active detector suppresses it even under manual', () => {
     const out = serialize(OPTIONS, {
       version: 1,
-      preset: 'legacy',
+      preset: 'manual',
       detectors: { email: true },
     });
     expect(out).not.toContain('"selected"');
   });
 
-  it('legacy with no input masking still records it', () => {
-    const out = serialize(OPTIONS, { version: 1, preset: 'legacy' });
+  it('manual with no input masking still records it', () => {
+    const out = serialize(OPTIONS, { version: 1, preset: 'manual' });
     expect(out).toContain('"selected":true');
   });
 
-  it('legacy honors maskInputOptions.select exactly as before', () => {
+  it('manual honors maskInputOptions.select exactly as before', () => {
     document.body.innerHTML = OPTIONS;
     const out = JSON.stringify(
       snapshot(document, { maskAllInputs: { select: true } }),

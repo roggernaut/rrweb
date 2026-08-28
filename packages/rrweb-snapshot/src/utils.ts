@@ -431,7 +431,7 @@ export function maskInput({
   const presetWantsMask = !!privacy && privacy.maskAllInputs;
   if (
     !presetWantsMask &&
-    !legacyWantsInputMask(tagName, type, maskInputOptions)
+    !manualWantsInputMask(tagName, type, maskInputOptions)
   )
     return value;
 
@@ -456,13 +456,13 @@ export function shouldMaskInput({
 }): boolean {
   return (
     (!!privacy && privacy.maskAllInputs) ||
-    legacyWantsInputMask(tagName, type, maskInputOptions) ||
+    manualWantsInputMask(tagName, type, maskInputOptions) ||
     isProtectedInput(element)
   );
 }
 
 /** Whether the pre-v2 `maskInputOptions` bag opts this tag or input type in. */
-export function legacyWantsInputMask(
+export function manualWantsInputMask(
   tagName: string,
   type: string | null,
   maskInputOptions: MaskInputOptions,

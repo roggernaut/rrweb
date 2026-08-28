@@ -56,7 +56,7 @@ describe('privacy detectors plugin', () => {
     const plugin = getRecordPrivacyDetectorsPlugin();
     expect(plugin.applyPrivacyPolicy?.(undefined)).toMatchObject({
       version: 1,
-      preset: 'legacy',
+      preset: 'manual',
       detectors: {
         email: true,
         phone: true,
@@ -67,16 +67,16 @@ describe('privacy detectors plugin', () => {
     });
   });
 
-  it('plugin with no user policy yields a legacy policy whose compiled detectors are active', () => {
+  it('plugin with no user policy yields a manual policy whose compiled detectors are active', () => {
     const plugin = getRecordPrivacyDetectorsPlugin();
     const policy = plugin.applyPrivacyPolicy!(undefined) as PrivacyPolicy;
-    expect(policy.preset).toBe('legacy');
+    expect(policy.preset).toBe('manual');
     const compiled = compilePrivacyPolicy(policy);
     expect(compiled.detectors.length).toBeGreaterThan(0);
     expect(detectSensitiveValue('bob@example.com', compiled)).toBe(true);
   });
 
-  it.each(['legacy', 'balanced', 'strict'] as const)(
+  it.each(['manual', 'balanced', 'strict'] as const)(
     'forces maskAllInputs on a %s base policy',
     (preset) => {
       const plugin = getRecordPrivacyDetectorsPlugin();
@@ -96,7 +96,7 @@ describe('privacy detectors plugin', () => {
     const plugin = getRecordPrivacyDetectorsPlugin();
     const policy = plugin.applyPrivacyPolicy!({
       version: 1,
-      preset: 'legacy',
+      preset: 'manual',
       rules: [
         {
           target: { type: 'selector', selector: '.rr-unmask' },

@@ -21,7 +21,7 @@ export { applyPrivacyDetectors, DEFAULT_PRIVACY_DETECTORS };
  *
  * Input values are never scanned. The policy this plugin produces compiles
  * to `maskAllInputs: true` whatever preset it started from -- including a
- * bare `legacy` base -- so every input value is occluded to its length while
+ * bare `manual` base -- so every input value is occluded to its length while
  * the plugin is loaded. The forcing is driven by the compiled detector set,
  * so disabling every detector flag compiles to no detectors and lifts the
  * occlusion as well. Scanning a value as it is typed would record every
@@ -40,7 +40,7 @@ export const getRecordPrivacyDetectorsPlugin: (
     applyPrivacyPolicy(policy) {
       const portable = (policy as PrivacyPolicy | undefined) || {
         version: 1 as const,
-        preset: 'legacy' as const,
+        preset: 'manual' as const,
       };
       return applyPrivacyDetectors(portable, _options);
     },

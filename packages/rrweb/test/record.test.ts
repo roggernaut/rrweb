@@ -135,7 +135,7 @@ describe('record', function (this: ISuite) {
       record({
         emit: (window as unknown as IWindow).emit,
         // `data-privacy` selectors are part of the v2 presets; a recording
-        // with no policy at all stays on legacy semantics by design.
+        // with no policy at all stays on manual semantics by design.
         privacyPolicy: { version: 1, preset: 'balanced' },
       });
 
@@ -177,7 +177,7 @@ describe('record', function (this: ISuite) {
             applyPrivacyPolicy(policy) {
               const portable = (policy as { version: 1; preset: string }) || {
                 version: 1,
-                preset: 'legacy',
+                preset: 'manual',
               };
               return {
                 ...portable,

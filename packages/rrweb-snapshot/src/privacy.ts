@@ -15,7 +15,7 @@ const VENDOR_MASK_CLASSES =
 const RRWEB_UNMASK_CLASS = '.rr-unmask';
 const VENDOR_BLOCK_CLASSES =
   '.rr-block,.mp-block,.fs-exclude,.amp-block,.ph-no-capture,.sentry-block,.dd-privacy-hidden,[data-dd-privacy="hidden"],.nr-block,[data-nr-block]';
-const PRIVACY_PRESETS = new Set(['strict', 'balanced', 'legacy']);
+const PRIVACY_PRESETS = new Set(['strict', 'balanced', 'manual']);
 const MASKED_ATTRIBUTE_DEFAULTS = ['title', 'placeholder', 'aria-label'];
 
 const CSS_ATTRIBUTES = new Set(['style', '_csstext']);
@@ -109,7 +109,7 @@ export function applyPrivacyDetectors(
   policy: PrivacyPolicy | undefined,
   options?: PrivacyDetectorOptions,
 ): PrivacyPolicy {
-  const base: PrivacyPolicy = policy || { version: 1, preset: 'legacy' };
+  const base: PrivacyPolicy = policy || { version: 1, preset: 'manual' };
   return {
     ...base,
     detectors: {
@@ -304,7 +304,7 @@ function joinSelectors(
 export function compilePrivacyPolicy(
   policy?: PrivacyPolicy,
 ): CompiledPrivacyPolicy {
-  const effective: PrivacyPolicy = policy || { version: 1, preset: 'legacy' };
+  const effective: PrivacyPolicy = policy || { version: 1, preset: 'manual' };
   if (effective.version !== 1)
     throw new Error(
       `Unsupported Privacy at Capture policy version: ${String(
@@ -314,12 +314,12 @@ export function compilePrivacyPolicy(
   if (!PRIVACY_PRESETS.has(effective.preset))
     throw new Error(`Unsupported privacy preset: ${String(effective.preset)}`);
   const preset = effective.preset;
-  const nonLegacy = preset !== 'legacy';
+  const managed = preset !== 'manual';
   const detectors = buildDetectors(effective.detectors);
-  const maskAllInputs = nonLegacy || detectors.length > 0;
-  const maskedAttributes = new Set(nonLegacy ? MASKED_ATTRIBUTE_DEFAULTS : []);
+  const maskAllInputs = managed || detectors.length > 0;
+  const maskedAttributes = new Set(managed ? MASKED_ATTRIBUTE_DEFAULTS : []);
   const blockMedia = preset === 'strict';
-  const sanitizeUrls = nonLegacy;
+  const sanitizeUrls = managed;
 
   const bySelector = {
     mask: [] as string[],
@@ -341,7 +341,7 @@ export function compilePrivacyPolicy(
 
   return {
     preset,
-    maskTextSelector: nonLegacy
+    maskTextSelector: managed
       ? preset === 'strict'
         ? '*'
         : joinSelectors([
@@ -355,12 +355,12 @@ export function compilePrivacyPolicy(
             : [],
         ),
     unmaskTextSelector: joinSelectors(
-      nonLegacy
+      managed
         ? ['[data-privacy="allow"]', RRWEB_UNMASK_CLASS, ...bySelector.unmask]
         : bySelector.unmask,
     ),
     blockSelector: joinSelectors(
-      nonLegacy
+      managed
         ? [
             '[data-privacy="exclude"]',
             VENDOR_BLOCK_CLASSES,
@@ -394,10 +394,10 @@ export function compilePrivacyPolicy(
 
 /** Validates and merges a `record()`-level selector with the compiled policy's; invalid fragments are dropped with a warning. */
 export function mergeSelectors(
-  legacySelector: string | null | undefined,
+  manualSelector: string | null | undefined,
   compiledSelector: string | null | undefined,
 ): string | null {
-  return joinSelectors([legacySelector, compiledSelector]);
+  return joinSelectors([manualSelector, compiledSelector]);
 }
 
 /** The privacy state one recording pass (or one `snapshot()` call) runs on. */

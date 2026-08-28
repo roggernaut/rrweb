@@ -320,7 +320,7 @@ export type PrivacyPolicy = {
   url?: PrivacyUrlOptions;
 };
 
-export type PrivacyPreset = 'strict' | 'balanced' | 'legacy';
+export type PrivacyPreset = 'strict' | 'balanced' | 'manual';
 
 /** `unmask` is an alias of `allow`. */
 export type PrivacyAction = 'allow' | 'unmask' | 'mask' | 'exclude';
@@ -375,7 +375,7 @@ export type CompiledPrivacyPolicy = {
   attributePolicyInert: boolean;
   /** true under strict; the `strict` preset alias every media gate reads */
   blockMedia: boolean;
-  /** true under balanced/strict; the non-legacy preset alias */
+  /** true under balanced/strict; the managed preset alias */
   sanitizeUrls: boolean;
   /** precomputed, lowercased */
   blockedQueryParameters: Set<string>;

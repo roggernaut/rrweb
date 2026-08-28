@@ -185,7 +185,7 @@ The `record` function accepts the following options.
 | maskInputOptions         | { password: true } | mask some kinds of input \*<br />refer to the [list](https://github.com/rrweb-io/rrweb/blob/588164aa12f1d94576f89ae0210b98f6e971c895/packages/rrweb-snapshot/src/types.ts#L77-L95)                           |
 | maskInputFn              | -                  | customize mask input content recording logic                                                                                                                                                                 |
 | maskTextFn               | -                  | customize mask text content recording logic                                                                                                                                                                  |
-| privacyPolicy            | -                  | apply a versioned `strict`, `balanced`, or `legacy` privacy policy before values are emitted, refer to the [privacy](#privacy) chapter                                                                       |
+| privacyPolicy            | -                  | apply a versioned `strict`, `balanced`, or `manual` privacy policy before values are emitted, refer to the [privacy](#privacy) chapter                                                                       |
 | slimDOMOptions           | {}                 | remove unnecessary parts of the DOM <br />refer to the [list](https://github.com/rrweb-io/rrweb/blob/588164aa12f1d94576f89ae0210b98f6e971c895/packages/rrweb-snapshot/src/types.ts#L97-L108)                 |
 | dataURLOptions           | {}                 | Canvas image format and quality ,This parameter will be passed to the OffscreenCanvas.convertToBlob(),Using this parameter effectively reduces the size of the recorded data                                 |
 | inlineStylesheet         | true               | Deprecated since 2.0.0. Still supported, but planned to be superseded by future `captureAssets` asset recording APIs.                                                                                        |
@@ -207,7 +207,7 @@ The `record` function accepts the following options.
 #### Privacy
 
 The existing rrweb masking options are always available and are exactly what
-you get by default (the `legacy` preset, below):
+you get by default (the `manual` preset, below):
 
 - An element with the class name `.rr-block` will not be recorded. Instead, it will replay as a placeholder with the same dimension.
 - An element with the class name `.rr-ignore` will not record its input events.
@@ -251,9 +251,14 @@ record({
 
 | preset             | behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `legacy` (default) | Inert: only the existing masking options above apply. `rules` still work (below), but the `data-privacy` attribute and cross-vendor class recognition described below are off.                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `manual` (default) | Inert: only the existing masking options above apply. `rules` still work (below), but the `data-privacy` attribute and cross-vendor class recognition described below are off.                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | `balanced`         | Masks every input value (like `maskAllInputs: true`); masks the `title`, `placeholder`, and `aria-label` attributes on every element; sanitizes URLs -- strips `username`/`password` (userinfo), removes the value of any query parameter in a default sensitive list (`access_token`, `auth`, `code`, `key`, `password`, `secret`, `session`, `token`) plus any configured `url.blockedQueryParameters`, and removes the hash unless `url.removeHash: false`. Query parameter names stay visible. Page text is untouched.                                                                                                                          |
 | `strict`           | Everything `balanced` does, plus: all page text is masked; media element sources (`<img>`, `<video>`, `<audio>`, `<iframe>`, `<embed>`, `<object>`, `<source>`) are dropped instead of captured, except that an `<img>` source or `<video>` poster on an element with declared integer `width`/`height` attributes is replaced by a neutral same-size placeholder image so the surrounding layout does not collapse; canvas recording is disabled outright, even with a `canvasMasking` adapter configured; and URL sanitization blocks _every_ query parameter's value unless you also set `url.allowedQueryParameters` to an explicit allow-list. |
+
+`manual` is a permanent tier, not a transitional one: it is masking you
+configure yourself, through the classic options above. Passwords and
+payment fields are always masked regardless of preset or configuration.
+`balanced` and `strict` are the managed presets.
 
 Masking an input value also suppresses the `selected` flag on the
 `<option>` elements of a `<select>`: which option is selected discloses the
@@ -297,10 +302,10 @@ somewhere else.
 `data-privacy` values are case-sensitive; an unknown value makes no decision
 and the element inherits from its nearest valid ancestor.
 
-> Under `legacy`, `data-privacy="mask"`/`data-privacy="exclude"` are each
+> Under `manual`, `data-privacy="mask"`/`data-privacy="exclude"` are each
 > only recognized once you also supply at least one selector-based `mask`/
 > `exclude` rule (of that same action) in `rules`; `data-privacy="allow"` is
-> never recognized under `legacy`, with or without rules. This asymmetry is a
+> never recognized under `manual`, with or without rules. This asymmetry is a
 > corner of the current implementation, not something to design around --
 > switch to `balanced`/`strict` for unconditional `data-privacy` support.
 
@@ -312,7 +317,7 @@ those, declare the same intent by selector in the policy.
 
 Rules (`rules: [{ target: { type: 'selector', selector }, action }]`) accept
 `mask`, `unmask` (an alias of `allow`), or `exclude`, and work under every
-preset, including `legacy`. For text, the nearest matching ancestor decides,
+preset, including `manual`. For text, the nearest matching ancestor decides,
 walking from the node up to the document root; if the very same element
 matches both a mask and an unmask selector, **mask** wins there (the same
 tie-break Sentry, Amplitude and Mixpanel use). `exclude`
@@ -323,7 +328,7 @@ Protected inputs -- password, hidden, and autocomplete `cc-*` /
 masked, regardless of any rule or preset. This holds even with no
 `privacyPolicy` configured at all, and regardless of `maskInputOptions` --
 these fields cannot be opted back into raw recording. (Previously, under
-`legacy`, `hidden` inputs and autocomplete-tagged credit-card/password/OTP
+`manual`, `hidden` inputs and autocomplete-tagged credit-card/password/OTP
 fields could record their raw value; that is a breaking change from pre-v2
 behavior.)
 
@@ -358,7 +363,7 @@ tokens come from `newrelic-browser-agent src/common/config/init.js`
 (`[data-nr-mask]`, `nr-mask`, `nr-block`, `[data-nr-block]`; `nr-unmask`/
 `nr-ignore` are deliberately excluded for the same reason).
 
-(`.rr-mask` and `.rr-block` also work under `legacy`, through the existing
+(`.rr-mask` and `.rr-block` also work under `manual`, through the existing
 `maskTextClass`/`blockClass` options above -- the rest of this list is new in
 `balanced`/`strict`.)
 
@@ -400,15 +405,15 @@ helper), which masks the whole text node when a detector matches -- there is
 no character-range masking and no support for custom detector patterns.
 Detection scans **page text only**, at snapshot time and on later live text
 mutations. It only applies to text that would otherwise be recorded unmasked
--- text already masked by a preset, selector, or legacy option keeps that
-masking (including a trusted legacy `maskTextFn` output). Attribute values
+-- text already masked by a preset, selector, or manual option keeps that
+masking (including a trusted manual `maskTextFn` output). Attribute values
 are not scanned; use the presets' masked-attribute defaults or policy rules
 for those.
 
 Input values are never scanned. Instead, **while detectors are active every
 input value is occluded to its length** (`'*'.repeat(value.length)`),
 whatever the preset -- the plugin's policy compiles to `maskAllInputs: true`
-even on a `legacy` base, and no unmask escape reopens it: neither
+even on a `manual` base, and no unmask escape reopens it: neither
 `unmaskTextSelector`, nor a policy `unmask`/`allow` rule, nor `.rr-unmask`
 reveals an input value. Scanning one would be worse than useless: a value is
 re-examined on every input event, so a card number is recorded verbatim in
@@ -431,7 +436,7 @@ record({
 ```
 
 Once loaded, text detection runs independently of the active preset --
-including `legacy` -- on top of whatever masking that preset already applies,
+including `manual` -- on top of whatever masking that preset already applies,
 and input occlusion is unconditional.
 
 ##### Attribute and input masking callbacks
@@ -442,12 +447,12 @@ targeted escape hatch. `maskAllElementAttributes` and `maskAttributeFn` are
 mutually exclusive: if both are supplied, `maskAllElementAttributes` wins and
 `maskAttributeFn` is ignored, with a one-time console warning. A throwing
 `maskAttributeFn` fails closed to stars rather than leaking the original
-value. Under `legacy`, `maskAttributeFn`'s return value is used as-is; under
+value. Under `manual`, `maskAttributeFn`'s return value is used as-is; under
 `balanced`/`strict` the compiled policy still runs on top of it (URL
 sanitization, `title`/`placeholder`/`aria-label` masking, ...) and can only
 narrow what the callback chose to keep, never restore something the policy
 would otherwise mask. `style`/`_cssText` are exempt from all of this.
-Likewise, under `legacy`, `maskInputFn`'s return value is trusted verbatim;
+Likewise, under `manual`, `maskInputFn`'s return value is trusted verbatim;
 under `balanced`/`strict` -- or with the detectors plugin loaded, which forces
 the same posture -- `maskInputFn` output is star-replaced: the callback
 controls length, never content.
@@ -496,7 +501,7 @@ Breaking changes versus pre-2.0 masking, for anyone upgrading:
   warning).
 - `password`/`hidden` inputs and autocomplete `cc-*`/`current-password`/
   `new-password`/`one-time-code` fields are now always masked regardless of
-  `maskInputOptions`; previously some could record raw under `legacy`.
+  `maskInputOptions`; previously some could record raw under `manual`.
 - An invalid `maskTextSelector`/`unmaskTextSelector`/`blockSelector` is now
   dropped with a `console.warn` at setup instead of silently ignored.
 - Same-element mask/unmask ties now resolve to masking (previously unmask
