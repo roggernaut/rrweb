@@ -8,6 +8,7 @@ import {
   mergeSelectors,
   resolvePrivacyContext,
   splitSelectorList,
+  resolveTextValue,
 } from '../src/privacy';
 import snapshot, {
   needMaskingText,
@@ -15,13 +16,14 @@ import snapshot, {
 } from '../src/snapshot';
 
 describe('compilePrivacyPolicy v2', () => {
-  it('legacy preset compiles to inert options', () => {
+  it('manual preset compiles to inert options', () => {
     const c = compilePrivacyPolicy(undefined);
-    expect(c.preset).toBe('legacy');
+    expect(c.preset).toBe('manual');
     expect(c.maskTextSelector).toBeNull();
     expect(c.blockSelector).toBeNull();
     expect(c.maskAllInputs).toBe(false);
     expect([...c.maskedAttributes]).toEqual([]);
+    expect(c.attributePolicyInert).toBe(true);
   });
   it('balanced masks inputs and attributes but not text', () => {
     const c = compilePrivacyPolicy({ version: 1, preset: 'balanced' });
@@ -32,41 +34,46 @@ describe('compilePrivacyPolicy v2', () => {
       'aria-label',
     ]);
     expect(c.maskTextSelector).not.toContain('*');
-    expect(c.maskTextSelector).toContain('[data-privacy="mask"]');
-    expect(c.maskTextSelector).toContain('.ph-mask'); // cross-vendor classes
-    expect(c.maskTextSelector).toContain('.dd-privacy-mask'); // Datadog
-    expect(c.maskTextSelector).toContain('[data-nr-mask]'); // New Relic
-    expect(c.blockSelector).toContain('[data-privacy="exclude"]');
-    expect(c.blockSelector).toContain('.dd-privacy-hidden'); // Datadog
-    expect(c.blockSelector).toContain('[data-nr-block]'); // New Relic
+    expect(c.maskTextSelector).toContain('[data-privacy]');
+    expect(c.maskTextSelector).toContain('.rr-mask');
+    expect(c.blockSelector).toContain('[data-privacy="block"]');
+    expect(c.blockSelector).toContain('.rr-block');
+    expect(c.attributePolicyInert).toBe(false);
   });
   it('strict masks all text and blocks media', () => {
     const c = compilePrivacyPolicy({ version: 1, preset: 'strict' });
     expect(c.maskTextSelector).toBe('*');
     expect(c.blockMedia).toBe(true);
   });
-  it('compiles rules into selector lists, unmask as alias of allow', () => {
+  it('compiles rules into selector lists', () => {
     const c = compilePrivacyPolicy({
       version: 1,
       preset: 'balanced',
       rules: [
         { target: { type: 'selector', selector: '.pii' }, action: 'mask' },
         { target: { type: 'selector', selector: '.safe' }, action: 'unmask' },
-        { target: { type: 'selector', selector: '.gone' }, action: 'exclude' },
+        { target: { type: 'selector', selector: '.gone' }, action: 'block' },
       ],
     });
     expect(c.maskTextSelector).toContain('.pii');
     expect(c.unmaskTextSelector).toContain('.safe');
     expect(c.blockSelector).toContain('.gone');
   });
-  it('never grants authority to foreign unmask tokens', () => {
-    const c = compilePrivacyPolicy({ version: 1, preset: 'balanced' });
-    expect(c.unmaskTextSelector).toContain('.rr-unmask');
-    expect(c.unmaskTextSelector).not.toContain('amp-unmask');
-    expect(c.unmaskTextSelector).not.toContain('sentry-unmask');
-    // the mask/block lists stay full cross-vendor compat
-    expect(c.maskTextSelector).toContain('.sentry-mask');
-    expect(c.blockSelector).toContain('.sentry-block');
+  it('rejects a pre-v2 action name outright', () => {
+    for (const action of ['allow', 'exclude']) {
+      expect(() =>
+        compilePrivacyPolicy({
+          version: 1,
+          preset: 'balanced',
+          rules: [
+            {
+              target: { type: 'selector', selector: '.x' },
+              action: action as never,
+            },
+          ],
+        }),
+      ).toThrow(/Unsupported privacy action/);
+    }
   });
   it('drops invalid selectors individually with a warning, keeps the rest', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -76,9 +83,9 @@ describe('compilePrivacyPolicy v2', () => {
       rules: [
         {
           target: { type: 'selector', selector: ':::garbage' },
-          action: 'exclude',
+          action: 'block',
         },
-        { target: { type: 'selector', selector: '.valid' }, action: 'exclude' },
+        { target: { type: 'selector', selector: '.valid' }, action: 'block' },
       ],
     });
     expect(c.blockSelector).toContain('.valid');
@@ -88,7 +95,7 @@ describe('compilePrivacyPolicy v2', () => {
   });
   it('throws on bad version/preset/empty selector', () => {
     expect(() =>
-      compilePrivacyPolicy({ version: 2 as never, preset: 'legacy' }),
+      compilePrivacyPolicy({ version: 2 as never, preset: 'manual' }),
     ).toThrow();
     expect(() =>
       compilePrivacyPolicy({ version: 1, preset: 'custom' as never }),
@@ -102,6 +109,174 @@ describe('compilePrivacyPolicy v2', () => {
     ).toThrow();
   });
 });
+/**
+ * `data-privacy` carries a fixed vocabulary. A value outside it is almost
+ * always a typo or a value from a future version, and in both cases the author
+ * was reaching for protection -- so an unrecognized value masks rather than
+ * making no decision. The compiled mask token is the bare attribute minus the
+ * two values that mean something else, which is what makes this work without
+ * any precedence logic: `[data-privacy="unmask"]` and `[data-privacy="block"]`
+ * are excluded from the mask list by construction, and everything else in the
+ * attribute's value space falls into it.
+ */
+describe('an unrecognized data-privacy value fails closed to mask', () => {
+  const balanced = compilePrivacyPolicy({ version: 1, preset: 'balanced' });
+
+  function matchesMask(html: string): boolean {
+    document.body.innerHTML = html;
+    const el = document.querySelector('#t') as HTMLElement;
+    return el.matches(balanced.maskTextSelector as string);
+  }
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it.each([
+    ['a typo', 'masked'],
+    ['the empty value', ''],
+    ['a value from another vocabulary', 'exclude'],
+    ['the reserved input-only value', 'mask-inputs'],
+    ['a wrong-case spelling', 'Mask'],
+  ])('%s masks', (_name, value) => {
+    expect(matchesMask(`<div id="t" data-privacy="${value}"></div>`)).toBe(
+      true,
+    );
+  });
+
+  it('leaves the two recognized non-mask values out of the mask list', () => {
+    expect(matchesMask('<div id="t" data-privacy="unmask"></div>')).toBe(false);
+    expect(matchesMask('<div id="t" data-privacy="block"></div>')).toBe(false);
+    // ...and they still reach their own lists
+    document.body.innerHTML =
+      '<div id="u" data-privacy="unmask"></div>' +
+      '<div id="b" data-privacy="block"></div>';
+    expect(
+      (document.querySelector('#u') as HTMLElement).matches(
+        balanced.unmaskTextSelector as string,
+      ),
+    ).toBe(true);
+    expect(
+      (document.querySelector('#b') as HTMLElement).matches(
+        balanced.blockSelector as string,
+      ),
+    ).toBe(true);
+  });
+
+  it('recognizes data-privacy="mask" itself', () => {
+    expect(matchesMask('<div id="t" data-privacy="mask"></div>')).toBe(true);
+  });
+
+  it('does not fire on an element with no data-privacy attribute at all', () => {
+    expect(matchesMask('<div id="t"></div>')).toBe(false);
+  });
+
+  it('activates under manual only alongside a mask rule, as before', () => {
+    const bare = compilePrivacyPolicy({ version: 1, preset: 'manual' });
+    expect(bare.maskTextSelector).toBeNull();
+    const withRule = compilePrivacyPolicy({
+      version: 1,
+      preset: 'manual',
+      rules: [{ target: { type: 'selector', selector: '.x' }, action: 'mask' }],
+    });
+    document.body.innerHTML = '<div id="t" data-privacy="typo"></div>';
+    expect(
+      (document.querySelector('#t') as HTMLElement).matches(
+        withRule.maskTextSelector as string,
+      ),
+    ).toBe(true);
+  });
+});
+
+/**
+ * Recognizing another tool's classes changes what rrweb records based on
+ * markup the embedder may not control, so it is an explicit opt-in rather
+ * than a managed-preset default.
+ */
+describe('vendorCompat', () => {
+  const off = compilePrivacyPolicy({ version: 1, preset: 'balanced' });
+  const on = compilePrivacyPolicy({
+    version: 1,
+    preset: 'balanced',
+    vendorCompat: true,
+  });
+
+  it('is off by default: only rrweb-native conventions are merged', () => {
+    expect(off.maskTextSelector).toContain('.rr-mask');
+    expect(off.blockSelector).toContain('.rr-block');
+    expect(off.unmaskTextSelector).toContain('.rr-unmask');
+    for (const foreign of [
+      '.ph-mask',
+      '.mp-mask',
+      '.fs-mask',
+      '.amp-mask',
+      '.sentry-mask',
+      '[data-sentry-mask]',
+      '.dd-privacy-mask',
+      '[data-nr-mask]',
+    ])
+      expect(off.maskTextSelector).not.toContain(foreign);
+    for (const foreign of [
+      '.ph-no-capture',
+      '.mp-block',
+      '.fs-exclude',
+      '.amp-block',
+      '.sentry-block',
+      '.dd-privacy-hidden',
+      '[data-nr-block]',
+    ])
+      expect(off.blockSelector).not.toContain(foreign);
+    expect(off.unmaskTextSelector).not.toContain('amp-unmask');
+  });
+
+  it('merges the foreign mask and block tokens when enabled', () => {
+    expect(on.maskTextSelector).toContain('.ph-mask');
+    expect(on.maskTextSelector).toContain('.dd-privacy-mask'); // Datadog
+    expect(on.maskTextSelector).toContain('[data-nr-mask]'); // New Relic
+    expect(on.maskTextSelector).toContain('.sentry-mask');
+    expect(on.blockSelector).toContain('.dd-privacy-hidden'); // Datadog
+    expect(on.blockSelector).toContain('[data-nr-block]'); // New Relic
+    expect(on.blockSelector).toContain('.sentry-block');
+    // native tokens are still there alongside them
+    expect(on.maskTextSelector).toContain('.rr-mask');
+    expect(on.blockSelector).toContain('.rr-block');
+  });
+
+  /**
+   * The one foreign unmask token rrweb honors, and only under the flag:
+   * enabling compat is a statement that this page was instrumented for
+   * Amplitude, which makes its unmask marker an intentional declaration
+   * rather than a foreign token of unknown provenance. Every other tool's
+   * unmask/allow convention stays unhonored on both settings.
+   */
+  it('honors .amp-unmask only under the flag, and no other foreign unmask', () => {
+    expect(on.unmaskTextSelector).toContain('.amp-unmask');
+    expect(on.unmaskTextSelector).toContain('.rr-unmask');
+    for (const foreign of [
+      '.sentry-unmask',
+      '.dd-privacy-allow',
+      '[data-dd-privacy="allow"]',
+      '.nr-unmask',
+      '.ph-no-mask',
+      '.fs-unmask',
+      '.mp-unmask',
+    ]) {
+      expect(on.unmaskTextSelector).not.toContain(foreign);
+      expect(off.unmaskTextSelector).not.toContain(foreign);
+    }
+  });
+
+  it('stays inert under manual, which never merged vendor classes', () => {
+    const c = compilePrivacyPolicy({
+      version: 1,
+      preset: 'manual',
+      vendorCompat: true,
+    });
+    expect(c.maskTextSelector).toBeNull();
+    expect(c.blockSelector).toBeNull();
+  });
+});
+
 describe('validateSelector', () => {
   it('accepts valid, rejects invalid', () => {
     expect(validateSelector('.a > [data-x="1"]')).toBe(true);
@@ -133,9 +308,6 @@ describe('splitSelectorList', () => {
   });
 
   it('keeps an escaped comma, quoted or not', () => {
-    // `.a\,b` is a single class selector for the class name "a,b" -- the
-    // backslash escape is valid outside quotes too, and tearing it here let
-    // the stray `b` fragment collide with an unrelated `b` selector.
     expect(splitSelectorList('.a\\,b')).toEqual(['.a\\,b']);
     expect(splitSelectorList('.a\\,b,b')).toEqual(['.a\\,b', 'b']);
     expect(splitSelectorList('[data-x="p\\"q,r"]')).toEqual([
@@ -149,13 +321,13 @@ describe('splitSelectorList', () => {
 });
 
 describe('resolvePrivacyContext', () => {
-  it('joins legacy selector with compiled blockSelector', () => {
+  it('joins manual selector with compiled blockSelector', () => {
     const { blockSelector } = resolvePrivacyContext({
       privacyPolicy: { version: 1, preset: 'balanced' },
-      blockSelector: '.legacy',
+      blockSelector: '.manual-selector',
     });
-    expect(blockSelector).toContain('.legacy');
-    expect(blockSelector).toContain('[data-privacy="exclude"]');
+    expect(blockSelector).toContain('.manual-selector');
+    expect(blockSelector).toContain('[data-privacy="block"]');
   });
 
   /**
@@ -170,7 +342,7 @@ describe('resolvePrivacyContext', () => {
     });
     expect(privacy.unmaskTextSelector).toBe(unmaskTextSelector);
     expect(privacy.unmaskTextSelector).toContain('.mine');
-    expect(privacy.unmaskTextSelector).toContain('[data-privacy="allow"]');
+    expect(privacy.unmaskTextSelector).toContain('[data-privacy="unmask"]');
   });
 
   it('leaves the compiled policy untouched when nothing was merged in', () => {
@@ -198,7 +370,7 @@ describe('merge helpers validate the record()-level selector', () => {
     ['maskTextSelector', balanced.maskTextSelector],
     ['unmaskTextSelector', balanced.unmaskTextSelector],
     ['blockSelector', balanced.blockSelector],
-  ])('%s drops an invalid legacy half with a warning', (_name, compiled) => {
+  ])('%s drops an invalid manual half with a warning', (_name, compiled) => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const merged = mergeSelectors(':::garbage', compiled);
     expect(merged).not.toContain(':::garbage');
@@ -207,7 +379,7 @@ describe('merge helpers validate the record()-level selector', () => {
     );
   });
 
-  it('keeps the valid half of a partly-malformed legacy selector', () => {
+  it('keeps the valid half of a partly-malformed manual selector', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     // ':::garbage,.valid' is a single invalid selector string, so it is
     // dropped whole; the caller keeps the compiled policy's own selectors.
@@ -231,7 +403,7 @@ describe('merge helpers validate the record()-level selector', () => {
     expect(mergeSelectors(twice, balanced.unmaskTextSelector)).toBe(once);
   });
 
-  it('deduplicates a fragment the legacy half repeats from the policy', () => {
+  it('deduplicates a fragment the manual half repeats from the policy', () => {
     const merged = mergeSelectors('.rr-mask,.mine', balanced.maskTextSelector);
     expect(merged!.split(',').filter((p) => p === '.rr-mask')).toHaveLength(1);
     expect(merged).toContain('.mine');
@@ -245,8 +417,8 @@ describe('merge helpers validate the record()-level selector', () => {
    * fail-open. Both must survive the merge and still match.
    */
   it('an escaped comma does not swallow an unrelated selector in the dedupe', () => {
-    const legacy = compilePrivacyPolicy(undefined);
-    const merged = mergeSelectors('.a\\,b,b', legacy.maskTextSelector)!;
+    const manual = compilePrivacyPolicy(undefined);
+    const merged = mergeSelectors('.a\\,b,b', manual.maskTextSelector)!;
 
     document.body.innerHTML = '<div class="a,b">x</div><b>y</b>';
     const commaClassEl = document.querySelector('div')!;
@@ -261,7 +433,7 @@ describe('merge helpers validate the record()-level selector', () => {
     // colliding `b` from a policy rule
     const policy = compilePrivacyPolicy({
       version: 1,
-      preset: 'legacy',
+      preset: 'manual',
       rules: [{ target: { type: 'selector', selector: 'b' }, action: 'mask' }],
     });
     const merged = mergeSelectors('.a\\,b', policy.maskTextSelector)!;
@@ -311,6 +483,33 @@ describe('merge helpers validate the record()-level selector', () => {
  * selector silently stopped matching -- a fail-open on the masking path, which
  * is the one direction that must never happen quietly.
  */
+describe('resolveTextValue: exemptScript', () => {
+  const script = document.createElement('script');
+  it('exempts SCRIPT text from masking when exemptScript is true (the snapshot path)', () => {
+    expect(
+      resolveTextValue({
+        value: 'secret',
+        parent: script,
+        needsMask: true,
+        maskTextFn: undefined,
+        exemptScript: true,
+      }),
+    ).toBe('secret');
+  });
+
+  it('masks SCRIPT text like any other node when exemptScript is false (the mutation path)', () => {
+    expect(
+      resolveTextValue({
+        value: 'secret',
+        parent: script,
+        needsMask: true,
+        maskTextFn: undefined,
+        exemptScript: false,
+      }),
+    ).toBe('******');
+  });
+});
+
 describe('needMaskingText accepts the legacy selector string', () => {
   afterEach(() => {
     document.body.innerHTML = '';

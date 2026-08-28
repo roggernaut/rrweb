@@ -6,32 +6,30 @@ import type {
 } from './types';
 import { untaintedTagName } from '@rrweb/utils';
 
-// Migration compatibility for other tools' mask/exclude class conventions
-// (rrweb, Mixpanel, Amplitude, PostHog, Sentry, FullStory, Datadog, New
-// Relic); `data-privacy` is the primary convention. Foreign mask/block
-// tokens are protective-only. See guide.md's "Vendor class recognition"
-// section for sourcing.
-const VENDOR_MASK_CLASSES =
-  '.rr-mask,.mp-mask,.fs-mask,.amp-mask,.ph-mask,.sentry-mask,[data-sentry-mask],.dd-privacy-mask,[data-dd-privacy="mask"],.dd-privacy-mask-user-input,[data-dd-privacy="mask-user-input"],.nr-mask,[data-nr-mask]';
-// Never a foreign token: it may have been safe only under its own recorder's
-// defaults, so migration compatibility must not grant it authority here.
-const RRWEB_UNMASK_CLASS = '.rr-unmask';
-const VENDOR_BLOCK_CLASSES =
-  '.rr-block,.mp-block,.fs-exclude,.amp-block,.ph-no-capture,.sentry-block,.dd-privacy-hidden,[data-dd-privacy="hidden"],.nr-block,[data-nr-block]';
-const PRIVACY_PRESETS = new Set(['strict', 'balanced', 'legacy']);
+const NATIVE_MASK_CLASSES = '.rr-mask';
+const NATIVE_UNMASK_CLASSES = '.rr-unmask';
+const NATIVE_BLOCK_CLASSES = '.rr-block';
+
+// Other tools' conventions, merged only under `vendorCompat`.
+// See guide.md's "Vendor class recognition" section.
+const COMPAT_MASK_CLASSES =
+  '.mp-mask,.fs-mask,.amp-mask,.ph-mask,.sentry-mask,[data-sentry-mask],.dd-privacy-mask,[data-dd-privacy="mask"],.dd-privacy-mask-user-input,[data-dd-privacy="mask-user-input"],.nr-mask,[data-nr-mask]';
+const COMPAT_UNMASK_CLASSES = '.amp-unmask';
+const COMPAT_BLOCK_CLASSES =
+  '.mp-block,.fs-exclude,.amp-block,.ph-no-capture,.sentry-block,.dd-privacy-hidden,[data-dd-privacy="hidden"],.nr-block,[data-nr-block]';
+
+// `data-privacy` fails closed: the mask token is the bare attribute minus the
+// two values that mean something else, so an unrecognized value masks.
+const DATA_PRIVACY_MASK =
+  '[data-privacy]:not([data-privacy="unmask"]):not([data-privacy="block"])';
+const DATA_PRIVACY_UNMASK = '[data-privacy="unmask"]';
+const DATA_PRIVACY_BLOCK = '[data-privacy="block"]';
+
+const PRIVACY_PRESETS = new Set(['strict', 'balanced', 'manual']);
 const MASKED_ATTRIBUTE_DEFAULTS = ['title', 'placeholder', 'aria-label'];
 
-/**
- * CSS carried as an attribute. Masking these corrupts the replay without
- * protecting anything, so no branch of `finalizeAttribute` may touch them.
- */
 const CSS_ATTRIBUTES = new Set(['style', '_csstext']);
 
-/**
- * The only names `isGenerated` may exempt from masking -- the flag alone is a
- * single point of failure, so both it and this allowlist must agree.
- * Deliberately excludes `rr_dataURL`/`rr_src`: real page pixels and a URL.
- */
 const RENDERING_METADATA_ATTRIBUTES = new Set([
   'rr_width',
   'rr_height',
@@ -41,21 +39,7 @@ const RENDERING_METADATA_ATTRIBUTES = new Set([
   'rr_open_mode',
 ]);
 
-/**
- * rrweb's own operational attributes, present on the page rather than
- * serializer-written, so `isGenerated` can't vouch for them -- exempt from
- * every masking branch or coarse masking would erase the recorder's own
- * signals (e.g. star `data-privacy="mask"` itself, or break replay-side
- * password re-detection on `data-rr-is-password`). Keep this narrow: an
- * exemption is unconditional, so a wrong entry leaks verbatim.
- */
-const OPERATIONAL_ATTRIBUTES = new Set([
-  // The vendor-neutral privacy declaration the compiled policy matches on.
-  'data-privacy',
-  // Set by the mutation observer when it sees an input turn into a password
-  // field, and read back by `getInputType` to keep masking it afterwards.
-  'data-rr-is-password',
-]);
+const OPERATIONAL_ATTRIBUTES = new Set(['data-privacy', 'data-rr-is-password']);
 
 /** Attributes that point at media bytes; dropped entirely under `strict`. */
 const MEDIA_SOURCE_ATTRIBUTES = new Set([
@@ -77,21 +61,12 @@ const MEDIA_TAGS = new Set([
   'VIDEO',
 ]);
 
-/**
- * Blocked media sources that can be swapped for a same-size placeholder rather
- * than dropped, keyed by the tag the placeholder is meaningful on. Only an
- * `<img>` source and a `<video>` poster resolve to a raster the browser lays
- * out at the element's declared size; an `<iframe>`/`<embed>`/`<object>` source
- * or `<audio>` source does not, and a `<source>` is a candidate its parent
- * picks from, so those keep being dropped outright.
- */
 const MEDIA_PLACEHOLDER_ATTRIBUTES = new Map([
   ['IMG', new Set(['src', 'srcset', 'poster'])],
   ['VIDEO', new Set(['poster'])],
 ]);
 
-/** A `width`/`height` content attribute we are willing to trust: plain pixels. */
-const DIMENSION_ATTRIBUTE = /^\d{1,5}$/;
+const PLAIN_PIXEL_DIMENSION = /^\d{1,5}$/;
 
 export const FORM_VALUE_TAGS = new Set([
   'INPUT',
@@ -100,24 +75,12 @@ export const FORM_VALUE_TAGS = new Set([
   'TEXTAREA',
 ]);
 
-/**
- * How a masked *text* value is occluded: every non-whitespace character
- * becomes a star, so the shape of the layout survives while the content does
- * not. (Attribute and input values use `stars`, which occludes to length.)
- */
+/** Occludes text content, preserving whitespace so layout survives; contrast `stars`, which occludes to length. */
 function starText(value: string): string {
   return value.replace(/[\S]/g, '*');
 }
 
-/**
- * The single decision point for the text content rrweb records, on both the
- * snapshot and the mutation path: CSS is never masked, on any path, then the
- * mask decision the caller already took (`needsMask`) applies `maskTextFn`
- * if configured, or stars.
- *
- * @param exemptScript the snapshot path exempts `<script>` from the mask
- * branch, the mutation path does not -- pass explicitly, don't unify.
- */
+/** The single decision point for text content, on both the snapshot and the mutation path. */
 export function resolveTextValue({
   value,
   parent,
@@ -145,11 +108,7 @@ export function resolveTextValue({
   return value;
 }
 
-/**
- * Whether real pixels may be recorded for `element`'s content: `strict`
- * blocks media wholesale, and a configured canvas masking provider means only
- * the FPS capture path can redact, so `toDataURL` must not run alongside it.
- */
+/** Whether `toDataURL` may run: not under `blockMedia`, and not alongside a configured canvas masking provider. */
 export function shouldCapturePixels(
   privacy: CompiledPrivacyPolicy | undefined,
   canvasMaskingConfigured?: () => boolean,
@@ -166,11 +125,7 @@ export function validateSelector(selector: string): boolean {
   }
 }
 
-/**
- * Split a selector list on top-level commas only -- not `split(',')`, which
- * mishandles `:is(a,b)`, `[data-x="a,b"]`, and an escaped `.a\,b`.
- * @internal exported for direct unit testing; not part of the privacy API.
- */
+/** @internal exported for direct unit testing; not part of the privacy API. */
 export function splitSelectorList(selector: string): string[] {
   const parts: string[] = [];
   let depth = 0;
@@ -178,8 +133,6 @@ export function splitSelectorList(selector: string): string[] {
   let start = 0;
   for (let index = 0; index < selector.length; index += 1) {
     const char = selector[index];
-    // Must come first: a backslash escapes anywhere, not just inside quotes,
-    // or `.a\,b` tears in two and the stray `b` silently swallows another rule.
     if (char === '\\') {
       index += 1;
       continue;
@@ -200,13 +153,6 @@ export function splitSelectorList(selector: string): string[] {
   return parts;
 }
 
-/**
- * Validates each selector as a whole (drops and warns on a broken one), then
- * merges the survivors into one deduplicated list. Dedup makes this
- * idempotent, which it must be: `record()` and `snapshot()` both merge the
- * same policy's selectors, so a `Set` is what keeps the second pass from
- * repeating every fragment.
- */
 function joinSelectors(
   selectors: Array<string | null | undefined>,
 ): string | null {
@@ -228,7 +174,7 @@ function joinSelectors(
 export function compilePrivacyPolicy(
   policy?: PrivacyPolicy,
 ): CompiledPrivacyPolicy {
-  const effective: PrivacyPolicy = policy || { version: 1, preset: 'legacy' };
+  const effective: PrivacyPolicy = policy || { version: 1, preset: 'manual' };
   if (effective.version !== 1)
     throw new Error(
       `Unsupported Privacy at Capture policy version: ${String(
@@ -238,14 +184,15 @@ export function compilePrivacyPolicy(
   if (!PRIVACY_PRESETS.has(effective.preset))
     throw new Error(`Unsupported privacy preset: ${String(effective.preset)}`);
   const preset = effective.preset;
-  const nonLegacy = preset !== 'legacy';
-  const maskedAttributes = new Set(nonLegacy ? MASKED_ATTRIBUTE_DEFAULTS : []);
+  const managed = preset !== 'manual';
+  const vendorCompat = effective.vendorCompat === true;
+  const maskedAttributes = new Set(managed ? MASKED_ATTRIBUTE_DEFAULTS : []);
   const blockMedia = preset === 'strict';
 
   const bySelector = {
     mask: [] as string[],
     unmask: [] as string[],
-    exclude: [] as string[],
+    block: [] as string[],
   };
   for (const rule of effective.rules || []) {
     if (
@@ -254,65 +201,60 @@ export function compilePrivacyPolicy(
       !rule.target.selector
     )
       throw new Error('Privacy rules require a non-empty selector target');
-    const action = rule.action === 'allow' ? 'unmask' : rule.action;
-    if (!(action in bySelector))
+    if (!Object.prototype.hasOwnProperty.call(bySelector, rule.action))
       throw new Error(`Unsupported privacy action: ${String(rule.action)}`);
-    bySelector[action].push(rule.target.selector);
+    bySelector[rule.action].push(rule.target.selector);
   }
 
   return {
     preset,
-    maskTextSelector: nonLegacy
+    maskTextSelector: managed
       ? preset === 'strict'
         ? '*'
         : joinSelectors([
-            '[data-privacy="mask"]',
-            VENDOR_MASK_CLASSES,
+            DATA_PRIVACY_MASK,
+            NATIVE_MASK_CLASSES,
+            vendorCompat ? COMPAT_MASK_CLASSES : null,
             ...bySelector.mask,
           ])
       : joinSelectors(
-          bySelector.mask.length
-            ? ['[data-privacy="mask"]', ...bySelector.mask]
-            : [],
+          bySelector.mask.length ? [DATA_PRIVACY_MASK, ...bySelector.mask] : [],
         ),
     unmaskTextSelector: joinSelectors(
-      nonLegacy
-        ? ['[data-privacy="allow"]', RRWEB_UNMASK_CLASS, ...bySelector.unmask]
+      managed
+        ? [
+            DATA_PRIVACY_UNMASK,
+            NATIVE_UNMASK_CLASSES,
+            vendorCompat ? COMPAT_UNMASK_CLASSES : null,
+            ...bySelector.unmask,
+          ]
         : bySelector.unmask,
     ),
     blockSelector: joinSelectors(
-      nonLegacy
+      managed
         ? [
-            '[data-privacy="exclude"]',
-            VENDOR_BLOCK_CLASSES,
-            ...bySelector.exclude,
+            DATA_PRIVACY_BLOCK,
+            NATIVE_BLOCK_CLASSES,
+            vendorCompat ? COMPAT_BLOCK_CLASSES : null,
+            ...bySelector.block,
           ]
-        : bySelector.exclude.length
-        ? ['[data-privacy="exclude"]', ...bySelector.exclude]
+        : bySelector.block.length
+        ? [DATA_PRIVACY_BLOCK, ...bySelector.block]
         : [],
     ),
-    maskAllInputs: nonLegacy,
+    maskAllInputs: managed,
     maskedAttributes,
-    // Spelled out from the branches of `finalizeAttribute`'s policy block
-    // rather than from `preset` directly, so a new branch that forgets to
-    // narrow this is a visible omission rather than a silent leak. The
-    // strict-only `value` branch needs no clause of its own: `blockMedia` is
-    // the `strict` alias, so `!blockMedia` has already excluded it.
     attributePolicyInert: !blockMedia && maskedAttributes.size === 0,
     blockMedia,
   };
 }
 
-/**
- * `record()`-level selector options go through the same validate-drop-warn
- * path as policy rule selectors, so a syntactically broken one can't reach
- * the runtime catch-to-mask and star the whole page off one typo.
- */
+/** Validates and merges a `record()`-level selector with the compiled policy's; invalid fragments are dropped with a warning. */
 export function mergeSelectors(
-  legacySelector: string | null | undefined,
+  manualSelector: string | null | undefined,
   compiledSelector: string | null | undefined,
 ): string | null {
-  return joinSelectors([legacySelector, compiledSelector]);
+  return joinSelectors([manualSelector, compiledSelector]);
 }
 
 /** The privacy state one recording pass (or one `snapshot()` call) runs on. */
@@ -323,12 +265,7 @@ export type PrivacyContext = {
   unmaskTextSelector: string | null;
 };
 
-/**
- * The one privacy prologue: compile the policy, merge every `record()`-level
- * selector option with its compiled counterpart, and write the merged unmask
- * selector back onto the policy so `finalizeAttribute` (which reads it from
- * there) also honors a `record()`-level `unmaskTextSelector`.
- */
+/** The one privacy prologue: compile the policy, merge every `record()`-level selector with its compiled counterpart, and write the merged unmask selector back onto the policy. */
 export function resolvePrivacyContext({
   privacy: compiled,
   privacyPolicy,
@@ -336,7 +273,6 @@ export function resolvePrivacyContext({
   maskTextSelector = null,
   unmaskTextSelector = null,
 }: {
-  /** An already-compiled policy; takes precedence over `privacyPolicy`. */
   privacy?: CompiledPrivacyPolicy;
   privacyPolicy?: PrivacyPolicy;
   blockSelector?: string | null;
@@ -361,19 +297,11 @@ export function resolvePrivacyContext({
 
 let maskAttributeConflictWarned = false;
 
-/**
- * How a masked *value* is occluded: replaced by as many stars as it had
- * characters, so its length -- and nothing else -- survives. (Text nodes use
- * `starText`, which preserves whitespace so the layout survives too.)
- */
+/** Occludes a value to its length; contrast `starText`, which preserves whitespace/layout. */
 export function stars(value: string): string {
   return '*'.repeat(value.length);
 }
 
-/**
- * Whether `element` sits inside an unmask subtree. A selector that throws
- * grants no escape: the caller stays on its masking path (fail closed).
- */
 function isUnmasked(
   element: Element,
   privacy: CompiledPrivacyPolicy,
@@ -394,25 +322,15 @@ function isUnmasked(
   return answer;
 }
 
-/**
- * One element's `isUnmasked` answer, reused across that element's whole
- * attribute sweep. An element with three masked attributes asked `closest()`
- * three times; the ancestor chain cannot change in between.
- */
+/** One element's `isUnmasked` answer, reused across its whole attribute sweep. */
 type UnmaskMemo = { element: Element | null; answer: boolean };
 
-/**
- * A neutral, same-dimension SVG standing in for a blocked image source, so
- * removing the pixels doesn't collapse the surrounding layout. Only `<`, `>`
- * and `#` are percent-encoded; the rest is already legal in a data URI.
- */
 const URI_UNSAFE = /[<>#]/g;
 const URI_ESCAPES: Record<string, string> = {
   '<': '%3C',
   '>': '%3E',
   '#': '%23',
 };
-/** Memoised on `WxH`; bounded like every other cache here. */
 const placeholderCache = new Map<string, string>();
 
 function placeholderImage(width: string, height: string): string {
@@ -430,17 +348,15 @@ function placeholderImage(width: string, height: string): string {
   return encoded;
 }
 
-/**
- * Declared `width`/`height` content attributes only -- never
- * `getBoundingClientRect`, which would force a layout flush per attribute on
- * this hot path. Anything not plain integer pixels is rejected, not guessed.
- */
 function declaredDimensions(element: Element): [string, string] | null {
   try {
     const width = element.getAttribute('width');
     const height = element.getAttribute('height');
     if (width === null || height === null) return null;
-    if (!DIMENSION_ATTRIBUTE.test(width) || !DIMENSION_ATTRIBUTE.test(height))
+    if (
+      !PLAIN_PIXEL_DIMENSION.test(width) ||
+      !PLAIN_PIXEL_DIMENSION.test(height)
+    )
       return null;
     return [width, height];
   } catch {
@@ -448,12 +364,6 @@ function declaredDimensions(element: Element): [string, string] | null {
   }
 }
 
-/**
- * What a blocked media source becomes: a same-size placeholder where one is
- * both meaningful and derivable without forcing layout, and `null` -- the
- * attribute dropped entirely -- everywhere else, which is the original and
- * still the fallback behaviour.
- */
 function blockedMediaValue(
   element: Element,
   tagName: string,
@@ -466,21 +376,7 @@ function blockedMediaValue(
   return placeholderImage(dimensions[0], dimensions[1]);
 }
 
-/**
- * The single decision point for every attribute rrweb records, called once
- * per attribute at the end of serialization. Order matters:
- *  1. rendering metadata (`isGenerated` + `RENDERING_METADATA_ATTRIBUTES`),
- *     then 1b. `OPERATIONAL_ATTRIBUTES` -- rrweb's own signals, exempt before
- *     coarse masking can destroy them. Both return early.
- *  2. `maskAllElementAttributes` -- coarse kill switch, wins over
- *     `maskAttributeFn` (warned once). Returns early.
- *  3. `maskAttributeFn` -- try/catch, fails closed to stars; not an escape
- *     hatch, its output feeds (4).
- *  4. the compiled policy, final authority: media drop/placeholder, then the
- *     unmask escape (so it can't reopen it), then strict's form-value stars.
- *     Identity under `legacy`.
- * `style`/`_cssText` are exempt from every branch: CSS is never masked.
- */
+/** The single decision point for every attribute rrweb records, called once per attribute at the end of serialization. */
 export function finalizeAttribute({
   element,
   name,
@@ -501,9 +397,6 @@ export function finalizeAttribute({
   /** @internal see `UnmaskMemo`; supplied by `finalizeAttributes` */
   unmaskMemo?: UnmaskMemo;
 }): string | null {
-  // Hot path: with no callback, no coarse switch, and a policy that has
-  // nothing to say about attributes, this is the identity function. Bail
-  // before lowercasing the name or touching the element.
   if (
     !maskAllElementAttributes &&
     !maskAttributeFn &&
@@ -513,12 +406,8 @@ export function finalizeAttribute({
   if (value === null || value === '') return value;
 
   const normalizedName = name.toLowerCase();
-  // Two gates, not one: the serializer must have written this value AND the
-  // name must be known rendering metadata. Either alone is not enough.
   if (isGenerated && RENDERING_METADATA_ATTRIBUTES.has(normalizedName))
     return value;
-  // No flag to pair with here: these are page-present attributes, exempted on
-  // the name alone because rrweb's own operation depends on reading them back.
   if (OPERATIONAL_ATTRIBUTES.has(normalizedName)) return value;
   if (CSS_ATTRIBUTES.has(normalizedName)) return value;
 
@@ -536,8 +425,6 @@ export function finalizeAttribute({
   if (maskAttributeFn) {
     try {
       const masked = maskAttributeFn(name, value, element);
-      // A callback that returns a non-string fails closed rather than putting
-      // whatever it produced into the recording.
       current = typeof masked === 'string' ? masked : stars(value);
     } catch {
       return stars(value);
@@ -546,16 +433,12 @@ export function finalizeAttribute({
 
   if (!privacy) return current;
 
-  // `untaintedTagName` is only read by the two branches that need it, not up
-  // front for every attribute of every element.
   if (privacy.blockMedia && MEDIA_SOURCE_ATTRIBUTES.has(normalizedName)) {
     const tagName = untaintedTagName(element);
     if (MEDIA_TAGS.has(tagName))
       return blockedMediaValue(element, tagName, normalizedName);
   }
   if (privacy.maskedAttributes.has(normalizedName)) {
-    // Unmask escapes only the masked-attribute default, never the media
-    // branch above it.
     return isUnmasked(element, privacy, unmaskMemo) ? current : stars(current);
   }
   if (
@@ -568,11 +451,7 @@ export function finalizeAttribute({
   return current;
 }
 
-/**
- * Runs every attribute through `finalizeAttribute` once, in place, after
- * serialization. Non-string, non-null values (e.g. `rr_scrollTop`) are
- * rrweb's own and skip the sweep.
- */
+/** Runs every attribute through `finalizeAttribute` once, in place, after serialization. */
 export function finalizeAttributes(
   attributes: Record<string, unknown>,
   {

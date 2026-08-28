@@ -261,16 +261,7 @@ export function createMirror(): Mirror {
   return new Mirror();
 }
 
-/**
- * @deprecated use `maskInput`, which is the single entry point for input
- * masking and also applies the compiled privacy policy. This is a shim over
- * that same implementation so the two can never drift apart.
- *
- * Note that going through `maskInput` means an always-protected input (a
- * password or hidden field, or one whose `autocomplete` names a card or
- * password field) is now masked here too, whatever `maskInputOptions` says.
- * That is the reason this name is deprecated rather than merely aliased.
- */
+/** @deprecated use `maskInput`; this is a shim over it, so an always-protected input is now masked here too. */
 export function maskInputValue({
   element,
   maskInputOptions,
@@ -386,8 +377,6 @@ export function getInputType(element: HTMLElement): Lowercase<string> | null {
     : null;
 }
 
-/** Hoisted so the hot path does not construct it per call. Not global: a
- * global regex carries `lastIndex` state between `test` calls. */
 const AUTOCOMPLETE_SEPARATOR = /\s+/;
 
 const PROTECTED_AUTOCOMPLETE = new Set([
@@ -402,13 +391,7 @@ const PROTECTED_AUTOCOMPLETE = new Set([
   'one-time-code',
 ]);
 
-/**
- * Inputs that are always masked, regardless of maskInputOptions or privacy
- * preset: password/hidden inputs (including ones that used to be password
- * inputs, via getInputType's data-rr-is-password check), and inputs whose
- * autocomplete attribute names a sensitive field (credit card, password,
- * OTP).
- */
+/** Inputs always masked regardless of `maskInputOptions` or privacy preset. */
 export function isProtectedInput(element: HTMLElement): boolean {
   if (dom.untaintedTagName(element) !== 'INPUT') return false;
   const input = element as HTMLInputElement;
@@ -416,8 +399,6 @@ export function isProtectedInput(element: HTMLElement): boolean {
   if (type === 'password' || type === 'hidden') {
     return true;
   }
-  // Bail on empty, then try the whole value before splitting -- both are the
-  // common case for `autocomplete`.
   const autocomplete = input.autocomplete;
   if (!autocomplete) return false;
   const lower = autocomplete.toLowerCase();
@@ -428,12 +409,6 @@ export function isProtectedInput(element: HTMLElement): boolean {
     .some((token) => PROTECTED_AUTOCOMPLETE.has(token));
 }
 
-/**
- * Single entry point for input value masking: protected inputs always mask;
- * otherwise legacy `maskInputOptions` or an active preset decides, and under
- * the preset a supplied `maskInputFn`'s output is star-replaced (length
- * only, never content).
- */
 export function maskInput({
   element,
   tagName,
@@ -456,24 +431,16 @@ export function maskInput({
   const presetWantsMask = !!privacy && privacy.maskAllInputs;
   if (
     !presetWantsMask &&
-    !legacyWantsInputMask(tagName, type, maskInputOptions)
+    !manualWantsInputMask(tagName, type, maskInputOptions)
   )
     return value;
 
   if (!maskInputFn) return stars(value);
   const masked = maskInputFn(value, element);
-  // fn controls length only under balanced/strict; never trust its content.
   return presetWantsMask ? stars(masked) : masked;
 }
 
-/**
- * The predicate `maskInput` computes: must this form value be occluded at
- * all? Exported because it is not only `maskInput` that discloses a form
- * value -- the `<option selected>` flag discloses the parent `<select>`'s
- * value without the value itself ever passing through `maskInput` -- and
- * every such decision has to ask the same question rather than re-derive
- * half of it.
- */
+/** The predicate `maskInput` computes; also used where a value discloses a form value without passing through `maskInput` itself (e.g. `<option selected>`). */
 export function shouldMaskInput({
   element,
   tagName,
@@ -489,16 +456,13 @@ export function shouldMaskInput({
 }): boolean {
   return (
     (!!privacy && privacy.maskAllInputs) ||
-    legacyWantsInputMask(tagName, type, maskInputOptions) ||
+    manualWantsInputMask(tagName, type, maskInputOptions) ||
     isProtectedInput(element)
   );
 }
 
-/**
- * Whether the pre-v2 `maskInputOptions` bag opts this tag or input type in.
- * The policy-independent half of the mask decision.
- */
-export function legacyWantsInputMask(
+/** Whether the pre-v2 `maskInputOptions` bag opts this tag or input type in. */
+export function manualWantsInputMask(
   tagName: string,
   type: string | null,
   maskInputOptions: MaskInputOptions,

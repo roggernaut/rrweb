@@ -39,11 +39,6 @@ import {
 } from '../utils';
 import dom from '@rrweb/utils';
 
-/**
- * `attributeCursor` plus the names this recorder generated itself (currently
- * only `rr_open_mode`), so the finalization sweep can exempt them without a
- * side-table keyed by node.
- */
 type attributeCursorWithGenerated = attributeCursor & {
   generatedAttributes?: Set<string>;
 };
@@ -190,14 +185,8 @@ export default class MutationBuffer {
   private blockSelector: observerParam['blockSelector'];
   private maskTextClass: observerParam['maskTextClass'];
   private maskTextSelector: observerParam['maskTextSelector'];
-  /** Backing store for the `splitMaskTextSelector` getter below. */
   private splitMaskTextSelectorCache: MaskTextSelector | null = null;
-  /**
-   * `maskTextSelector` split into its `'*'` mask-everything default and its
-   * explicit selectors. Always derived, never assigned: a stale/unset field
-   * would fail open to "no mask selectors" if `emit()` runs outside
-   * `processMutations` (via `unfreeze()`/`unlock()`).
-   */
+  /** Always derived, never assigned: an unset field would fail open to "no mask selectors". */
   private get splitMaskTextSelector(): MaskTextSelector {
     return (this.splitMaskTextSelectorCache ??= splitMaskAllSelector(
       this.maskTextSelector,
@@ -513,8 +502,6 @@ export default class MutationBuffer {
       attributes: this.attributes
         .map((attribute) => {
           const { attributes } = attribute;
-          // `style` is never masked by any privacy path, so the compact style
-          // mutation can always be used when it is shorter.
           if (typeof attributes.style === 'string') {
             const diffAsStr = JSON.stringify(attribute.styleDiff);
             const unchangedAsStr = JSON.stringify(attribute._unchangedStyles);
@@ -531,8 +518,6 @@ export default class MutationBuffer {
               }
             }
           }
-          // The single finalization sweep for the mutation path, the same one
-          // serializeElementNode runs.
           finalizeAttributes(attributes, {
             element: attribute.node as Element,
             privacy: this.privacy,
@@ -593,12 +578,8 @@ export default class MutationBuffer {
       (cn) => dom.textContent(cn) || '',
     ).join('');
     const type = getInputType(textarea);
-    // `textarea.tagName` is safe unshadowed here: every caller only reaches
-    // this method after already comparing that same object's `.tagName` to
-    // the string literal `'TEXTAREA'` (see the childList/pushAdd/text-mutation
-    // call sites above, all now routed through `untaintedTagName`). A
-    // shadowed `tagName` fails that string comparison, so nothing shadowed
-    // ever reaches this call with a stale/wrong reference.
+    // callers reach this only after matching `.tagName` to 'TEXTAREA' via
+    // `untaintedTagName`, so a raw `textarea.tagName` read here is safe.
     item.attributes.value = maskInput({
       element: textarea,
       maskInputOptions: this.maskInputOptions,
@@ -622,9 +603,6 @@ export default class MutationBuffer {
           !isBlocked(m.target, this.blockClass, this.blockSelector, false) &&
           value !== m.oldValue
         ) {
-          // The same ladder serializeTextNode runs (CSS exemption, mask
-          // branch), minus the snapshot path's extra <script> exemption on
-          // the mask branch -- see `resolveTextValue`.
           this.texts.push({
             value: value
               ? resolveTextValue({
@@ -651,11 +629,8 @@ export default class MutationBuffer {
         let attributeName = m.attributeName as string;
         let value = (m.target as HTMLElement).getAttribute(attributeName);
 
-        // `value` only means "input value" on form controls; on e.g. `<li>` or
-        // `<param>` it is an ordinary attribute and belongs to the normal
-        // `finalizeAttribute` path instead. `untaintedTagName` reads the real
-        // tag name even when a named form control (e.g. <input name="tagName">)
-        // shadows the `tagName` property on `target`.
+        // `value` means "input value" only on FORM_VALUE_TAGS; elsewhere it's
+        // an ordinary attribute and falls through to `finalizeAttribute`.
         const targetTagName = dom.untaintedTagName(target);
         if (attributeName === 'value' && FORM_VALUE_TAGS.has(targetTagName)) {
           const type = getInputType(target);
@@ -713,12 +688,6 @@ export default class MutationBuffer {
         }
 
         if (!ignoreAttribute(targetTagName, attributeName, value)) {
-          // A real page mutation is now writing this attribute name, so any
-          // "recorder generated, exempt from masking" flag left on it by an
-          // earlier write in the same flush no longer describes this value.
-          // Clear it (PostHog's `.delete(attributeName)` precedent) or a page
-          // that literally sets e.g. `rr_open_mode` would inherit the
-          // exemption and record its value unmasked.
           item.generatedAttributes?.delete(attributeName);
           // overwrite attribute if the mutations was triggered in same time
           item.attributes[attributeName] = transformAttribute(
@@ -771,7 +740,6 @@ export default class MutationBuffer {
             } else {
               item.attributes['rr_open_mode'] = 'non-modal';
             }
-            // recorder-generated, never page data: exempt from masking.
             (item.generatedAttributes ||= new Set()).add('rr_open_mode');
           }
         }

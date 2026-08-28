@@ -168,46 +168,46 @@ setInterval(save, 10 * 1000);
 
 The `record` function accepts the following options.
 
-| key                      | default            | description                                                                                                                                                                                                  |
-| ------------------------ | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| emit                     | required           | the callback function to get emitted events                                                                                                                                                                  |
-| checkoutEveryNth         | -                  | take a full snapshot after every N events<br />refer to the [checkout](#checkout) chapter                                                                                                                    |
-| checkoutEveryNms         | -                  | take a full snapshot after every N ms<br />refer to the [checkout](#checkout) chapter                                                                                                                        |
-| blockClass               | 'rr-block'         | Use a string or RegExp to configure which elements should be blocked, refer to the [privacy](#privacy) chapter                                                                                               |
-| blockSelector            | null               | Use a string to configure which selector should be blocked, refer to the [privacy](#privacy) chapter                                                                                                         |
-| ignoreClass              | 'rr-ignore'        | Use a string or RegExp to configure which elements should be ignored, refer to the [privacy](#privacy) chapter                                                                                               |
-| ignoreSelector           | null               | Use a string to configure which selector should be ignored, refer to the [privacy](#privacy) chapter                                                                                                         |
-| ignoreCSSAttributes      | null               | array of CSS attributes that should be ignored                                                                                                                                                               |
-| maskTextClass            | 'rr-mask'          | Use a string or RegExp to configure which elements should be masked, refer to the [privacy](#privacy) chapter                                                                                                |
-| maskTextSelector         | null               | Use a string to configure which selector should be masked, refer to the [privacy](#privacy) chapter                                                                                                          |
-| unmaskTextSelector       | null               | Use a string to configure which selector's text should never be masked, even under `strict` or a policy `mask` rule; merged with any policy `unmask`/`allow` rules, refer to the [privacy](#privacy) chapter |
-| maskAllInputs            | false              | mask all input content as \*                                                                                                                                                                                 |
-| maskInputOptions         | { password: true } | mask some kinds of input \*<br />refer to the [list](https://github.com/rrweb-io/rrweb/blob/588164aa12f1d94576f89ae0210b98f6e971c895/packages/rrweb-snapshot/src/types.ts#L77-L95)                           |
-| maskInputFn              | -                  | customize mask input content recording logic                                                                                                                                                                 |
-| maskTextFn               | -                  | customize mask text content recording logic                                                                                                                                                                  |
-| privacyPolicy            | -                  | apply a versioned `strict`, `balanced`, or `legacy` privacy policy before values are emitted, refer to the [privacy](#privacy) chapter                                                                       |
-| slimDOMOptions           | {}                 | remove unnecessary parts of the DOM <br />refer to the [list](https://github.com/rrweb-io/rrweb/blob/588164aa12f1d94576f89ae0210b98f6e971c895/packages/rrweb-snapshot/src/types.ts#L97-L108)                 |
-| dataURLOptions           | {}                 | Canvas image format and quality ,This parameter will be passed to the OffscreenCanvas.convertToBlob(),Using this parameter effectively reduces the size of the recorded data                                 |
-| inlineStylesheet         | true               | Deprecated since 2.0.0. Still supported, but planned to be superseded by future `captureAssets` asset recording APIs.                                                                                        |
-| hooks                    | {}                 | hooks for events<br />refer to the [list](https://github.com/rrweb-io/rrweb/blob/9488deb6d54a5f04350c063d942da5e96ab74075/src/types.ts#L207)                                                                 |
-| packFn                   | -                  | refer to the [storage optimization recipe](./docs/recipes/optimize-storage.md)                                                                                                                               |
-| sampling                 | -                  | refer to the [storage optimization recipe](./docs/recipes/optimize-storage.md)                                                                                                                               |
-| recordCanvas             | false              | Whether to record the canvas element. Available options:<br/>`false`, <br/>`true`                                                                                                                            |
-| canvasMasking            | -                  | Runtime adapter for masking regions of FPS-captured canvas frames. See Privacy below.                                                                                                                        |
-| maskAllElementAttributes | false              | Masks every source string attribute in the final serialized representation. This reduces replay fidelity and takes precedence over `maskAttributeFn`.                                                        |
-| maskAttributeFn          | -                  | Transforms each final serialized string attribute. Portable policy rules are applied afterward and cannot be overridden by this callback.                                                                    |
-| recordCrossOriginIframes | false              | Whether to record cross origin iframes. rrweb has to be injected in each child iframe for this to work. Available options:<br/>`false`, <br/>`true`                                                          |
-| recordAfter              | 'load'             | If the document is not ready, then the recorder will start recording after the specified event is fired. Available options: `DOMContentLoaded`, `load`                                                       |
-| inlineImages             | false              | Deprecated since 2.0.0. Still supported, but planned to be superseded by future `captureAssets` asset recording APIs.                                                                                        |
-| collectFonts             | false              | whether to collect fonts in the website                                                                                                                                                                      |
-| userTriggeredOnInput     | false              | whether to add `userTriggered` on input events that indicates if this event was triggered directly by the user or not. [What is `userTriggered`?](https://github.com/rrweb-io/rrweb/pull/495)                |
-| plugins                  | []                 | load plugins to provide extended record functions. [What are plugins?](./docs/recipes/plugin-api.md)                                                                                                         |
-| errorHandler             | -                  | A callback that is called if something inside of rrweb throws an error. The callback receives the error as argument.                                                                                         |
+| key                      | default            | description                                                                                                                                                                                          |
+| ------------------------ | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| emit                     | required           | the callback function to get emitted events                                                                                                                                                          |
+| checkoutEveryNth         | -                  | take a full snapshot after every N events<br />refer to the [checkout](#checkout) chapter                                                                                                            |
+| checkoutEveryNms         | -                  | take a full snapshot after every N ms<br />refer to the [checkout](#checkout) chapter                                                                                                                |
+| blockClass               | 'rr-block'         | Use a string or RegExp to configure which elements should be blocked, refer to the [privacy](#privacy) chapter                                                                                       |
+| blockSelector            | null               | Use a string to configure which selector should be blocked, refer to the [privacy](#privacy) chapter                                                                                                 |
+| ignoreClass              | 'rr-ignore'        | Use a string or RegExp to configure which elements should be ignored, refer to the [privacy](#privacy) chapter                                                                                       |
+| ignoreSelector           | null               | Use a string to configure which selector should be ignored, refer to the [privacy](#privacy) chapter                                                                                                 |
+| ignoreCSSAttributes      | null               | array of CSS attributes that should be ignored                                                                                                                                                       |
+| maskTextClass            | 'rr-mask'          | Use a string or RegExp to configure which elements should be masked, refer to the [privacy](#privacy) chapter                                                                                        |
+| maskTextSelector         | null               | Use a string to configure which selector should be masked, refer to the [privacy](#privacy) chapter                                                                                                  |
+| unmaskTextSelector       | null               | Use a string to configure which selector's text should never be masked, even under `strict` or a policy `mask` rule; merged with any policy `unmask` rules, refer to the [privacy](#privacy) chapter |
+| maskAllInputs            | false              | mask all input content as \*                                                                                                                                                                         |
+| maskInputOptions         | { password: true } | mask some kinds of input \*<br />refer to the [list](https://github.com/rrweb-io/rrweb/blob/588164aa12f1d94576f89ae0210b98f6e971c895/packages/rrweb-snapshot/src/types.ts#L77-L95)                   |
+| maskInputFn              | -                  | customize mask input content recording logic                                                                                                                                                         |
+| maskTextFn               | -                  | customize mask text content recording logic                                                                                                                                                          |
+| privacyPolicy            | -                  | apply a versioned `strict`, `balanced`, or `manual` privacy policy before values are emitted, refer to the [privacy](#privacy) chapter                                                               |
+| slimDOMOptions           | {}                 | remove unnecessary parts of the DOM <br />refer to the [list](https://github.com/rrweb-io/rrweb/blob/588164aa12f1d94576f89ae0210b98f6e971c895/packages/rrweb-snapshot/src/types.ts#L97-L108)         |
+| dataURLOptions           | {}                 | Canvas image format and quality ,This parameter will be passed to the OffscreenCanvas.convertToBlob(),Using this parameter effectively reduces the size of the recorded data                         |
+| inlineStylesheet         | true               | Deprecated since 2.0.0. Still supported, but planned to be superseded by future `captureAssets` asset recording APIs.                                                                                |
+| hooks                    | {}                 | hooks for events<br />refer to the [list](https://github.com/rrweb-io/rrweb/blob/9488deb6d54a5f04350c063d942da5e96ab74075/src/types.ts#L207)                                                         |
+| packFn                   | -                  | refer to the [storage optimization recipe](./docs/recipes/optimize-storage.md)                                                                                                                       |
+| sampling                 | -                  | refer to the [storage optimization recipe](./docs/recipes/optimize-storage.md)                                                                                                                       |
+| recordCanvas             | false              | Whether to record the canvas element. Available options:<br/>`false`, <br/>`true`                                                                                                                    |
+| canvasMasking            | -                  | Runtime adapter for masking regions of FPS-captured canvas frames. See Privacy below.                                                                                                                |
+| maskAllElementAttributes | false              | Masks every source string attribute in the final serialized representation. This reduces replay fidelity and takes precedence over `maskAttributeFn`.                                                |
+| maskAttributeFn          | -                  | Transforms each final serialized string attribute. Portable policy rules are applied afterward and cannot be overridden by this callback.                                                            |
+| recordCrossOriginIframes | false              | Whether to record cross origin iframes. rrweb has to be injected in each child iframe for this to work. Available options:<br/>`false`, <br/>`true`                                                  |
+| recordAfter              | 'load'             | If the document is not ready, then the recorder will start recording after the specified event is fired. Available options: `DOMContentLoaded`, `load`                                               |
+| inlineImages             | false              | Deprecated since 2.0.0. Still supported, but planned to be superseded by future `captureAssets` asset recording APIs.                                                                                |
+| collectFonts             | false              | whether to collect fonts in the website                                                                                                                                                              |
+| userTriggeredOnInput     | false              | whether to add `userTriggered` on input events that indicates if this event was triggered directly by the user or not. [What is `userTriggered`?](https://github.com/rrweb-io/rrweb/pull/495)        |
+| plugins                  | []                 | load plugins to provide extended record functions. [What are plugins?](./docs/recipes/plugin-api.md)                                                                                                 |
+| errorHandler             | -                  | A callback that is called if something inside of rrweb throws an error. The callback receives the error as argument.                                                                                 |
 
 #### Privacy
 
 The existing rrweb masking options are always available and are exactly what
-you get by default (the `legacy` preset, below):
+you get by default (the `manual` preset, below):
 
 - An element with the class name `.rr-block` will not be recorded. Instead, it will replay as a placeholder with the same dimension.
 - An element with the class name `.rr-ignore` will not record its input events.
@@ -229,7 +229,7 @@ record({
     rules: [
       {
         target: { type: 'selector', selector: '.public-customer-name' },
-        action: 'unmask', // alias: 'allow'
+        action: 'unmask',
       },
       {
         target: { type: 'selector', selector: '.private' },
@@ -237,7 +237,7 @@ record({
       },
       {
         target: { type: 'selector', selector: '.payment-widget' },
-        action: 'exclude',
+        action: 'block',
       },
     ],
   },
@@ -248,9 +248,14 @@ record({
 
 | preset             | behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `legacy` (default) | Inert: only the existing masking options above apply. `rules` still work (below), but the `data-privacy` attribute and cross-vendor class recognition described below are off.                                                                                                                                                                                                                                                                                                                                  |
+| `manual` (default) | Inert: only the existing masking options above apply. `rules` still work (below), but the `data-privacy` attribute and cross-vendor class recognition described below are off.                                                                                                                                                                                                                                                                                                                                  |
 | `balanced`         | Masks every input value (like `maskAllInputs: true`); masks the `title`, `placeholder`, and `aria-label` attributes on every element. Page text is untouched.                                                                                                                                                                                                                                                                                                                                                   |
 | `strict`           | Everything `balanced` does, plus: all page text is masked; media element sources (`<img>`, `<video>`, `<audio>`, `<iframe>`, `<embed>`, `<object>`, `<source>`) are dropped instead of captured, except that an `<img>` source or `<video>` poster on an element with declared integer `width`/`height` attributes is replaced by a neutral same-size placeholder image so the surrounding layout does not collapse; and canvas recording is disabled outright, even with a `canvasMasking` adapter configured. |
+
+`manual` is a permanent tier, not a transitional one: it is masking you
+configure yourself, through the classic options above. Passwords and
+payment fields are always masked regardless of preset or configuration.
+`balanced` and `strict` are the managed presets.
 
 Masking an input value also suppresses the `selected` flag on the
 `<option>` elements of a `<select>`: which option is selected discloses the
@@ -277,9 +282,9 @@ the element whose subtree it describes; under `balanced` and `strict` it is
 recognized directly in markup, no extra configuration required:
 
 ```html
-<section data-privacy="exclude">Never capture this subtree</section>
+<section data-privacy="block">Never capture this subtree</section>
 <section data-privacy="mask">Mask content in this subtree</section>
-<span data-privacy="allow">This content may be captured</span>
+<span data-privacy="unmask">This content may be captured</span>
 ```
 
 The attribute names no vendor on purpose. That is what makes it portable:
@@ -291,15 +296,27 @@ a field to a form is the person who knows whether it is sensitive, and they
 can say so in the same edit rather than in a selector list maintained
 somewhere else.
 
-`data-privacy` values are case-sensitive; an unknown value makes no decision
-and the element inherits from its nearest valid ancestor.
+The three values above are the whole vocabulary, and they are case-sensitive.
+**Any other value masks.** `data-privacy="masked"`, `data-privacy="Block"`,
+`data-privacy=""` -- each of these protects the subtree exactly as
+`data-privacy="mask"` would. A value outside the vocabulary is a typo or a
+value from a version of rrweb that does not recognize it yet, and in both
+cases the author was reaching for protection, so the unknown value fails
+closed rather than making no decision. (This is a change from earlier
+pre-release builds, where an unknown value made no decision at all and the
+element inherited from its nearest annotated ancestor.)
 
-> Under `legacy`, `data-privacy="mask"`/`data-privacy="exclude"` are each
-> only recognized once you also supply at least one selector-based `mask`/
-> `exclude` rule (of that same action) in `rules`; `data-privacy="allow"` is
-> never recognized under `legacy`, with or without rules. This asymmetry is a
-> corner of the current implementation, not something to design around --
-> switch to `balanced`/`strict` for unconditional `data-privacy` support.
+`mask-inputs` is reserved for a future input-only treatment; it is not
+implemented, so today it masks like any other unrecognized value. Do not
+use it to mean anything else.
+
+> Under `manual`, `data-privacy="mask"`/`data-privacy="block"` are each only
+> recognized once you also supply at least one selector-based `mask`/`block`
+> rule (of that same action) in `rules` -- and the unknown-value rule rides
+> along with the `mask` half; `data-privacy="unmask"` is never recognized
+> under `manual`, with or without rules. This asymmetry is a corner of the
+> current implementation, not something to design around -- switch to
+> `balanced`/`strict` for unconditional `data-privacy` support.
 
 ##### Selector rules: for what the markup cannot reach
 
@@ -308,43 +325,67 @@ templating layer you do not own, markup generated by a component library. For
 those, declare the same intent by selector in the policy.
 
 Rules (`rules: [{ target: { type: 'selector', selector }, action }]`) accept
-`mask`, `unmask` (an alias of `allow`), or `exclude`, and work under every
-preset, including `legacy`. For text, the nearest matching ancestor decides,
-walking from the node up to the document root; if the very same element
-matches both a mask and an unmask selector, **mask** wins there (the same
-tie-break Sentry, Amplitude and Mixpanel use). `exclude`
-removes a subtree from capture entirely (it replays as a placeholder), which
-is why an `exclude` decision can't be reopened by a nested `mask` or `unmask`.
+`mask`, `unmask`, or `block` -- the same three names as the `data-privacy`
+values -- and work under every preset, including `manual`. An unrecognized
+action throws at compile time rather than being ignored. For text, the
+nearest matching ancestor decides, walking from the node up to the document
+root; if the very same element matches both a mask and an unmask selector,
+**mask** wins there (the same tie-break Sentry, Amplitude and Mixpanel use).
+`block` removes a subtree from capture entirely (it replays as a
+placeholder), which is why a `block` decision can't be reopened by a nested
+`mask` or `unmask`.
 Protected inputs -- password, hidden, and autocomplete `cc-*` /
 `current-password` / `new-password` / `one-time-code` fields -- always stay
 masked, regardless of any rule or preset. This holds even with no
 `privacyPolicy` configured at all, and regardless of `maskInputOptions` --
 these fields cannot be opted back into raw recording. (Previously, under
-`legacy`, `hidden` inputs and autocomplete-tagged credit-card/password/OTP
+`manual`, `hidden` inputs and autocomplete-tagged credit-card/password/OTP
 fields could record their raw value; that is a breaking change from pre-v2
 behavior.)
 
-##### Vendor class recognition: migration compatibility
+##### Vendor class recognition: opt-in migration compatibility
 
-A page already instrumented for another session-replay tool carries that
-tool's own mask/exclude class names. Under `balanced` and `strict`, rrweb
-recognizes those too, so such a page keeps the protection it already has
-from the moment you switch recorders, with no extra configuration and no
-re-annotation pass. This is a migration-compatibility layer, not the
-convention to reach for in new markup -- use `data-privacy` for that.
+Under `balanced` and `strict`, rrweb always recognizes its own conventions:
 
-- Mask: `.rr-mask`, `.mp-mask`, `.fs-mask`, `.amp-mask`, `.ph-mask`, `.sentry-mask`, `[data-sentry-mask]`, `.dd-privacy-mask`, `[data-dd-privacy="mask"]`, `.dd-privacy-mask-user-input`, `[data-dd-privacy="mask-user-input"]`, `.nr-mask`, `[data-nr-mask]`
-- Block: `.rr-block`, `.mp-block`, `.fs-exclude`, `.amp-block`, `.ph-no-capture`, `.sentry-block`, `.dd-privacy-hidden`, `[data-dd-privacy="hidden"]`, `.nr-block`, `[data-nr-block]`
+- Mask: `.rr-mask`
+- Block: `.rr-block`
 - Unmask: `.rr-unmask`
 
-The mask and block lists are the mask/exclude conventions of major
-session-replay tools -- rrweb, Mixpanel, Amplitude, PostHog, Sentry,
-FullStory, Datadog, and New Relic. Recognizing a foreign mask/block token is
-protective-only: it can only increase masking. Foreign UNMASK/allow tokens
-are deliberately never honored, because honoring one could reveal something
-the page author masked for a reason rrweb has no way to know. Unmasking must
-come from rrweb's own `.rr-unmask`, the neutral `data-privacy="allow"`
-attribute, or an explicit policy/recording option.
+A page already instrumented for another session-replay tool also carries
+that tool's own mask/block class names. Set `vendorCompat: true` on the
+policy and rrweb recognizes those too, so such a page keeps the protection
+it already has from the moment you switch recorders, with no re-annotation
+pass:
+
+```js
+record({
+  privacyPolicy: { version: 1, preset: 'balanced', vendorCompat: true },
+});
+```
+
+It is off by default because recognizing a foreign token changes what rrweb
+records based on markup the embedder may not control -- a class name that
+means "mask" to one tool may be an ordinary styling hook here -- so the
+decision to honor another vendor's vocabulary is made explicitly.
+
+- Compat mask: `.mp-mask`, `.fs-mask`, `.amp-mask`, `.ph-mask`, `.sentry-mask`, `[data-sentry-mask]`, `.dd-privacy-mask`, `[data-dd-privacy="mask"]`, `.dd-privacy-mask-user-input`, `[data-dd-privacy="mask-user-input"]`, `.nr-mask`, `[data-nr-mask]`
+- Compat block: `.mp-block`, `.fs-exclude`, `.amp-block`, `.ph-no-capture`, `.sentry-block`, `.dd-privacy-hidden`, `[data-dd-privacy="hidden"]`, `.nr-block`, `[data-nr-block]`
+- Compat unmask: `.amp-unmask`
+
+These are the conventions of Mixpanel, Amplitude, PostHog, Sentry,
+FullStory, Datadog, and New Relic. The mask and block lists are
+protective-only: they can only increase masking.
+
+`.amp-unmask` is the one exception, and the one way `vendorCompat` can
+**reduce** masking -- an element carrying it is unmasked under `strict`
+where it otherwise would not be. Turning the flag on is a statement that the
+page was instrumented for another tool, which makes that tool's unmask
+marker an intentional declaration rather than a foreign token of unknown
+provenance. No other tool's unmask/allow convention is honored on either
+setting, on or off: unmasking otherwise comes only from `.rr-unmask`, the
+neutral `data-privacy="unmask"` attribute, or an explicit policy/recording
+option. If you want the compat mask/block lists without that, keep the flag
+off and add the classes you need as `mask`/`block` rules instead.
 
 The Datadog tokens come from `browser-sdk
 packages/browser-rum-core/src/domain/privacyConstants.ts` (the
@@ -355,27 +396,27 @@ tokens come from `newrelic-browser-agent src/common/config/init.js`
 (`[data-nr-mask]`, `nr-mask`, `nr-block`, `[data-nr-block]`; `nr-unmask`/
 `nr-ignore` are deliberately excluded for the same reason).
 
-(`.rr-mask` and `.rr-block` also work under `legacy`, through the existing
-`maskTextClass`/`blockClass` options above -- the rest of this list is new in
-`balanced`/`strict`.)
+(`.rr-mask` and `.rr-block` also work under `manual`, through the existing
+`maskTextClass`/`blockClass` options above. `vendorCompat` has no effect
+under `manual`, which merges no class conventions of its own.)
 
 ##### Escape hatches and selector validation
 
 `unmaskTextSelector` is a `record()`-level escape hatch for text: a plain CSS
-selector (merged with any policy `unmask`/`allow` rule selectors) that stays
+selector (merged with any policy `unmask` rule selectors) that stays
 unmasked even under `strict`'s mask-everything default or a `mask` rule. It
 covers text and the preset's masked attributes (`title`, `placeholder`,
 `aria-label`) on elements inside the matched subtree -- this option, a policy
-`unmask`/`allow` rule and a recognized vendor unmask class are merged into one
+`unmask` rule and a recognized unmask class are merged into one
 selector and behave identically. It cannot unmask input
 values, and it cannot override a protected input, a dropped media source
-under `strict`, or an `exclude`.
+under `strict`, or a `block`.
 
 An invalid `maskTextSelector`, `unmaskTextSelector` or `blockSelector` --
 either the `record()`-level string option or a policy rule's selector -- is
 validated at setup and **dropped with a `console.warn`**, so one malformed
 selector cannot take the others down with it. Recording continues with the
-remaining selectors; a dropped `mask`/`exclude` selector therefore protects
+remaining selectors; a dropped `mask`/`block` selector therefore protects
 nothing, so watch for that warning rather than treating it as cosmetic.
 A selector that passes validation but throws while matching (a hostile
 `matches` override, a detached document) still fails closed and masks the
@@ -396,13 +437,13 @@ targeted escape hatch. `maskAllElementAttributes` and `maskAttributeFn` are
 mutually exclusive: if both are supplied, `maskAllElementAttributes` wins and
 `maskAttributeFn` is ignored, with a one-time console warning. A throwing
 `maskAttributeFn` fails closed to stars rather than leaking the original
-value. Under `legacy`, `maskAttributeFn`'s return value is used as-is; under
+value. Under `manual`, `maskAttributeFn`'s return value is used as-is; under
 `balanced`/`strict` the compiled policy still runs on top of it
 (`title`/`placeholder`/`aria-label` masking, `strict`'s media-source drop)
 and can only
 narrow what the callback chose to keep, never restore something the policy
 would otherwise mask. `style`/`_cssText` are exempt from all of this.
-Likewise, under `legacy`, `maskInputFn`'s return value is trusted verbatim;
+Likewise, under `manual`, `maskInputFn`'s return value is trusted verbatim;
 under `balanced`/`strict`, `maskInputFn` output is star-replaced -- the
 callback controls length, never content.
 
@@ -450,15 +491,17 @@ Breaking changes versus pre-2.0 masking, for anyone upgrading:
   warning).
 - `password`/`hidden` inputs and autocomplete `cc-*`/`current-password`/
   `new-password`/`one-time-code` fields are now always masked regardless of
-  `maskInputOptions`; previously some could record raw under `legacy`.
+  `maskInputOptions`; previously some could record raw under `manual`.
 - An invalid `maskTextSelector`/`unmaskTextSelector`/`blockSelector` is now
   dropped with a `console.warn` at setup instead of silently ignored.
 - Same-element mask/unmask ties now resolve to masking (previously unmask
   won).
-- Unmasking recognizes only `.rr-unmask`, `data-privacy="allow"`, and
-  explicit policy/`record()` selectors; no foreign vendor unmask class is
-  ever honored (a page author's mask decision is never overridden by a
-  convention rrweb cannot verify).
+- Unmasking recognizes only `.rr-unmask`, `data-privacy="unmask"`, and
+  explicit policy/`record()` selectors. The single foreign unmask class rrweb
+  will honor is `.amp-unmask`, and only under `vendorCompat: true`; every
+  other vendor's unmask convention is ignored on both settings (a page
+  author's mask decision is never overridden by a convention rrweb cannot
+  verify).
 - Masking a form value also suppresses a `<select>` option's `selected` flag,
   via the new exported `shouldMaskInput` predicate.
 - `maskInputValue` is deprecated in favor of `maskInput`.

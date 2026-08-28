@@ -134,11 +134,6 @@ describe('record() generated-attribute flag vs. a real page write', () => {
   });
 });
 
-/**
- * The mutation path's `finalizeAttribute` reads the compiled policy's own
- * `unmaskTextSelector`, so `record()` writes the merged record()-level option
- * back onto the policy. Without that, the option would only affect text.
- */
 describe('record() unmaskTextSelector reaches masked attributes', () => {
   async function titlesAfterMutation(
     html: string,

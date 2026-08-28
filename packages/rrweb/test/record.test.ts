@@ -126,16 +126,16 @@ describe('record', function (this: ISuite) {
     await ctx.page.setContent(`
       <p id="contact" data-privacy="mask" title="initial@example.com">initial@example.com</p>
       <input id="name" data-privacy="mask" type="text" value="Initial Name" />
-      <input id="password" data-privacy="allow" type="password" value="secret" />
-      <div data-privacy="exclude"><p>excluded text</p></div>
-      <p data-privacy="allow">visible text</p>
+      <input id="password" data-privacy="unmask" type="password" value="secret" />
+      <div data-privacy="block"><p>excluded text</p></div>
+      <p data-privacy="unmask">visible text</p>
     `);
     await ctx.page.evaluate(() => {
       const { record } = (window as unknown as IWindow).rrweb;
       record({
         emit: (window as unknown as IWindow).emit,
         // `data-privacy` selectors are part of the v2 presets; a recording
-        // with no policy at all stays on legacy semantics by design.
+        // with no policy at all stays on manual semantics by design.
         privacyPolicy: { version: 1, preset: 'balanced' },
       });
 

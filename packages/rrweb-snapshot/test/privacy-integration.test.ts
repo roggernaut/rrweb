@@ -68,6 +68,72 @@ describe('text masking v2', () => {
   });
 
   /**
+   * `vendorCompat` says "this page was instrumented for another tool", which
+   * makes that tool's markers intentional declarations rather than foreign
+   * tokens of unknown provenance -- so `.amp-unmask` is honored, but only
+   * there. Note this is the one direction in which the flag can *reduce*
+   * masking; see the guide's vendor-recognition section.
+   */
+  it('honors .amp-unmask once vendorCompat is on', () => {
+    const out = serialize('<div class="amp-unmask"><p>now shown</p></div>', {
+      version: 1,
+      preset: 'strict',
+      vendorCompat: true,
+    });
+    expect(out).toContain('now shown');
+  });
+
+  it('recognizes a foreign mask class only once vendorCompat is on', () => {
+    const balanced: PrivacyPolicy = { version: 1, preset: 'balanced' };
+    expect(
+      serialize('<div class="ph-mask"><p>phtext</p></div>', balanced),
+    ).toContain('phtext');
+    expect(
+      serialize('<div class="ph-mask"><p>phtext</p></div>', {
+        ...balanced,
+        vendorCompat: true,
+      }),
+    ).not.toContain('phtext');
+  });
+
+  it('recognizes a foreign block class only once vendorCompat is on', () => {
+    const balanced: PrivacyPolicy = { version: 1, preset: 'balanced' };
+    expect(
+      serialize('<div class="ph-no-capture"><p>phblock</p></div>', balanced),
+    ).toContain('phblock');
+    expect(
+      serialize('<div class="ph-no-capture"><p>phblock</p></div>', {
+        ...balanced,
+        vendorCompat: true,
+      }),
+    ).not.toContain('phblock');
+  });
+
+  /**
+   * The fail-closed rule, end to end: a `data-privacy` typo protects the
+   * subtree instead of silently doing nothing.
+   */
+  it('masks a subtree whose data-privacy value is not recognized', () => {
+    const balanced: PrivacyPolicy = { version: 1, preset: 'balanced' };
+    expect(
+      serialize('<div data-privacy="masked"><p>typo text</p></div>', balanced),
+    ).not.toContain('typo text');
+    expect(
+      serialize('<div data-privacy=""><p>empty value</p></div>', balanced),
+    ).not.toContain('empty value');
+    // the recognized values are unaffected
+    expect(
+      serialize('<div data-privacy="unmask"><p>kept</p></div>', strict),
+    ).toContain('kept');
+    expect(
+      serialize('<div data-privacy="mask"><p>gone</p></div>', balanced),
+    ).not.toContain('gone');
+    expect(
+      serialize('<div data-privacy="block"><p>blocked</p></div>', balanced),
+    ).not.toContain('blocked');
+  });
+
+  /**
    * Different levels: nearest ancestor wins (covered above). Same element:
    * mask wins. Sentry resolves the tie with `maskDistance <= unmaskDistance`,
    * and Amplitude and Mixpanel both check their mask list first -- an element
@@ -83,7 +149,7 @@ describe('text masking v2', () => {
 
   it('same-element tie is masked for the data-privacy variant too', () => {
     const out = serialize(
-      '<div data-privacy="allow" class="rr-mask"><p>tie broken</p></div>',
+      '<div data-privacy="unmask" class="rr-mask"><p>tie broken</p></div>',
       strict,
     );
     expect(out).not.toContain('tie broken');
@@ -158,7 +224,7 @@ describe('text masking v2', () => {
     expect(out).not.toContain('secret');
   });
 
-  it('legacy leaves text untouched', () => {
+  it('manual leaves text untouched', () => {
     expect(serialize('<p>bob@example.com</p>', undefined)).toContain(
       'bob@example.com',
     );
@@ -167,7 +233,7 @@ describe('text masking v2', () => {
 
 describe('maskInput v2', () => {
   const balanced = compilePrivacyPolicy({ version: 1, preset: 'balanced' });
-  const legacy = compilePrivacyPolicy(undefined);
+  const manual = compilePrivacyPolicy(undefined);
   const input = (attrs = '') => {
     document.body.innerHTML = `<input ${attrs} value="4111 1111 1111 1111">`;
     return document.querySelector('input') as HTMLInputElement;
@@ -195,7 +261,7 @@ describe('maskInput v2', () => {
     });
     expect(out).toBe('*'.repeat('[redacted]'.length));
   });
-  it('legacy + maskInputFn trusted verbatim when legacy options mask', () => {
+  it('manual + maskInputFn trusted verbatim when manual options mask', () => {
     const out = maskInput({
       element: input(),
       tagName: 'input',
@@ -203,11 +269,11 @@ describe('maskInput v2', () => {
       value: 'secret',
       maskInputOptions: { text: true },
       maskInputFn: () => '[redacted]',
-      privacy: legacy,
+      privacy: manual,
     });
     expect(out).toBe('[redacted]');
   });
-  it('legacy without options passes value through', () => {
+  it('manual without options passes value through', () => {
     expect(
       maskInput({
         element: input(),
@@ -215,11 +281,11 @@ describe('maskInput v2', () => {
         type: 'text',
         value: 'plain',
         maskInputOptions: {},
-        privacy: legacy,
+        privacy: manual,
       }),
     ).toBe('plain');
   });
-  it('protected inputs always mask, even legacy with no options', () => {
+  it('protected inputs always mask, even manual with no options', () => {
     expect(
       maskInput({
         element: input('type="password"'),
@@ -227,7 +293,7 @@ describe('maskInput v2', () => {
         type: 'password',
         value: 'pw',
         maskInputOptions: {},
-        privacy: legacy,
+        privacy: manual,
       }),
     ).toBe('**');
     expect(isProtectedInput(input('autocomplete="cc-number"'))).toBe(true);
@@ -237,7 +303,7 @@ describe('maskInput v2', () => {
 describe('finalizeAttribute', () => {
   const strict = compilePrivacyPolicy({ version: 1, preset: 'strict' });
   const balanced = compilePrivacyPolicy({ version: 1, preset: 'balanced' });
-  const legacy = compilePrivacyPolicy({ version: 1, preset: 'legacy' });
+  const manual = compilePrivacyPolicy({ version: 1, preset: 'manual' });
 
   const el = (
     html = '<img title="Bob" style="color:red" src="https://u:p@a.com/i.png?token=t">',
@@ -296,7 +362,7 @@ describe('finalizeAttribute', () => {
         element: el(),
         name: 'aria-label',
         value: 'Bob',
-        privacy: legacy,
+        privacy: manual,
       }),
     ).toBe('Bob');
   });
@@ -369,12 +435,6 @@ describe('finalizeAttribute', () => {
       ).toBeNull();
     });
 
-    /**
-     * A placeholder is only derivable from *pixels*. Percentages, keywords and
-     * a half-declared element are all rejected rather than guessed at, because
-     * `finalizeAttribute` may not measure -- it runs per attribute in the
-     * serializer's hot path.
-     */
     it.each([
       ['<img src="i.png" width="50%" height="80">'],
       ['<img src="i.png" width="auto" height="auto">'],
@@ -389,6 +449,18 @@ describe('finalizeAttribute', () => {
           privacy: strict,
         }),
       ).toBeNull();
+    });
+
+    it('derives placeholder dimensions from content attributes only, never a layout measurement', () => {
+      const rect = vi.spyOn(Element.prototype, 'getBoundingClientRect');
+      finalizeAttribute({
+        element: el('<img src="https://a.com/i.png" width="120" height="80">'),
+        name: 'src',
+        value: 'https://a.com/i.png',
+        privacy: strict,
+      });
+      expect(rect).not.toHaveBeenCalled();
+      rect.mockRestore();
     });
 
     it('leaves non-image media sources dropped even when sized', () => {
@@ -472,20 +544,20 @@ describe('finalizeAttribute', () => {
       const maskAttributeFn = vi.fn(() => 'REWRITTEN');
       expect(
         finalizeAttribute({
-          element: el('<div data-privacy="allow"></div>', 'div'),
+          element: el('<div data-privacy="unmask"></div>', 'div'),
           name: 'data-privacy',
-          value: 'allow',
+          value: 'unmask',
           privacy: strict,
           maskAttributeFn,
         }),
-      ).toBe('allow');
+      ).toBe('unmask');
       expect(maskAttributeFn).not.toHaveBeenCalled();
       // ...but it still runs for an ordinary attribute on the same element
       finalizeAttribute({
-        element: el('<div data-privacy="allow" title="x"></div>', 'div'),
+        element: el('<div data-privacy="unmask" title="x"></div>', 'div'),
         name: 'title',
         value: 'x',
-        privacy: legacy,
+        privacy: manual,
         maskAttributeFn,
       });
       expect(maskAttributeFn).toHaveBeenCalledTimes(1);
@@ -652,7 +724,6 @@ describe('finalizeAttribute', () => {
         privacy: balanced,
       }),
     ).toBe('Bob');
-    // no unmask ancestor -> unchanged behavior
     expect(
       finalizeAttribute({
         element: el('<img title="Bob">'),
@@ -663,13 +734,23 @@ describe('finalizeAttribute', () => {
     ).toBe('***');
   });
 
-  /**
-   * `finalizeAttribute` reads the *compiled policy's* `unmaskTextSelector`,
-   * so the `record()`-level string option has to be written back onto the
-   * policy by `snapshot()`/`record()`. Without that write-back the option
-   * would silently only affect text, and the documented attribute escape
-   * would not exist for it.
-   */
+  it('a selector that throws grants no unmask escape; the attribute stays masked', () => {
+    const closest = vi
+      .spyOn(Element.prototype, 'closest')
+      .mockImplementation(() => {
+        throw new Error('boom');
+      });
+    expect(
+      finalizeAttribute({
+        element: el('<img title="Bob" class="rr-unmask">'),
+        name: 'title',
+        value: 'Bob',
+        privacy: balanced,
+      }),
+    ).toBe('***');
+    closest.mockRestore();
+  });
+
   it('honors a record()-level unmaskTextSelector, not just policy selectors', () => {
     document.body.innerHTML =
       '<div class="support-widget"><img title="Bob"></div>' +
@@ -685,7 +766,7 @@ describe('finalizeAttribute', () => {
           rules: [
             {
               target: { type: 'selector', selector: '.policy-safe' },
-              action: 'allow',
+              action: 'unmask',
             },
           ],
         },
@@ -694,7 +775,7 @@ describe('finalizeAttribute', () => {
     );
 
     expect(out).toContain('"Bob"'); // record()-level option
-    expect(out).toContain('"Alice"'); // vendor class
+    expect(out).toContain('"Alice"'); // .rr-unmask
     expect(out).toContain('"Carol"'); // policy rule
     expect(out).not.toContain('"Dave"'); // no escape -> still starred
   });
@@ -773,14 +854,14 @@ describe('finalizeAttribute', () => {
         maskAttributeFn: () => '[MASKED]',
       }),
     ).toBe('*'.repeat('[MASKED]'.length));
-    // Under legacy the policy block is the identity, so the callback's output
+    // Under manual the policy block is the identity, so the callback's output
     // survives verbatim.
     expect(
       finalizeAttribute({
         element: el(),
         name: 'title',
         value: 'Bob',
-        privacy: legacy,
+        privacy: manual,
         maskAttributeFn: () => '[MASKED]',
       }),
     ).toBe('[MASKED]');
@@ -846,7 +927,7 @@ describe('finalizeAttribute', () => {
         element: el(),
         name: 'data-x',
         value: 'Bob',
-        privacy: legacy,
+        privacy: manual,
         maskAttributeFn: () => undefined as unknown as string,
       }),
     ).toBe('***');
@@ -948,12 +1029,12 @@ describe('<option selected> follows the select value decision', () => {
     expect(out).not.toContain('"selected"');
   });
 
-  it('legacy with no input masking still records it', () => {
-    const out = serialize(OPTIONS, { version: 1, preset: 'legacy' });
+  it('manual with no input masking still records it', () => {
+    const out = serialize(OPTIONS, { version: 1, preset: 'manual' });
     expect(out).toContain('"selected":true');
   });
 
-  it('legacy honors maskInputOptions.select exactly as before', () => {
+  it('manual honors maskInputOptions.select exactly as before', () => {
     document.body.innerHTML = OPTIONS;
     const out = JSON.stringify(
       snapshot(document, { maskAllInputs: { select: true } }),

@@ -76,12 +76,12 @@ function record<T = eventWithTime>(
     checkoutEveryNms,
     checkoutEveryNth,
     blockClass = 'rr-block',
-    blockSelector: legacyBlockSelector = null,
+    blockSelector: manualBlockSelector = null,
     ignoreClass = 'rr-ignore',
     ignoreSelector = null,
     maskTextClass = 'rr-mask',
-    maskTextSelector: legacyMaskTextSelector = null,
-    unmaskTextSelector: legacyUnmaskTextSelector = null,
+    maskTextSelector: manualMaskTextSelector = null,
+    unmaskTextSelector: manualUnmaskTextSelector = null,
     inlineStylesheet = true,
     maskAllInputs,
     maskInputOptions: _maskInputOptions,
@@ -112,29 +112,18 @@ function record<T = eventWithTime>(
     privacyPolicy,
   } = options;
 
-  // The one privacy prologue: compiles the policy, merges every legacy
-  // selector option with its compiled counterpart, and writes the merged
-  // unmask selector back onto the policy -- without that write-back the
-  // `record()`-level option would only affect text masking and would skip
-  // the masked-attribute escape `finalizeAttribute` reads off the policy.
-  // `snapshot()` is handed `privacy` directly, so it neither compiles nor
-  // merges again, and the merged unmask selector needs no separate carrier.
   const { privacy, blockSelector, maskTextSelector } = resolvePrivacyContext({
     privacyPolicy,
-    blockSelector: legacyBlockSelector,
-    maskTextSelector: legacyMaskTextSelector,
-    unmaskTextSelector: legacyUnmaskTextSelector,
+    blockSelector: manualBlockSelector,
+    maskTextSelector: manualMaskTextSelector,
+    unmaskTextSelector: manualUnmaskTextSelector,
   });
-  // Strict remains fail-closed for the whole canvas. Region providers are
-  // available to balanced/legacy policies, where the application owns
-  // the completeness of those regions.
+  // Strict stays fail-closed for the whole canvas; region providers apply
+  // only to balanced/manual, where the application owns region completeness.
   const recordCanvas = requestedRecordCanvas && !privacy.blockMedia;
   const canvasMaskingConfigured = canvasMasking
     ? () => isCanvasMaskingConfigured(canvasMasking)
     : undefined;
-  // Canvas masking forces the FPS capture path; `resolveCanvasSampling`
-  // carries the reasoning. `sampling` is the caller's own object, so
-  // overriding `canvas` in place would mutate the options they passed in.
   const sampling: SamplingStrategy = {
     ...requestedSampling,
     canvas: resolveCanvasSampling(

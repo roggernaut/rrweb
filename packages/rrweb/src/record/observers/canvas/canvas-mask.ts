@@ -7,10 +7,7 @@ export type FrameMaskResult =
   | typeof SKIP_FRAME
   | undefined;
 
-/**
- * Compute and scale application-provided regions before any canvas pixels
- * cross into the encoding worker. Any ambiguous result fails closed.
- */
+/** Computes and scales application-provided regions before any canvas pixels cross into the encoding worker. */
 export function computeFrameMaskRegions(
   masking: CanvasMasking | undefined,
   canvas: HTMLCanvasElement,
@@ -39,7 +36,6 @@ export function computeFrameMaskRegions(
   return regions
     .filter((region) => region.width > 0 && region.height > 0)
     .map((region) => {
-      // Round outward so fractional scaling never leaves a sliver exposed.
       const left = Math.floor(region.x * scaleX);
       const top = Math.floor(region.y * scaleY);
       return {
@@ -51,11 +47,6 @@ export function computeFrameMaskRegions(
     });
 }
 
-/**
- * The canvas backing store maps onto the content box, not the border box
- * `clientWidth` reports (which includes padding and would skew the scale
- * factor). Returns `null`, never a fallback size, so callers fail closed.
- */
 export function getCanvasContentBoxSize(
   canvas: HTMLCanvasElement,
 ): { width: number; height: number } | null {
@@ -99,13 +90,6 @@ export function getCanvasContentBoxSize(
   return { width, height };
 }
 
-/**
- * The display box a frame's mask regions are scaled against. Gated on
- * `isCanvasMaskingConfigured`, not mere presence: an unconfigured provider
- * masks nothing, so skip the per-frame layout-flush cost of measuring it.
- * When masking is in force, an unmeasurable box fails closed to `SKIP_FRAME`
- * rather than guessing a scale that misplaces the regions.
- */
 export function resolveFrameDisplaySize(
   masking: CanvasMasking | undefined,
   canvas: HTMLCanvasElement,
@@ -145,12 +129,7 @@ function isValidRegion(region: unknown): region is CanvasMaskRegion {
   );
 }
 
-/**
- * Only the FPS/OffscreenCanvas capture path can redact pixels; the mutation
- * command-stream path replays raw canvas calls verbatim. So a configured
- * canvas masking provider always forces numeric FPS sampling -- otherwise
- * masking would be silently bypassed. See guide.md's "Canvas masking".
- */
+/** A configured canvas masking provider always forces numeric FPS sampling; only that capture path can redact pixels. */
 export function resolveCanvasSampling(
   requestedSampling: number | 'all' | undefined,
   canvasMaskingConfigured: boolean,

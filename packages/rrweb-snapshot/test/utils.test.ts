@@ -7,6 +7,7 @@ import {
   extractFileExtension,
   fixSafariColons,
   isNodeMetaEqual,
+  isProtectedInput,
   stringifyStylesheet,
 } from '../src/utils';
 import { NodeType } from '@rrweb/types';
@@ -360,6 +361,27 @@ describe('utils', () => {
     it('returns an empty string for null/undefined', () => {
       expect(untaintedTagName(null)).toBe('');
       expect(untaintedTagName(undefined)).toBe('');
+    });
+  });
+
+  describe('isProtectedInput()', () => {
+    it('protects a hidden input', () => {
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      expect(isProtectedInput(input)).toBe(true);
+    });
+
+    it('protects an input a mutation observer marked as a former password field', () => {
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.setAttribute('data-rr-is-password', 'true');
+      expect(isProtectedInput(input)).toBe(true);
+    });
+
+    it('does not protect an ordinary text input', () => {
+      const input = document.createElement('input');
+      input.type = 'text';
+      expect(isProtectedInput(input)).toBe(false);
     });
   });
 });
