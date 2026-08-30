@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import record from '../../src/record';
 import { EventType, IncrementalSource, type eventWithTime } from '@rrweb/types';
 
@@ -184,5 +184,60 @@ describe('record() unmaskTextSelector reaches masked attributes', () => {
       { privacyPolicy: { version: 1, preset: 'balanced' } },
     );
     expect(titles).toContain('updated-0');
+  });
+});
+
+/**
+ * `strict` blocks media unconditionally, so an explicit `recordCanvas: true`
+ * is silently downgraded to off. That silent downgrade previously had no
+ * signal at all; a caller who explicitly opted into canvas recording
+ * deserves a one-time warning rather than a canvas that quietly never
+ * records.
+ */
+describe('record() warns once when strict disables an explicit recordCanvas', () => {
+  it('warns once and still leaves canvas recording off', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      const stop1 = record({
+        emit: () => {},
+        recordCanvas: true,
+        privacyPolicy: { version: 1, preset: 'strict' },
+      });
+      stop1?.();
+      const stop2 = record({
+        emit: () => {},
+        recordCanvas: true,
+        privacyPolicy: { version: 1, preset: 'strict' },
+      });
+      stop2?.();
+
+      const strictWarnings = warn.mock.calls.filter(([msg]) =>
+        String(msg).includes(
+          "privacyPolicy preset 'strict' disables canvas recording",
+        ),
+      );
+      expect(strictWarnings).toHaveLength(1);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('does not warn when recordCanvas was never requested', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      const stop = record({
+        emit: () => {},
+        privacyPolicy: { version: 1, preset: 'strict' },
+      });
+      stop?.();
+      const strictWarnings = warn.mock.calls.filter(([msg]) =>
+        String(msg).includes(
+          "privacyPolicy preset 'strict' disables canvas recording",
+        ),
+      );
+      expect(strictWarnings).toHaveLength(0);
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

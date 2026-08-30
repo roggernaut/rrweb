@@ -14,7 +14,9 @@ const NATIVE_BLOCK_CLASSES = '.rr-block';
 // See guide.md's "Vendor class recognition" section.
 const COMPAT_MASK_CLASSES =
   '.mp-mask,.fs-mask,.amp-mask,.ph-mask,.sentry-mask,[data-sentry-mask],.dd-privacy-mask,[data-dd-privacy="mask"],.dd-privacy-mask-user-input,[data-dd-privacy="mask-user-input"],.nr-mask,[data-nr-mask]';
-const COMPAT_UNMASK_CLASSES = '.amp-unmask';
+// No COMPAT_UNMASK_CLASSES: `vendorCompat` may only ever add masking or
+// blocking, never reveal. `.rr-unmask` stays native-only — see
+// guide.md's "Vendor class recognition" section.
 const COMPAT_BLOCK_CLASSES =
   '.mp-block,.fs-exclude,.amp-block,.ph-no-capture,.sentry-block,.dd-privacy-hidden,[data-dd-privacy="hidden"],.nr-block,[data-nr-block]';
 
@@ -222,12 +224,7 @@ export function compilePrivacyPolicy(
         ),
     unmaskTextSelector: joinSelectors(
       managed
-        ? [
-            DATA_PRIVACY_UNMASK,
-            NATIVE_UNMASK_CLASSES,
-            vendorCompat ? COMPAT_UNMASK_CLASSES : null,
-            ...bySelector.unmask,
-          ]
+        ? [DATA_PRIVACY_UNMASK, NATIVE_UNMASK_CLASSES, ...bySelector.unmask]
         : bySelector.unmask,
     ),
     blockSelector: joinSelectors(

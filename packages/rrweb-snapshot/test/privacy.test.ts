@@ -226,7 +226,6 @@ describe('vendorCompat', () => {
       '[data-nr-block]',
     ])
       expect(off.blockSelector).not.toContain(foreign);
-    expect(off.unmaskTextSelector).not.toContain('amp-unmask');
   });
 
   it('merges the foreign mask and block tokens when enabled', () => {
@@ -243,16 +242,15 @@ describe('vendorCompat', () => {
   });
 
   /**
-   * The one foreign unmask token rrweb honors, and only under the flag:
-   * enabling compat is a statement that this page was instrumented for
-   * Amplitude, which makes its unmask marker an intentional declaration
-   * rather than a foreign token of unknown provenance. Every other tool's
-   * unmask/allow convention stays unhonored on both settings.
+   * `vendorCompat` may only ever add masking or blocking, never reveal:
+   * `.rr-unmask` is the only unmask token, on or off. No foreign tool's
+   * unmask/allow convention is ever honored, regardless of the flag —
+   * enabling compat cannot turn a foreign marker into an unmask signal.
    */
-  it('honors .amp-unmask only under the flag, and no other foreign unmask', () => {
-    expect(on.unmaskTextSelector).toContain('.amp-unmask');
+  it('never honors a foreign unmask token, flag on or off', () => {
     expect(on.unmaskTextSelector).toContain('.rr-unmask');
     for (const foreign of [
+      '.amp-unmask',
       '.sentry-unmask',
       '.dd-privacy-allow',
       '[data-dd-privacy="allow"]',
@@ -556,5 +554,36 @@ describe('needMaskingText accepts the legacy selector string', () => {
         true,
       ),
     ).toBe(false);
+  });
+});
+
+/**
+ * `needMaskingText`'s catch-all fails closed to masking (see the
+ * `merge helpers validate the record()-level selector` note above for why an
+ * ancestor `matches()` can throw at all). The one-time warning tells an
+ * embedder their custom selector is broken instead of silently masking
+ * forever with no signal.
+ */
+describe('needMaskingText warns once when the mask decision throws', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+    vi.restoreAllMocks();
+  });
+
+  it('fails closed to masking and warns exactly once across repeated throws', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    document.body.innerHTML = '<div><span id="t">x</span></div>';
+    const node = document.querySelector('#t')!;
+    expect(needMaskingText(node, 'rr-mask', ':::garbage', null, true)).toBe(
+      true,
+    );
+    expect(needMaskingText(node, 'rr-mask', ':::garbage', null, true)).toBe(
+      true,
+    );
+    const throwWarnings = warn.mock.calls.filter(([msg]) =>
+      String(msg).includes('privacy mask decision threw'),
+    );
+    expect(throwWarnings).toHaveLength(1);
+    expect(throwWarnings[0][0]).toContain('failing closed to masking');
   });
 });

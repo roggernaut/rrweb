@@ -53,6 +53,8 @@ let takeFullSnapshot!: (isCheckout?: boolean) => void;
 let canvasManager!: CanvasManager;
 let recording = false;
 
+let warnedStrictDisablesCanvas = false;
+
 // Multiple tools (i.e. MooTools, Prototype.js) override Array.from and drop support for the 2nd parameter
 // Try to pull a clean implementation from a newly created iframe
 try {
@@ -121,6 +123,16 @@ function record<T = eventWithTime>(
   // Strict stays fail-closed for the whole canvas; region providers apply
   // only to balanced/manual, where the application owns region completeness.
   const recordCanvas = requestedRecordCanvas && !privacy.blockMedia;
+  if (
+    requestedRecordCanvas &&
+    privacy.blockMedia &&
+    !warnedStrictDisablesCanvas
+  ) {
+    warnedStrictDisablesCanvas = true;
+    console.warn(
+      "privacyPolicy preset 'strict' disables canvas recording; recordCanvas ignored",
+    );
+  }
   const canvasMaskingConfigured = canvasMasking
     ? () => isCanvasMaskingConfigured(canvasMasking)
     : undefined;
