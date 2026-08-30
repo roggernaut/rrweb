@@ -506,6 +506,16 @@ selector and behave identically. It cannot unmask input
 values, and it cannot override a protected input, a dropped media source
 under `strict`, or a `block`.
 
+> **EXPERIMENTAL -- performance note.** Configuring any unmask selector would
+> otherwise force a per-node ancestor walk, so rrweb first probes once per
+> flush whether the selector matches anything in the document at all, and
+> skips the walk when it does not. The probe is a full-document element sweep
+> (including open shadow roots), and it costs the most in exactly the case it
+> optimizes for: when **no** unmask target is present, every element is
+> visited before the answer comes back `null`. That cost scales with DOM
+> size and is paid on every flush. On a very large DOM where the unmask
+> target is usually absent, prefer not configuring an unmask selector at all.
+
 An invalid `maskTextSelector`, `unmaskTextSelector` or `blockSelector` --
 either the `record()`-level string option or a policy rule's selector -- is
 validated at setup and **dropped with a `console.warn`** that names the

@@ -10,7 +10,14 @@ optimization -- novel, no vendor precedent).
   (not per node) whether `unmaskTextSelector` currently matches anything in
   the document, including open shadow roots. When it matches nothing, the
   cheap masking short-circuit is restored for that pass; a selector that
-  throws is assumed present, so behavior fails closed.
+  throws is assumed present, so behavior fails closed. The probe is not
+  free: it is a full-document element sweep, costliest precisely when no
+  unmask target exists (every element is visited before the answer comes
+  back `null`), and it scales with DOM size on every flush.
+- Each document resolves its own probe: the unresolved selector is threaded
+  into the deferred iframe and stylesheet re-serializations, so an unmask
+  target that exists only inside a same-origin iframe is no longer ignored
+  because the parent document had none.
 - Pair it with per-flush/per-snapshot memoisation of `needMaskingText`
   decisions (keyed by the ancestor-walk's starting element), so mutations or
   siblings sharing a parent share one walk instead of paying for one each.

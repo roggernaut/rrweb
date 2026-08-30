@@ -1076,7 +1076,16 @@ export function serializeNodeWithId(
     maskTextClass: string | RegExp;
     /** The pre-split pair from `splitMaskAllSelector`; a raw string is still accepted, coerced by `needMaskingText`. */
     maskTextSelector: MaskTextSelector | string | null;
+    /** Resolved against *this* document by the unmask presence probe. */
     unmaskTextSelector: string | null;
+    /**
+     * The same selector before the probe resolved it away. Carried so the two
+     * deferred re-serializations below (a nested iframe document, a late
+     * stylesheet) can re-probe against their own document: a target that
+     * exists only inside an iframe is absent from the parent and would
+     * otherwise be resolved to `null` for the whole tree.
+     */
+    unresolvedUnmaskTextSelector?: string | null;
     skipChild: boolean;
     inlineStylesheet: boolean;
     newlyAddedElement?: boolean;
@@ -1118,6 +1127,7 @@ export function serializeNodeWithId(
     maskTextClass,
     maskTextSelector,
     unmaskTextSelector,
+    unresolvedUnmaskTextSelector = unmaskTextSelector,
     skipChild = false,
     inlineStylesheet = true,
     maskInputOptions = {},
@@ -1248,6 +1258,7 @@ export function serializeNodeWithId(
       maskTextClass,
       maskTextSelector,
       unmaskTextSelector,
+      unresolvedUnmaskTextSelector,
       skipChild,
       inlineStylesheet,
       maskInputOptions,
@@ -1329,7 +1340,14 @@ export function serializeNodeWithId(
             needsMask,
             maskTextClass,
             maskTextSelector,
-            unmaskTextSelector,
+            // The nested document runs its own presence probe: an unmask
+            // target may exist only in here, where the parent's resolved
+            // value (probed against the parent document) says `null`.
+            unmaskTextSelector: resolveUnmaskTextSelector(
+              iframeDoc,
+              unresolvedUnmaskTextSelector,
+            ),
+            unresolvedUnmaskTextSelector,
             skipChild: false,
             inlineStylesheet,
             maskInputOptions,
@@ -1386,7 +1404,13 @@ export function serializeNodeWithId(
             needsMask,
             maskTextClass,
             maskTextSelector,
-            unmaskTextSelector,
+            // Deferred to stylesheet load, so re-probe: the document may have
+            // grown an unmask target since the original pass resolved.
+            unmaskTextSelector: resolveUnmaskTextSelector(
+              doc,
+              unresolvedUnmaskTextSelector,
+            ),
+            unresolvedUnmaskTextSelector,
             skipChild: false,
             inlineStylesheet,
             maskInputOptions,
@@ -1502,8 +1526,9 @@ function snapshot(
     maskTextSelector: manualMaskTextSelector,
     unmaskTextSelector: manualUnmaskTextSelector,
   });
-  // Resolved per document: the same (unresolved) policy is also threaded into
-  // nested iframe documents, where a currently-absent selector may match.
+  // Resolved per document: the unresolved selector rides along beside it, so
+  // nested iframe documents re-probe for themselves rather than inheriting
+  // this document's "nothing matches" answer.
   const unmaskTextSelector = resolveUnmaskTextSelector(
     n,
     mergedUnmaskTextSelector,
@@ -1545,6 +1570,7 @@ function snapshot(
     maskTextClass,
     maskTextSelector: splitMaskTextSelector,
     unmaskTextSelector,
+    unresolvedUnmaskTextSelector: mergedUnmaskTextSelector,
     skipChild: false,
     inlineStylesheet,
     maskInputOptions,

@@ -87,7 +87,7 @@ describe('privacy v2 perf smoke', () => {
 });
 
 /**
- * Every non-manual preset compiles a non-null `unmaskTextSelector` (strict
+ * Every non-minimal preset compiles a non-null `unmaskTextSelector` (strict
  * and balanced both always include `[data-privacy="unmask"]` and
  * `.rr-unmask`, rule-configured or not). That forces
  * `serializeNodeWithId`'s `checkAncestors` branch permanently on, which
