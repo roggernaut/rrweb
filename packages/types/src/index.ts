@@ -318,6 +318,8 @@ export type PrivacyPolicy = {
   rules?: PrivacyRule[];
   detectors?: PrivacyDetectorOptions;
   url?: PrivacyUrlOptions;
+  /** Opt in to recognizing other session-replay tools' privacy classes/attributes; off by default. */
+  vendorCompat?: boolean;
 };
 
 export type PrivacyPreset = 'strict' | 'balanced' | 'manual';
@@ -360,11 +362,11 @@ export type CompiledDetector = {
 /** Runtime form of a compiled policy, shared by snapshot and incremental observers. */
 export type CompiledPrivacyPolicy = {
   preset: PrivacyPreset;
-  /** 'mask' rules + the fail-closed [data-privacy] token + vendor classes (+ '*' under strict) */
+  /** 'mask' rules + the fail-closed [data-privacy] token + .rr-mask (+ compat classes, + '*' under strict) */
   maskTextSelector: string | null;
-  /** 'unmask' rules + [data-privacy="unmask"] + .rr-unmask */
+  /** 'unmask' rules + [data-privacy="unmask"] + .rr-unmask (+ .amp-unmask under vendorCompat) */
   unmaskTextSelector: string | null;
-  /** 'block' rules + [data-privacy="block"] + vendor block classes */
+  /** 'block' rules + [data-privacy="block"] + .rr-block (+ compat classes) */
   blockSelector: string | null;
   /** true under balanced/strict, and whenever any heuristic detector is active. */
   maskAllInputs: boolean;

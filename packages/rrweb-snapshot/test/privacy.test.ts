@@ -70,12 +70,9 @@ describe('compilePrivacyPolicy v2', () => {
     expect(c.sanitizeUrls).toBe(true);
     expect(c.maskTextSelector).not.toContain('*');
     expect(c.maskTextSelector).toContain('[data-privacy]');
-    expect(c.maskTextSelector).toContain('.ph-mask'); // cross-vendor classes
-    expect(c.maskTextSelector).toContain('.dd-privacy-mask'); // Datadog
-    expect(c.maskTextSelector).toContain('[data-nr-mask]'); // New Relic
+    expect(c.maskTextSelector).toContain('.rr-mask');
     expect(c.blockSelector).toContain('[data-privacy="block"]');
-    expect(c.blockSelector).toContain('.dd-privacy-hidden'); // Datadog
-    expect(c.blockSelector).toContain('[data-nr-block]'); // New Relic
+    expect(c.blockSelector).toContain('.rr-block');
     expect(c.attributePolicyInert).toBe(false);
   });
   it('strict masks all text and blocks media', () => {
@@ -96,15 +93,6 @@ describe('compilePrivacyPolicy v2', () => {
     expect(c.maskTextSelector).toContain('.pii');
     expect(c.unmaskTextSelector).toContain('.safe');
     expect(c.blockSelector).toContain('.gone');
-  });
-  it('never grants authority to foreign unmask tokens', () => {
-    const c = compilePrivacyPolicy({ version: 1, preset: 'balanced' });
-    expect(c.unmaskTextSelector).toContain('.rr-unmask');
-    expect(c.unmaskTextSelector).not.toContain('amp-unmask');
-    expect(c.unmaskTextSelector).not.toContain('sentry-unmask');
-    // the mask/block lists stay full cross-vendor compat
-    expect(c.maskTextSelector).toContain('.sentry-mask');
-    expect(c.blockSelector).toContain('.sentry-block');
   });
   it('rejects a pre-v2 action name outright', () => {
     for (const action of ['allow', 'exclude']) {
@@ -241,6 +229,95 @@ describe('an unrecognized data-privacy value fails closed to mask', () => {
         withRule.maskTextSelector as string,
       ),
     ).toBe(true);
+  });
+});
+
+/**
+ * Recognizing another tool's classes changes what rrweb records based on
+ * markup the embedder may not control, so it is an explicit opt-in rather
+ * than a managed-preset default.
+ */
+describe('vendorCompat', () => {
+  const off = compilePrivacyPolicy({ version: 1, preset: 'balanced' });
+  const on = compilePrivacyPolicy({
+    version: 1,
+    preset: 'balanced',
+    vendorCompat: true,
+  });
+
+  it('is off by default: only rrweb-native conventions are merged', () => {
+    expect(off.maskTextSelector).toContain('.rr-mask');
+    expect(off.blockSelector).toContain('.rr-block');
+    expect(off.unmaskTextSelector).toContain('.rr-unmask');
+    for (const foreign of [
+      '.ph-mask',
+      '.mp-mask',
+      '.fs-mask',
+      '.amp-mask',
+      '.sentry-mask',
+      '[data-sentry-mask]',
+      '.dd-privacy-mask',
+      '[data-nr-mask]',
+    ])
+      expect(off.maskTextSelector).not.toContain(foreign);
+    for (const foreign of [
+      '.ph-no-capture',
+      '.mp-block',
+      '.fs-exclude',
+      '.amp-block',
+      '.sentry-block',
+      '.dd-privacy-hidden',
+      '[data-nr-block]',
+    ])
+      expect(off.blockSelector).not.toContain(foreign);
+    expect(off.unmaskTextSelector).not.toContain('amp-unmask');
+  });
+
+  it('merges the foreign mask and block tokens when enabled', () => {
+    expect(on.maskTextSelector).toContain('.ph-mask');
+    expect(on.maskTextSelector).toContain('.dd-privacy-mask'); // Datadog
+    expect(on.maskTextSelector).toContain('[data-nr-mask]'); // New Relic
+    expect(on.maskTextSelector).toContain('.sentry-mask');
+    expect(on.blockSelector).toContain('.dd-privacy-hidden'); // Datadog
+    expect(on.blockSelector).toContain('[data-nr-block]'); // New Relic
+    expect(on.blockSelector).toContain('.sentry-block');
+    // native tokens are still there alongside them
+    expect(on.maskTextSelector).toContain('.rr-mask');
+    expect(on.blockSelector).toContain('.rr-block');
+  });
+
+  /**
+   * The one foreign unmask token rrweb honors, and only under the flag:
+   * enabling compat is a statement that this page was instrumented for
+   * Amplitude, which makes its unmask marker an intentional declaration
+   * rather than a foreign token of unknown provenance. Every other tool's
+   * unmask/allow convention stays unhonored on both settings.
+   */
+  it('honors .amp-unmask only under the flag, and no other foreign unmask', () => {
+    expect(on.unmaskTextSelector).toContain('.amp-unmask');
+    expect(on.unmaskTextSelector).toContain('.rr-unmask');
+    for (const foreign of [
+      '.sentry-unmask',
+      '.dd-privacy-allow',
+      '[data-dd-privacy="allow"]',
+      '.nr-unmask',
+      '.ph-no-mask',
+      '.fs-unmask',
+      '.mp-unmask',
+    ]) {
+      expect(on.unmaskTextSelector).not.toContain(foreign);
+      expect(off.unmaskTextSelector).not.toContain(foreign);
+    }
+  });
+
+  it('stays inert under manual, which never merged vendor classes', () => {
+    const c = compilePrivacyPolicy({
+      version: 1,
+      preset: 'manual',
+      vendorCompat: true,
+    });
+    expect(c.maskTextSelector).toBeNull();
+    expect(c.blockSelector).toBeNull();
   });
 });
 

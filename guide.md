@@ -346,27 +346,49 @@ these fields cannot be opted back into raw recording. (Previously, under
 fields could record their raw value; that is a breaking change from pre-v2
 behavior.)
 
-##### Vendor class recognition: migration compatibility
+##### Vendor class recognition: opt-in migration compatibility
 
-A page already instrumented for another session-replay tool carries that
-tool's own mask/block class names. Under `balanced` and `strict`, rrweb
-recognizes those too, so such a page keeps the protection it already has
-from the moment you switch recorders, with no extra configuration and no
-re-annotation pass. This is a migration-compatibility layer, not the
-convention to reach for in new markup -- use `data-privacy` for that.
+Under `balanced` and `strict`, rrweb always recognizes its own conventions:
 
-- Mask: `.rr-mask`, `.mp-mask`, `.fs-mask`, `.amp-mask`, `.ph-mask`, `.sentry-mask`, `[data-sentry-mask]`, `.dd-privacy-mask`, `[data-dd-privacy="mask"]`, `.dd-privacy-mask-user-input`, `[data-dd-privacy="mask-user-input"]`, `.nr-mask`, `[data-nr-mask]`
-- Block: `.rr-block`, `.mp-block`, `.fs-exclude`, `.amp-block`, `.ph-no-capture`, `.sentry-block`, `.dd-privacy-hidden`, `[data-dd-privacy="hidden"]`, `.nr-block`, `[data-nr-block]`
+- Mask: `.rr-mask`
+- Block: `.rr-block`
 - Unmask: `.rr-unmask`
 
-The mask and block lists are the mask/block conventions of major
-session-replay tools -- rrweb, Mixpanel, Amplitude, PostHog, Sentry,
-FullStory, Datadog, and New Relic. Recognizing a foreign mask/block token is
-protective-only: it can only increase masking. Foreign UNMASK tokens
-are deliberately never honored, because honoring one could reveal something
-the page author masked for a reason rrweb has no way to know. Unmasking must
-come from rrweb's own `.rr-unmask`, the neutral `data-privacy="unmask"`
-attribute, or an explicit policy/recording option.
+A page already instrumented for another session-replay tool also carries
+that tool's own mask/block class names. Set `vendorCompat: true` on the
+policy and rrweb recognizes those too, so such a page keeps the protection
+it already has from the moment you switch recorders, with no re-annotation
+pass:
+
+```js
+record({
+  privacyPolicy: { version: 1, preset: 'balanced', vendorCompat: true },
+});
+```
+
+It is off by default because recognizing a foreign token changes what rrweb
+records based on markup the embedder may not control -- a class name that
+means "mask" to one tool may be an ordinary styling hook here -- so the
+decision to honor another vendor's vocabulary is made explicitly.
+
+- Compat mask: `.mp-mask`, `.fs-mask`, `.amp-mask`, `.ph-mask`, `.sentry-mask`, `[data-sentry-mask]`, `.dd-privacy-mask`, `[data-dd-privacy="mask"]`, `.dd-privacy-mask-user-input`, `[data-dd-privacy="mask-user-input"]`, `.nr-mask`, `[data-nr-mask]`
+- Compat block: `.mp-block`, `.fs-exclude`, `.amp-block`, `.ph-no-capture`, `.sentry-block`, `.dd-privacy-hidden`, `[data-dd-privacy="hidden"]`, `.nr-block`, `[data-nr-block]`
+- Compat unmask: `.amp-unmask`
+
+These are the conventions of Mixpanel, Amplitude, PostHog, Sentry,
+FullStory, Datadog, and New Relic. The mask and block lists are
+protective-only: they can only increase masking.
+
+`.amp-unmask` is the one exception, and the one way `vendorCompat` can
+**reduce** masking -- an element carrying it is unmasked under `strict`
+where it otherwise would not be. Turning the flag on is a statement that the
+page was instrumented for another tool, which makes that tool's unmask
+marker an intentional declaration rather than a foreign token of unknown
+provenance. No other tool's unmask/allow convention is honored on either
+setting, on or off: unmasking otherwise comes only from `.rr-unmask`, the
+neutral `data-privacy="unmask"` attribute, or an explicit policy/recording
+option. If you want the compat mask/block lists without that, keep the flag
+off and add the classes you need as `mask`/`block` rules instead.
 
 The Datadog tokens come from `browser-sdk
 packages/browser-rum-core/src/domain/privacyConstants.ts` (the
@@ -378,8 +400,8 @@ tokens come from `newrelic-browser-agent src/common/config/init.js`
 `nr-ignore` are deliberately excluded for the same reason).
 
 (`.rr-mask` and `.rr-block` also work under `manual`, through the existing
-`maskTextClass`/`blockClass` options above -- the rest of this list is new in
-`balanced`/`strict`.)
+`maskTextClass`/`blockClass` options above. `vendorCompat` has no effect
+under `manual`, which merges no class conventions of its own.)
 
 ##### Escape hatches and selector validation
 
@@ -521,9 +543,11 @@ Breaking changes versus pre-2.0 masking, for anyone upgrading:
 - Same-element mask/unmask ties now resolve to masking (previously unmask
   won).
 - Unmasking recognizes only `.rr-unmask`, `data-privacy="unmask"`, and
-  explicit policy/`record()` selectors; no foreign vendor unmask class is
-  ever honored (a page author's mask decision is never overridden by a
-  convention rrweb cannot verify).
+  explicit policy/`record()` selectors. The single foreign unmask class rrweb
+  will honor is `.amp-unmask`, and only under `vendorCompat: true`; every
+  other vendor's unmask convention is ignored on both settings (a page
+  author's mask decision is never overridden by a convention rrweb cannot
+  verify).
 - Masking a form value also suppresses a `<select>` option's `selected` flag,
   via the new exported `shouldMaskInput` predicate.
 - `maskInputValue` is deprecated in favor of `maskInput`.

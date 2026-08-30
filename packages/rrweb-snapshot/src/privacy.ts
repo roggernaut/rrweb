@@ -8,13 +8,17 @@ import type {
 } from './types';
 import { untaintedTagName } from '@rrweb/utils';
 
-// Migration compatibility with other tools' mask/block conventions;
-// data-privacy leads. See guide.md's "Vendor class recognition" section.
-const VENDOR_MASK_CLASSES =
-  '.rr-mask,.mp-mask,.fs-mask,.amp-mask,.ph-mask,.sentry-mask,[data-sentry-mask],.dd-privacy-mask,[data-dd-privacy="mask"],.dd-privacy-mask-user-input,[data-dd-privacy="mask-user-input"],.nr-mask,[data-nr-mask]';
-const RRWEB_UNMASK_CLASS = '.rr-unmask';
-const VENDOR_BLOCK_CLASSES =
-  '.rr-block,.mp-block,.fs-exclude,.amp-block,.ph-no-capture,.sentry-block,.dd-privacy-hidden,[data-dd-privacy="hidden"],.nr-block,[data-nr-block]';
+const NATIVE_MASK_CLASSES = '.rr-mask';
+const NATIVE_UNMASK_CLASSES = '.rr-unmask';
+const NATIVE_BLOCK_CLASSES = '.rr-block';
+
+// Other tools' conventions, merged only under `vendorCompat`.
+// See guide.md's "Vendor class recognition" section.
+const COMPAT_MASK_CLASSES =
+  '.mp-mask,.fs-mask,.amp-mask,.ph-mask,.sentry-mask,[data-sentry-mask],.dd-privacy-mask,[data-dd-privacy="mask"],.dd-privacy-mask-user-input,[data-dd-privacy="mask-user-input"],.nr-mask,[data-nr-mask]';
+const COMPAT_UNMASK_CLASSES = '.amp-unmask';
+const COMPAT_BLOCK_CLASSES =
+  '.mp-block,.fs-exclude,.amp-block,.ph-no-capture,.sentry-block,.dd-privacy-hidden,[data-dd-privacy="hidden"],.nr-block,[data-nr-block]';
 
 // `data-privacy` fails closed: the mask token is the bare attribute minus the
 // two values that mean something else, so an unrecognized value masks.
@@ -323,6 +327,7 @@ export function compilePrivacyPolicy(
     throw new Error(`Unsupported privacy preset: ${String(effective.preset)}`);
   const preset = effective.preset;
   const managed = preset !== 'manual';
+  const vendorCompat = effective.vendorCompat === true;
   const detectors = buildDetectors(effective.detectors);
   const maskAllInputs = managed || detectors.length > 0;
   const maskedAttributes = new Set(managed ? MASKED_ATTRIBUTE_DEFAULTS : []);
@@ -353,7 +358,8 @@ export function compilePrivacyPolicy(
         ? '*'
         : joinSelectors([
             DATA_PRIVACY_MASK,
-            VENDOR_MASK_CLASSES,
+            NATIVE_MASK_CLASSES,
+            vendorCompat ? COMPAT_MASK_CLASSES : null,
             ...bySelector.mask,
           ])
       : joinSelectors(
@@ -361,12 +367,22 @@ export function compilePrivacyPolicy(
         ),
     unmaskTextSelector: joinSelectors(
       managed
-        ? [DATA_PRIVACY_UNMASK, RRWEB_UNMASK_CLASS, ...bySelector.unmask]
+        ? [
+            DATA_PRIVACY_UNMASK,
+            NATIVE_UNMASK_CLASSES,
+            vendorCompat ? COMPAT_UNMASK_CLASSES : null,
+            ...bySelector.unmask,
+          ]
         : bySelector.unmask,
     ),
     blockSelector: joinSelectors(
       managed
-        ? [DATA_PRIVACY_BLOCK, VENDOR_BLOCK_CLASSES, ...bySelector.block]
+        ? [
+            DATA_PRIVACY_BLOCK,
+            NATIVE_BLOCK_CLASSES,
+            vendorCompat ? COMPAT_BLOCK_CLASSES : null,
+            ...bySelector.block,
+          ]
         : bySelector.block.length
         ? [DATA_PRIVACY_BLOCK, ...bySelector.block]
         : [],

@@ -68,6 +68,48 @@ describe('text masking v2', () => {
   });
 
   /**
+   * `vendorCompat` says "this page was instrumented for another tool", which
+   * makes that tool's markers intentional declarations rather than foreign
+   * tokens of unknown provenance -- so `.amp-unmask` is honored, but only
+   * there. Note this is the one direction in which the flag can *reduce*
+   * masking; see the guide's vendor-recognition section.
+   */
+  it('honors .amp-unmask once vendorCompat is on', () => {
+    const out = serialize('<div class="amp-unmask"><p>now shown</p></div>', {
+      version: 1,
+      preset: 'strict',
+      vendorCompat: true,
+    });
+    expect(out).toContain('now shown');
+  });
+
+  it('recognizes a foreign mask class only once vendorCompat is on', () => {
+    const balanced: PrivacyPolicy = { version: 1, preset: 'balanced' };
+    expect(
+      serialize('<div class="ph-mask"><p>phtext</p></div>', balanced),
+    ).toContain('phtext');
+    expect(
+      serialize('<div class="ph-mask"><p>phtext</p></div>', {
+        ...balanced,
+        vendorCompat: true,
+      }),
+    ).not.toContain('phtext');
+  });
+
+  it('recognizes a foreign block class only once vendorCompat is on', () => {
+    const balanced: PrivacyPolicy = { version: 1, preset: 'balanced' };
+    expect(
+      serialize('<div class="ph-no-capture"><p>phblock</p></div>', balanced),
+    ).toContain('phblock');
+    expect(
+      serialize('<div class="ph-no-capture"><p>phblock</p></div>', {
+        ...balanced,
+        vendorCompat: true,
+      }),
+    ).not.toContain('phblock');
+  });
+
+  /**
    * The fail-closed rule, end to end: a `data-privacy` typo protects the
    * subtree instead of silently doing nothing.
    */

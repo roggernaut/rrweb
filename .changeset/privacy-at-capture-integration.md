@@ -12,9 +12,11 @@ primitives.
 - BREAKING: `@rrweb/rrweb-plugin-privacy-detectors`'s API and the
   `RecordPlugin.applyPrivacyPolicy` hook are new, and several masking
   decisions that used to have inconsistent defaults are now always enforced
-  (e.g. protected inputs, mask/unmask ties, foreign unmask tokens never
-  honored) -- the default preset introduced by this change is named `manual`
-  -- see the guide's migration section for the full list.
+  (e.g. protected inputs, mask/unmask ties) -- the default preset introduced
+  by this change is named `manual`, and recognizing another session-replay
+  tool's privacy classes is opt-in via `vendorCompat: true` rather than a
+  managed-preset default -- see the guide's migration section for the full
+  list.
 - Add an opt-in, versioned `privacyPolicy` with `strict`/`balanced`/`manual`
   presets, the vendor-neutral `data-privacy` HTML binding (`mask`/`block`/
   `unmask`, the same three names as the rule actions, with any unrecognized
