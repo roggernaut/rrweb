@@ -364,7 +364,7 @@ export type CompiledPrivacyPolicy = {
   preset: PrivacyPreset;
   /** 'mask' rules + the fail-closed [data-privacy] token + .rr-mask (+ compat classes, + '*' under strict) */
   maskTextSelector: string | null;
-  /** 'unmask' rules + [data-privacy="unmask"] + .rr-unmask (+ .amp-unmask under vendorCompat) */
+  /** 'unmask' rules + [data-privacy="unmask"] + .rr-unmask (native-only; vendorCompat never adds unmask tokens) */
   unmaskTextSelector: string | null;
   /** 'block' rules + [data-privacy="block"] + .rr-block (+ compat classes) */
   blockSelector: string | null;

@@ -477,3 +477,97 @@ describe('record() per-flush mask-decision memoisation', () => {
     expect(values).toContain('*'.repeat('second-secret'.length));
   });
 });
+
+/**
+ * `strict` blocks media unconditionally, so an explicit `recordCanvas: true`
+ * is silently downgraded to off. That silent downgrade previously had no
+ * signal at all; a caller who explicitly opted into canvas recording
+ * deserves a one-time warning rather than a canvas that quietly never
+ * records.
+ */
+describe('record() warns once when strict disables an explicit recordCanvas', () => {
+  it('warns once and still leaves canvas recording off', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      const stop1 = record({
+        emit: () => {},
+        recordCanvas: true,
+        privacyPolicy: { version: 1, preset: 'strict' },
+      });
+      stop1?.();
+      const stop2 = record({
+        emit: () => {},
+        recordCanvas: true,
+        privacyPolicy: { version: 1, preset: 'strict' },
+      });
+      stop2?.();
+
+      const strictWarnings = warn.mock.calls.filter(([msg]) =>
+        String(msg).includes(
+          "privacyPolicy preset 'strict' disables canvas recording",
+        ),
+      );
+      expect(strictWarnings).toHaveLength(1);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('does not warn when recordCanvas was never requested', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      const stop = record({
+        emit: () => {},
+        privacyPolicy: { version: 1, preset: 'strict' },
+      });
+      stop?.();
+      const strictWarnings = warn.mock.calls.filter(([msg]) =>
+        String(msg).includes(
+          "privacyPolicy preset 'strict' disables canvas recording",
+        ),
+      );
+      expect(strictWarnings).toHaveLength(0);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
+
+/**
+ * EXPERIMENTAL, open design question for upstream: the Meta event's own
+ * `href` is scoped like `balanced` (blocked-list-only param masking) even
+ * under `strict`, while a DOM URL attribute keeps `strict`'s normal
+ * mask-everything-unless-allowlisted treatment. See `sanitizeMetaUrl`'s doc
+ * comment in `rrweb-snapshot/src/privacy.ts`.
+ */
+describe('record() Meta event href under strict', () => {
+  function metaHref(events: eventWithTime[]): string | undefined {
+    const meta = events.find((event) => event.type === EventType.Meta);
+    return meta && meta.type === EventType.Meta ? meta.data.href : undefined;
+  }
+
+  it('keeps a non-blocked query param', () => {
+    const originalPushState = window.history.pushState.bind(window.history);
+    originalPushState(null, '', '/path?page=2');
+    const events: eventWithTime[] = [];
+    const stop = record({
+      emit: (event) => events.push(event),
+      privacyPolicy: { version: 1, preset: 'strict' },
+    });
+    stop?.();
+    expect(metaHref(events)).toContain('page=2');
+  });
+
+  it('still masks a blocked-list query param', () => {
+    const originalPushState = window.history.pushState.bind(window.history);
+    originalPushState(null, '', '/path?token=secret');
+    const events: eventWithTime[] = [];
+    const stop = record({
+      emit: (event) => events.push(event),
+      privacyPolicy: { version: 1, preset: 'strict' },
+    });
+    stop?.();
+    expect(metaHref(events)).toContain('token=*');
+    expect(metaHref(events)).not.toContain('secret');
+  });
+});

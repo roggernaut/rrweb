@@ -290,6 +290,8 @@ export function splitMaskAllSelector(
   };
 }
 
+let warnedMaskDecisionThrew = false;
+
 export function needMaskingText(
   node: Node,
   maskTextClass: string | RegExp,
@@ -329,6 +331,14 @@ export function needMaskingText(
     }
     return maskAll || inheritedNeedsMask;
   } catch (e) {
+    if (!warnedMaskDecisionThrew) {
+      warnedMaskDecisionThrew = true;
+      console.warn(
+        `privacy mask decision threw; failing closed to masking — check custom selectors: ${
+          e instanceof Error ? e.message : String(e)
+        }`,
+      );
+    }
     return true;
   }
 }

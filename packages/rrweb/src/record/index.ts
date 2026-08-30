@@ -6,7 +6,7 @@ import {
   compilePrivacyPolicy,
   type CompiledPrivacyPolicy,
   resolvePrivacyContext,
-  sanitizeUrl,
+  sanitizeMetaUrl,
 } from 'rrweb-snapshot';
 import { initObservers, mutationBuffers } from './observer';
 import {
@@ -55,6 +55,8 @@ let wrappedEmit!: (e: eventWithoutTime, isCheckout?: boolean) => void;
 let takeFullSnapshot!: (isCheckout?: boolean) => void;
 let canvasManager!: CanvasManager;
 let recording = false;
+
+let warnedStrictDisablesCanvas = false;
 
 // Multiple tools (i.e. MooTools, Prototype.js) override Array.from and drop support for the 2nd parameter
 // Try to pull a clean implementation from a newly created iframe
@@ -145,6 +147,16 @@ function record<T = eventWithTime>(
   // Strict stays fail-closed for the whole canvas; region providers apply
   // only to balanced/manual, where the application owns region completeness.
   const recordCanvas = requestedRecordCanvas && !privacy.blockMedia;
+  if (
+    requestedRecordCanvas &&
+    privacy.blockMedia &&
+    !warnedStrictDisablesCanvas
+  ) {
+    warnedStrictDisablesCanvas = true;
+    console.warn(
+      "privacyPolicy preset 'strict' disables canvas recording; recordCanvas ignored",
+    );
+  }
   const canvasMaskingConfigured = canvasMasking
     ? () => isCanvasMaskingConfigured(canvasMasking)
     : undefined;
@@ -403,8 +415,11 @@ function record<T = eventWithTime>(
         type: EventType.Meta,
         data: {
           // Meta's `href` is a required string; '' is the inert fallback for
-          // an unparseable URL, which `sanitizeUrl` otherwise drops (null).
-          href: sanitizeUrl(window.location.href, privacy) ?? '',
+          // an unparseable URL, which `sanitizeMetaUrl` otherwise drops
+          // (null). `sanitizeMetaUrl` masks only blocked-list params, even
+          // under `strict` -- see its doc comment for why the Meta event's
+          // own URL is scoped differently than a DOM URL attribute.
+          href: sanitizeMetaUrl(window.location.href, privacy) ?? '',
           width: getWindowWidth(),
           height: getWindowHeight(),
         },

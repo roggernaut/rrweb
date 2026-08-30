@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   applyPrivacyDetectors,
   getRecordPrivacyDetectorsPlugin,
@@ -119,5 +119,37 @@ describe('privacy detectors plugin', () => {
         privacy: compiled,
       }),
     ).toBe('*'.repeat('Visible Name'.length));
+  });
+});
+
+/**
+ * The module-level once-flag means this only reads cleanly against a fresh
+ * module instance -- `vi.resetModules()` plus a dynamic re-import isolates
+ * it from every other test in this file that already exercised
+ * `applyPrivacyPolicy`.
+ */
+describe('privacy-detectors active info log', () => {
+  it('logs once at first policy application, across plugin instances', async () => {
+    vi.resetModules();
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    try {
+      const fresh = await import('../src/index');
+      const plugin = fresh.getRecordPrivacyDetectorsPlugin();
+      plugin.applyPrivacyPolicy?.({ version: 1, preset: 'manual' });
+      plugin.applyPrivacyPolicy?.({ version: 1, preset: 'manual' });
+      const secondPlugin = fresh.getRecordPrivacyDetectorsPlugin();
+      secondPlugin.applyPrivacyPolicy?.({ version: 1, preset: 'manual' });
+
+      const activeLogs = info.mock.calls.filter(([msg]) =>
+        String(msg).includes('privacy-detectors active'),
+      );
+      expect(activeLogs).toHaveLength(1);
+      expect(activeLogs[0][0]).toContain(
+        'input values record as length-only stars',
+      );
+    } finally {
+      info.mockRestore();
+      vi.resetModules();
+    }
   });
 });

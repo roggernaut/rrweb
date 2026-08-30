@@ -68,19 +68,17 @@ describe('text masking v2', () => {
   });
 
   /**
-   * `vendorCompat` says "this page was instrumented for another tool", which
-   * makes that tool's markers intentional declarations rather than foreign
-   * tokens of unknown provenance -- so `.amp-unmask` is honored, but only
-   * there. Note this is the one direction in which the flag can *reduce*
-   * masking; see the guide's vendor-recognition section.
+   * `vendorCompat` can only ever add masking or blocking, never reveal:
+   * `.amp-unmask` stays unhonored even with the flag on. See the guide's
+   * vendor-recognition section.
    */
-  it('honors .amp-unmask once vendorCompat is on', () => {
-    const out = serialize('<div class="amp-unmask"><p>now shown</p></div>', {
+  it('still does not honor .amp-unmask once vendorCompat is on', () => {
+    const out = serialize('<div class="amp-unmask"><p>still hidden</p></div>', {
       version: 1,
       preset: 'strict',
       vendorCompat: true,
     });
-    expect(out).toContain('now shown');
+    expect(out).not.toContain('still hidden');
   });
 
   it('recognizes a foreign mask class only once vendorCompat is on', () => {

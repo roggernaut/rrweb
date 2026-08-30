@@ -373,22 +373,16 @@ decision to honor another vendor's vocabulary is made explicitly.
 
 - Compat mask: `.mp-mask`, `.fs-mask`, `.amp-mask`, `.ph-mask`, `.sentry-mask`, `[data-sentry-mask]`, `.dd-privacy-mask`, `[data-dd-privacy="mask"]`, `.dd-privacy-mask-user-input`, `[data-dd-privacy="mask-user-input"]`, `.nr-mask`, `[data-nr-mask]`
 - Compat block: `.mp-block`, `.fs-exclude`, `.amp-block`, `.ph-no-capture`, `.sentry-block`, `.dd-privacy-hidden`, `[data-dd-privacy="hidden"]`, `.nr-block`, `[data-nr-block]`
-- Compat unmask: `.amp-unmask`
 
 These are the conventions of Mixpanel, Amplitude, PostHog, Sentry,
-FullStory, Datadog, and New Relic. The mask and block lists are
-protective-only: they can only increase masking.
-
-`.amp-unmask` is the one exception, and the one way `vendorCompat` can
-**reduce** masking -- an element carrying it is unmasked under `strict`
-where it otherwise would not be. Turning the flag on is a statement that the
-page was instrumented for another tool, which makes that tool's unmask
-marker an intentional declaration rather than a foreign token of unknown
-provenance. No other tool's unmask/allow convention is honored on either
-setting, on or off: unmasking otherwise comes only from `.rr-unmask`, the
-neutral `data-privacy="unmask"` attribute, or an explicit policy/recording
-option. If you want the compat mask/block lists without that, keep the flag
-off and add the classes you need as `mask`/`block` rules instead.
+FullStory, Datadog, and New Relic. `vendorCompat` can only ever **increase**
+masking, never reveal: enabling it merges only these mask and block lists.
+No foreign tool's unmask/allow convention is ever honored, on either
+setting -- not even Amplitude's own `.amp-unmask` -- because doing so would
+let markup the embedder may not control turn masking off. Unmasking comes
+only from `.rr-unmask`, the neutral `data-privacy="unmask"` attribute, or an
+explicit policy/recording option. If you want the compat mask/block lists,
+add the classes you need as `mask`/`block` rules instead.
 
 The Datadog tokens come from `browser-sdk
 packages/browser-rum-core/src/domain/privacyConstants.ts` (the
@@ -473,7 +467,10 @@ record({
 
 Once loaded, text detection runs independently of the active preset --
 including `manual` -- on top of whatever masking that preset already applies,
-and input occlusion is unconditional.
+and input occlusion is unconditional. The first time the plugin applies its
+policy, it logs a one-time `console.info` ("privacy-detectors active: input
+values record as length-only stars") as a visible confirmation that input
+occlusion is in force.
 
 ##### Attribute and input masking callbacks
 
@@ -543,11 +540,9 @@ Breaking changes versus pre-2.0 masking, for anyone upgrading:
 - Same-element mask/unmask ties now resolve to masking (previously unmask
   won).
 - Unmasking recognizes only `.rr-unmask`, `data-privacy="unmask"`, and
-  explicit policy/`record()` selectors. The single foreign unmask class rrweb
-  will honor is `.amp-unmask`, and only under `vendorCompat: true`; every
-  other vendor's unmask convention is ignored on both settings (a page
-  author's mask decision is never overridden by a convention rrweb cannot
-  verify).
+  explicit policy/`record()` selectors. No foreign tool's unmask convention
+  is ever honored, on either `vendorCompat` setting (a page author's mask
+  decision is never overridden by a convention rrweb cannot verify).
 - Masking a form value also suppresses a `<select>` option's `selected` flag,
   via the new exported `shouldMaskInput` predicate.
 - `maskInputValue` is deprecated in favor of `maskInput`.
@@ -565,6 +560,50 @@ Breaking changes versus pre-2.0 masking, for anyone upgrading:
 - `sanitizeUrl` returns `null`, not `''`, for an unparseable URL, so the
   attribute is dropped instead of emptied (an empty `src`/`href` re-resolves
   to the document URL at replay and gets requested).
+- **EXPERIMENTAL, open design question for upstream:** the Meta event's own
+  `href` (via the new `sanitizeMetaUrl`) is scoped like `balanced` even
+  under `strict` -- masking only blocked-list parameters -- because it is
+  the recording's own address, not page-author markup; every DOM URL
+  attribute keeps `strict`'s normal mask-everything-unless-allowlisted
+  treatment.
+
+##### For event consumers
+
+The changes above are about configuring the recorder. If you consume the
+recorded event stream directly -- a replayer, an exporter, a redaction
+auditor -- Privacy at Capture changes what shows up on the wire, independent
+of any config you pass:
+
+- An attribute value can now be `null` where it previously carried a string.
+  This means the attribute was dropped entirely, not emptied -- e.g. a
+  blocked `<audio src>` with no placeholder to fall back to, or an
+  unparseable URL. Treat `null` the same as "attribute absent," not as an
+  empty string.
+- A masked media source (`src`, `poster`, and similar, on `<img>`/`<video>`)
+  is replaced by an inline `data:image/svg+xml` URI -- a solid-color
+  rectangle at the element's declared pixel `width`/`height` -- rather than
+  by the original bytes or a bare placeholder token. Layout-dependent
+  consumers can keep sizing off it; anything reading pixel content will see
+  the placeholder, not the source image.
+- Masked text is star-replaced character by character (`\S` becomes `*`);
+  whitespace, including newlines, is left untouched so line breaks and
+  spacing in the original still show through the stars.
+- Once canvas masking is in force (`canvasMasking` configured, or
+  `blockMedia` under `strict`), canvas capture switches to the FPS
+  frame-image path: periodic full-frame snapshot events rather than
+  incremental drawing-command mutations. A consumer that replays canvas
+  mutations command-by-command will instead see whole-frame "keyframe"
+  events at the configured sampling rate.
+
+One more thing worth flagging if your pages already use a `data-privacy`
+attribute for something unrelated to rrweb: under `balanced`/`strict`,
+rrweb now reads that attribute as its own privacy binding regardless of who
+put it there or why. An element carrying `data-privacy="mask"` for some
+other purpose gets masked; an unrecognized value on it also masks (see the
+fail-closed rule above). This is a real collision, not a bug -- it is
+deliberately over-protective, on the theory that a false positive (masking
+something that did not need it) is a better failure mode than a false
+negative (missing something that did).
 
 #### Checkout
 

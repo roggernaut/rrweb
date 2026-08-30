@@ -10,6 +10,7 @@ import {
   detectSensitiveValue,
   buildDetectors,
   sanitizeUrl,
+  sanitizeMetaUrl,
   splitSelectorList,
   resolveTextValue,
   resolveUnmaskTextSelector,
@@ -270,7 +271,6 @@ describe('vendorCompat', () => {
       '[data-nr-block]',
     ])
       expect(off.blockSelector).not.toContain(foreign);
-    expect(off.unmaskTextSelector).not.toContain('amp-unmask');
   });
 
   it('merges the foreign mask and block tokens when enabled', () => {
@@ -287,16 +287,15 @@ describe('vendorCompat', () => {
   });
 
   /**
-   * The one foreign unmask token rrweb honors, and only under the flag:
-   * enabling compat is a statement that this page was instrumented for
-   * Amplitude, which makes its unmask marker an intentional declaration
-   * rather than a foreign token of unknown provenance. Every other tool's
-   * unmask/allow convention stays unhonored on both settings.
+   * `vendorCompat` may only ever add masking or blocking, never reveal:
+   * `.rr-unmask` is the only unmask token, on or off. No foreign tool's
+   * unmask/allow convention is ever honored, regardless of the flag —
+   * enabling compat cannot turn a foreign marker into an unmask signal.
    */
-  it('honors .amp-unmask only under the flag, and no other foreign unmask', () => {
-    expect(on.unmaskTextSelector).toContain('.amp-unmask');
+  it('never honors a foreign unmask token, flag on or off', () => {
     expect(on.unmaskTextSelector).toContain('.rr-unmask');
     for (const foreign of [
+      '.amp-unmask',
       '.sentry-unmask',
       '.dd-privacy-allow',
       '[data-dd-privacy="allow"]',
@@ -658,6 +657,46 @@ describe('sanitizeUrl v2', () => {
   });
 });
 
+/**
+ * EXPERIMENTAL, open design question for upstream (see `sanitizeMetaUrl`'s
+ * doc comment): the Meta event's own `href` is scoped like `balanced`
+ * (blocked-list-only param masking) even under `strict`, while every DOM
+ * URL attribute keeps `strict`'s normal mask-everything-unless-allowlisted
+ * treatment. Without this, `strict` would star every query param on the
+ * page's own address, including ordinary routing state most apps put
+ * there.
+ */
+describe('sanitizeMetaUrl scopes the Meta href differently than DOM URL attributes', () => {
+  const strict = compilePrivacyPolicy({ version: 1, preset: 'strict' });
+
+  it('keeps a non-blocked param under strict', () => {
+    expect(sanitizeMetaUrl('https://a.com/?page=2', strict)).toBe(
+      'https://a.com/?page=2',
+    );
+  });
+
+  it('still masks a blocked-list param under strict', () => {
+    expect(sanitizeMetaUrl('https://a.com/?token=x', strict)).toBe(
+      'https://a.com/?token=*',
+    );
+  });
+
+  it('is strictly narrower than plain sanitizeUrl under strict, never broader', () => {
+    const metaOut = sanitizeMetaUrl('https://a.com/?page=2&token=x', strict);
+    const domOut = sanitizeUrl('https://a.com/?page=2&token=x', strict);
+    expect(metaOut).toBe('https://a.com/?page=2&token=*');
+    // The DOM path masks `page` too -- strict masks everything unless
+    // explicitly allowlisted, and no allowlist was configured here.
+    expect(domOut).toBe('https://a.com/?page=*&token=*');
+  });
+
+  it('a DOM URL attribute is unaffected: strict still masks every param', () => {
+    expect(sanitizeUrl('https://a.com/?page=2&q=x', strict)).toBe(
+      'https://a.com/?page=*&q=*',
+    );
+  });
+});
+
 describe('resolveTextValue: exemptScript', () => {
   const script = document.createElement('script');
   it('exempts SCRIPT text from masking when exemptScript is true (the snapshot path)', () => {
@@ -756,5 +795,36 @@ describe('needMaskingText accepts the legacy selector string', () => {
         true,
       ),
     ).toBe(false);
+  });
+});
+
+/**
+ * `needMaskingText`'s catch-all fails closed to masking (see the
+ * `merge helpers validate the record()-level selector` note above for why an
+ * ancestor `matches()` can throw at all). The one-time warning tells an
+ * embedder their custom selector is broken instead of silently masking
+ * forever with no signal.
+ */
+describe('needMaskingText warns once when the mask decision throws', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+    vi.restoreAllMocks();
+  });
+
+  it('fails closed to masking and warns exactly once across repeated throws', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    document.body.innerHTML = '<div><span id="t">x</span></div>';
+    const node = document.querySelector('#t')!;
+    expect(needMaskingText(node, 'rr-mask', ':::garbage', null, true)).toBe(
+      true,
+    );
+    expect(needMaskingText(node, 'rr-mask', ':::garbage', null, true)).toBe(
+      true,
+    );
+    const throwWarnings = warn.mock.calls.filter(([msg]) =>
+      String(msg).includes('privacy mask decision threw'),
+    );
+    expect(throwWarnings).toHaveLength(1);
+    expect(throwWarnings[0][0]).toContain('failing closed to masking');
   });
 });

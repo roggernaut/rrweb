@@ -24,7 +24,6 @@ const PRIVACY_SELECTOR_FRAGMENTS = [
   'fs-exclude',
   'amp-mask',
   'amp-block',
-  'amp-unmask',
   'ph-mask',
   'ph-no-capture',
   'sentry-mask',
