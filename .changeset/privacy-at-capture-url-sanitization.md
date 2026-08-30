@@ -13,6 +13,12 @@ vendor precedent, review this hardest).
   (`url.blockedQueryParameters` plus a default list), and the hash is
   removed unless `url.removeHash: false`. `strict` blocks every parameter
   value unless `url.allowedQueryParameters` names it.
+- **EXPERIMENTAL, open design question for upstream:** the Meta event's
+  `href` (via the new `sanitizeMetaUrl`) is scoped like `balanced` even
+  under `strict` -- masking only blocked-list parameters -- because it is
+  the recording's own address, not page-author markup; every DOM URL
+  attribute keeps `strict`'s normal mask-everything-unless-allowlisted
+  treatment.
 - An unparseable URL fails closed: the attribute is dropped (`null`) rather
   than emptied, since an empty `src`/`href` re-resolves to the document URL
   at replay.
