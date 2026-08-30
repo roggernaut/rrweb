@@ -27,7 +27,7 @@ const DATA_PRIVACY_MASK =
 const DATA_PRIVACY_UNMASK = '[data-privacy="unmask"]';
 const DATA_PRIVACY_BLOCK = '[data-privacy="block"]';
 
-const PRIVACY_PRESETS = new Set(['strict', 'balanced', 'manual']);
+const PRIVACY_PRESETS = new Set(['strict', 'balanced', 'minimal']);
 const MASKED_ATTRIBUTE_DEFAULTS = ['title', 'placeholder', 'aria-label'];
 
 const CSS_ATTRIBUTES = new Set(['style', '_csstext']);
@@ -119,6 +119,11 @@ export function shouldCapturePixels(
 }
 
 export function validateSelector(selector: string): boolean {
+  // No document to ask (SSR, a worker, a non-DOM test harness): assume valid
+  // rather than dropping every selector the policy declared. `matches()` is
+  // wrapped in a catch-to-mask at capture time, which stays the fail-closed
+  // backstop for anything actually malformed.
+  if (typeof document === 'undefined') return true;
   try {
     document.createDocumentFragment().querySelector(selector);
     return true;
@@ -161,14 +166,28 @@ function joinSelectors(
   const kept = new Set<string>();
   for (const s of selectors) {
     if (!s) continue;
-    if (!validateSelector(s)) {
-      console.warn(`[rrweb privacy] dropping invalid selector: ${s}`);
+    const fragments = splitSelectorList(s);
+    if (validateSelector(s)) {
+      for (const part of fragments) {
+        const trimmed = part.trim();
+        if (trimmed) kept.add(trimmed);
+      }
       continue;
     }
-    for (const part of splitSelectorList(s)) {
+    // One malformed fragment used to take the whole comma-separated list with
+    // it, silently un-masking everything the surviving fragments covered.
+    // Re-validate fragment by fragment and keep the ones that stand alone.
+    const dropped: string[] = [];
+    for (const part of fragments) {
       const trimmed = part.trim();
-      if (trimmed) kept.add(trimmed);
+      if (!trimmed) continue;
+      if (validateSelector(trimmed)) kept.add(trimmed);
+      else dropped.push(trimmed);
     }
+    if (dropped.length)
+      console.warn(
+        `[rrweb privacy] dropping invalid selector: ${dropped.join(', ')}`,
+      );
   }
   return [...kept].join(',') || null;
 }
@@ -176,7 +195,7 @@ function joinSelectors(
 export function compilePrivacyPolicy(
   policy?: PrivacyPolicy,
 ): CompiledPrivacyPolicy {
-  const effective: PrivacyPolicy = policy || { version: 1, preset: 'manual' };
+  const effective: PrivacyPolicy = policy || { version: 1, preset: 'minimal' };
   if (effective.version !== 1)
     throw new Error(
       `Unsupported Privacy at Capture policy version: ${String(
@@ -186,7 +205,7 @@ export function compilePrivacyPolicy(
   if (!PRIVACY_PRESETS.has(effective.preset))
     throw new Error(`Unsupported privacy preset: ${String(effective.preset)}`);
   const preset = effective.preset;
-  const managed = preset !== 'manual';
+  const managed = preset !== 'minimal';
   const vendorCompat = effective.vendorCompat === true;
   const maskedAttributes = new Set(managed ? MASKED_ATTRIBUTE_DEFAULTS : []);
   const blockMedia = preset === 'strict';
@@ -208,6 +227,11 @@ export function compilePrivacyPolicy(
     bySelector[rule.action].push(rule.target.selector);
   }
 
+  // Under `minimal` the rules compile to their bare selectors and nothing
+  // else: `data-privacy` and the native `rr-*` class conventions are
+  // managed-preset features, and a `mask`/`block` rule does not switch them
+  // on. (`.rr-mask`/`.rr-block` still reach `minimal` recordings through the
+  // separate `maskTextClass`/`blockClass` options.)
   return {
     preset,
     maskTextSelector: managed
@@ -219,9 +243,7 @@ export function compilePrivacyPolicy(
             vendorCompat ? COMPAT_MASK_CLASSES : null,
             ...bySelector.mask,
           ])
-      : joinSelectors(
-          bySelector.mask.length ? [DATA_PRIVACY_MASK, ...bySelector.mask] : [],
-        ),
+      : joinSelectors(bySelector.mask),
     unmaskTextSelector: joinSelectors(
       managed
         ? [DATA_PRIVACY_UNMASK, NATIVE_UNMASK_CLASSES, ...bySelector.unmask]
@@ -235,9 +257,7 @@ export function compilePrivacyPolicy(
             vendorCompat ? COMPAT_BLOCK_CLASSES : null,
             ...bySelector.block,
           ]
-        : bySelector.block.length
-        ? [DATA_PRIVACY_BLOCK, ...bySelector.block]
-        : [],
+        : bySelector.block,
     ),
     maskAllInputs: managed,
     maskedAttributes,

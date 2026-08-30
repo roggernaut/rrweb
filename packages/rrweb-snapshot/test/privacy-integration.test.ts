@@ -222,7 +222,7 @@ describe('text masking v2', () => {
     expect(out).not.toContain('secret');
   });
 
-  it('manual leaves text untouched', () => {
+  it('minimal leaves text untouched', () => {
     expect(serialize('<p>bob@example.com</p>', undefined)).toContain(
       'bob@example.com',
     );
@@ -231,7 +231,7 @@ describe('text masking v2', () => {
 
 describe('maskInput v2', () => {
   const balanced = compilePrivacyPolicy({ version: 1, preset: 'balanced' });
-  const manual = compilePrivacyPolicy(undefined);
+  const minimal = compilePrivacyPolicy(undefined);
   const input = (attrs = '') => {
     document.body.innerHTML = `<input ${attrs} value="4111 1111 1111 1111">`;
     return document.querySelector('input') as HTMLInputElement;
@@ -259,7 +259,7 @@ describe('maskInput v2', () => {
     });
     expect(out).toBe('*'.repeat('[redacted]'.length));
   });
-  it('manual + maskInputFn trusted verbatim when manual options mask', () => {
+  it('minimal + maskInputFn trusted verbatim when minimal options mask', () => {
     const out = maskInput({
       element: input(),
       tagName: 'input',
@@ -267,11 +267,11 @@ describe('maskInput v2', () => {
       value: 'secret',
       maskInputOptions: { text: true },
       maskInputFn: () => '[redacted]',
-      privacy: manual,
+      privacy: minimal,
     });
     expect(out).toBe('[redacted]');
   });
-  it('manual without options passes value through', () => {
+  it('minimal without options passes value through', () => {
     expect(
       maskInput({
         element: input(),
@@ -279,11 +279,11 @@ describe('maskInput v2', () => {
         type: 'text',
         value: 'plain',
         maskInputOptions: {},
-        privacy: manual,
+        privacy: minimal,
       }),
     ).toBe('plain');
   });
-  it('protected inputs always mask, even manual with no options', () => {
+  it('protected inputs always mask, even minimal with no options', () => {
     expect(
       maskInput({
         element: input('type="password"'),
@@ -291,7 +291,7 @@ describe('maskInput v2', () => {
         type: 'password',
         value: 'pw',
         maskInputOptions: {},
-        privacy: manual,
+        privacy: minimal,
       }),
     ).toBe('**');
     expect(isProtectedInput(input('autocomplete="cc-number"'))).toBe(true);
@@ -301,7 +301,7 @@ describe('maskInput v2', () => {
 describe('finalizeAttribute', () => {
   const strict = compilePrivacyPolicy({ version: 1, preset: 'strict' });
   const balanced = compilePrivacyPolicy({ version: 1, preset: 'balanced' });
-  const manual = compilePrivacyPolicy({ version: 1, preset: 'manual' });
+  const minimal = compilePrivacyPolicy({ version: 1, preset: 'minimal' });
 
   const el = (
     html = '<img title="Bob" style="color:red" src="https://u:p@a.com/i.png?token=t">',
@@ -360,7 +360,7 @@ describe('finalizeAttribute', () => {
         element: el(),
         name: 'aria-label',
         value: 'Bob',
-        privacy: manual,
+        privacy: minimal,
       }),
     ).toBe('Bob');
   });
@@ -555,7 +555,7 @@ describe('finalizeAttribute', () => {
         element: el('<div data-privacy="unmask" title="x"></div>', 'div'),
         name: 'title',
         value: 'x',
-        privacy: manual,
+        privacy: minimal,
         maskAttributeFn,
       });
       expect(maskAttributeFn).toHaveBeenCalledTimes(1);
@@ -852,14 +852,14 @@ describe('finalizeAttribute', () => {
         maskAttributeFn: () => '[MASKED]',
       }),
     ).toBe('*'.repeat('[MASKED]'.length));
-    // Under manual the policy block is the identity, so the callback's output
+    // Under minimal the policy block is the identity, so the callback's output
     // survives verbatim.
     expect(
       finalizeAttribute({
         element: el(),
         name: 'title',
         value: 'Bob',
-        privacy: manual,
+        privacy: minimal,
         maskAttributeFn: () => '[MASKED]',
       }),
     ).toBe('[MASKED]');
@@ -925,7 +925,7 @@ describe('finalizeAttribute', () => {
         element: el(),
         name: 'data-x',
         value: 'Bob',
-        privacy: manual,
+        privacy: minimal,
         maskAttributeFn: () => undefined as unknown as string,
       }),
     ).toBe('***');
@@ -1027,12 +1027,12 @@ describe('<option selected> follows the select value decision', () => {
     expect(out).not.toContain('"selected"');
   });
 
-  it('manual with no input masking still records it', () => {
-    const out = serialize(OPTIONS, { version: 1, preset: 'manual' });
+  it('minimal with no input masking still records it', () => {
+    const out = serialize(OPTIONS, { version: 1, preset: 'minimal' });
     expect(out).toContain('"selected":true');
   });
 
-  it('manual honors maskInputOptions.select exactly as before', () => {
+  it('minimal honors maskInputOptions.select exactly as before', () => {
     document.body.innerHTML = OPTIONS;
     const out = JSON.stringify(
       snapshot(document, { maskAllInputs: { select: true } }),

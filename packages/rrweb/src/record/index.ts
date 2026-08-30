@@ -121,7 +121,7 @@ function record<T = eventWithTime>(
     unmaskTextSelector: manualUnmaskTextSelector,
   });
   // Strict stays fail-closed for the whole canvas; region providers apply
-  // only to balanced/manual, where the application owns region completeness.
+  // only to balanced/minimal, where the application owns region completeness.
   const recordCanvas = requestedRecordCanvas && !privacy.blockMedia;
   if (
     requestedRecordCanvas &&

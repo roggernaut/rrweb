@@ -291,14 +291,38 @@ export function splitMaskAllSelector(
 
 let warnedMaskDecisionThrew = false;
 
+/**
+ * Two shapes are accepted here, and both are coerced at runtime rather than
+ * being trusted from the type signature:
+ *
+ * - `maskTextSelector` may arrive as a raw selector string (the pre-2.0
+ *   shape) instead of the `{maskAll, selector}` pair from
+ *   `splitMaskAllSelector`, and is split on the spot.
+ * - The whole call may use the pre-2.0 *positional* signature
+ *   `(node, maskTextClass, maskTextSelector, checkAncestors)`, which puts a
+ *   boolean where `unmaskTextSelector` now sits. A boolean in that slot is
+ *   detected and shifted back into `checkAncestors`, so the ancestor walk an
+ *   unmigrated caller asked for still happens. Left uncoerced this failed
+ *   *open*: `checkAncestors` landed as `undefined`, the walk stopped at the
+ *   node itself, and a `.rr-mask` ancestor no longer masked.
+ */
 export function needMaskingText(
   node: Node,
   maskTextClass: string | RegExp,
   maskTextSelector: MaskTextSelector | string | null,
-  unmaskTextSelector: string | null,
-  checkAncestors: boolean,
+  unmaskTextSelector: string | boolean | null,
+  checkAncestors?: boolean,
   inheritedNeedsMask = false,
 ): boolean {
+  if (typeof unmaskTextSelector === 'boolean') {
+    // legacy 4-arg call: the boolean is `checkAncestors`.
+    checkAncestors = unmaskTextSelector;
+    unmaskTextSelector = null;
+    inheritedNeedsMask = false;
+  } else if (checkAncestors === undefined) {
+    // an omitted `checkAncestors` walks, the wider (fail-closed) reading.
+    checkAncestors = true;
+  }
   try {
     const { maskAll, selector } =
       typeof maskTextSelector === 'string' || !maskTextSelector

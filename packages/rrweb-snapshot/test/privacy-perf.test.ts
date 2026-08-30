@@ -6,10 +6,10 @@ import snapshot from '../src/snapshot';
 import { compilePrivacyPolicy } from '../src/privacy';
 
 /**
- * Guards the "manual is sacred" performance contract: a recorder that never
+ * Guards the "minimal is sacred" performance contract: a recorder that never
  * opted into the v2 privacy policy must pay zero cost for it. If any of
  * these selectors show up in an `Element.prototype.matches` call during a
- * manual snapshot, `compilePrivacyPolicy`/`mergeBlockSelectors`/
+ * minimal snapshot, `compilePrivacyPolicy`/`mergeBlockSelectors`/
  * `needMaskingText` have started doing privacy-selector work even when the
  * caller never asked for it.
  */
@@ -53,12 +53,12 @@ describe('privacy v2 perf smoke', () => {
     vi.restoreAllMocks();
   });
 
-  it('manual snapshot performs no privacy selector matching', () => {
+  it('minimal snapshot performs no privacy selector matching', () => {
     // Sanity-check the compiled shape a caller gets when it never opts into
     // v2 privacy: every selector is null/empty, so nothing should ever
     // reach `.matches()` with a privacy-attributable selector.
     const compiled = compilePrivacyPolicy(undefined);
-    expect(compiled.preset).toBe('manual');
+    expect(compiled.preset).toBe('minimal');
     expect(compiled.maskTextSelector).toBeNull();
     expect(compiled.blockSelector).toBeNull();
 
@@ -74,7 +74,7 @@ describe('privacy v2 perf smoke', () => {
     spy.mockRestore();
   });
 
-  it('snapshot with no privacy argument at all behaves identically (manual sacred)', () => {
+  it('snapshot with no privacy argument at all behaves identically (minimal sacred)', () => {
     const spy = vi.spyOn(Element.prototype, 'matches');
     buildDeepDom();
 

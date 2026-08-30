@@ -15,30 +15,37 @@ primitives.
   enforced (e.g. protected inputs, mask/unmask ties), and a few APIs change
   shape (`needMaskingText`,
   `CompiledPrivacyPolicy`) -- the default preset introduced by this change is
-  named `manual` -- see the guide's migration section for the full list.
+  named `minimal` -- see the guide's migration section for the full list.
   `needMaskingText`'s fail-closed catch now also logs a one-time
   `console.warn` naming the underlying error, instead of masking silently.
 - Add an opt-in, versioned `privacyPolicy` with `strict`, `balanced`, and
-  `manual` presets, consistently protecting text, form values, and sensitive
+  `minimal` presets, consistently protecting text, form values, and sensitive
   attributes across full snapshots and incremental mutations; existing rrweb
-  masking options remain the backwards-compatible `manual` default.
+  masking options remain the backwards-compatible `minimal` default.
 - Recognize the vendor-neutral `data-privacy="mask|block|unmask"` HTML
   binding directly in markup under `balanced`/`strict` -- the same three
   names as the rule actions, with any unrecognized value failing closed to
   `mask`; other tools' masking class names are recognized only under
-  `vendorCompat: true`. Selector-based policy `rules` work under every
-  preset, including `manual`. CSS is never masked, on any preset.
+  `vendorCompat: true`. Both are managed-preset features: under `minimal`,
+  selector-based policy `rules` still work but compile to their bare
+  selectors and switch nothing else on. An invalid selector is dropped per
+  comma-separated fragment, so a malformed fragment no longer takes its
+  valid siblings with it. CSS is never masked, on any preset.
 - Add fail-closed `canvasMasking` region masking for complex canvas
   applications; configuring it forces the FPS capture path and suppresses
   the unmasked `rr_dataURL` full-snapshot fallback. `strict` disables canvas
-  recording outright; an explicit `recordCanvas: true` now logs a one-time
-  `console.warn` instead of being silently ignored.
+  recording outright -- emitting no canvas events at all -- and an explicit
+  `recordCanvas: true` now logs a one-time `console.warn` instead of being
+  silently ignored. Canvases inside a shadow root are now discovered only
+  through native shadow roots, so a polyfilled shadow root's canvases are no
+  longer captured.
 - Add coarse (`maskAllElementAttributes`) and callback-based
   (`maskAttributeFn`) final attribute-masking escape hatches. The guide's new
   "For event consumers" section documents what changes on the wire for
   anyone consuming the event stream directly: attributes may now come
   through as `null` (dropped), masked media sources become inline
   `data:image/svg+xml` placeholders, masked text stars non-whitespace only,
-  masked canvas emits periodic frame-image events, and pages with a
-  pre-existing `data-privacy` attribute of their own will have it read as
-  rrweb's under managed presets.
+  a configured `canvasMasking` adapter emits periodic frame-image events
+  (whereas `strict` emits none), and pages with a pre-existing
+  `data-privacy` attribute of their own will have it read as rrweb's under
+  managed presets.

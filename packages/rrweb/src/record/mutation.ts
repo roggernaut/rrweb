@@ -11,6 +11,7 @@ import {
   finalizeAttributes,
   resolveTextValue,
   FORM_VALUE_TAGS,
+  isProtectedTypeLike,
   Mirror,
   isNativeShadowDom,
   getInputType,
@@ -629,10 +630,16 @@ export default class MutationBuffer {
         let attributeName = m.attributeName as string;
         let value = (m.target as HTMLElement).getAttribute(attributeName);
 
-        // `value` means "input value" only on FORM_VALUE_TAGS; elsewhere it's
-        // an ordinary attribute and falls through to `finalizeAttribute`.
+        // `value` means "input value" on FORM_VALUE_TAGS and on any element
+        // whose own `type`/`autocomplete` declares a credential -- a
+        // component library's `<ion-input type="password">` is not an INPUT
+        // but discloses one just the same. Everywhere else `value` is an
+        // ordinary attribute and falls through to `finalizeAttribute`.
         const targetTagName = dom.untaintedTagName(target);
-        if (attributeName === 'value' && FORM_VALUE_TAGS.has(targetTagName)) {
+        if (
+          attributeName === 'value' &&
+          (FORM_VALUE_TAGS.has(targetTagName) || isProtectedTypeLike(target))
+        ) {
           const type = getInputType(target);
 
           value = maskInput({
