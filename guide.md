@@ -572,7 +572,10 @@ record({
 
 Once loaded, text detection runs independently of the active preset --
 including `manual` -- on top of whatever masking that preset already applies,
-and input occlusion is unconditional.
+and input occlusion is unconditional. The first time the plugin applies its
+policy, it logs a one-time `console.info` ("privacy-detectors active: input
+values record as length-only stars") as a visible confirmation that input
+occlusion is in force.
 
 > **Experimental.** Unlike the rest of Privacy at Capture, whole-value
 > heuristic detection on live text mutations has no production mileage in a

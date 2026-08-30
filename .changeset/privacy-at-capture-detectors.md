@@ -12,7 +12,9 @@ production mileage in any shipped session-replay recorder).
   SSN-like, IPv4): masks a whole page text node on match, at snapshot time
   and on live `characterData` mutations. Never implied by a preset; opt in
   via the plugin or `applyPrivacyDetectors`. Attribute values and custom
-  detector patterns are not supported.
+  detector patterns are not supported. The plugin logs a one-time
+  `console.info` ("privacy-detectors active: input values record as
+  length-only stars") the first time it applies its policy.
 - While any detector is active, every input value is occluded to its length
   regardless of preset (no unmask escape reopens one) -- scanning a value as
   typed would leak it through keystroke prefixes.
