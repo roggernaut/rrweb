@@ -21,7 +21,10 @@ vendor precedent, review this hardest).
   treatment.
 - An unparseable URL fails closed: the attribute is dropped (`null`) rather
   than emptied, since an empty `src`/`href` re-resolves to the document URL
-  at replay.
+  at replay. A _relative_ URL in an attribute rrweb does not already
+  absolutify (`<form action>`, `<video poster>`, ...) is rewritten
+  root-relative -- `pay/confirm` records as `/pay/confirm` -- because
+  sanitization parses against an internal base and re-serializes the path.
 - The unmask escape cannot reopen a sanitized URL.
 - Rebased onto the renamed rule actions (`mask`/`block`/`unmask`) and the
   opt-in `vendorCompat` flag; URL sanitization itself keys off the managed
