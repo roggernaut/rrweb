@@ -834,10 +834,22 @@ export function finalizeAttributes(
   }
 }
 
-/** EXPERIMENTAL: no session-replay vendor sanitizes URLs in the recorded DOM; see the changeset. */
+/**
+ * EXPERIMENTAL: no session-replay vendor sanitizes URLs in the recorded DOM;
+ * see the changeset.
+ *
+ * `paramsMode` is an internal knob, not part of the public policy surface:
+ * `'preset'` (the default) is `strict`'s normal mask-every-param-unless-
+ * allowlisted behavior; `'blocklist'` forces the `balanced` treatment
+ * (mask only `blockedQueryParameters`/non-`allowedQueryParameters`) even
+ * under `strict`. `sanitizeMetaUrl` is the one caller that needs it -- see
+ * its doc comment. This keeps the preset special-case inside the URL layer
+ * instead of leaking a `strict`-vs-Meta branch into core.
+ */
 export function sanitizeUrl(
   value: string,
   privacy: CompiledPrivacyPolicy | undefined,
+  { paramsMode = 'preset' }: { paramsMode?: 'preset' | 'blocklist' } = {},
 ): string | null {
   if (!value) return value;
   if (!privacy || !privacy.sanitizeUrls) return value;
@@ -845,10 +857,14 @@ export function sanitizeUrl(
     const url = new URL(value, 'https://rrweb.invalid');
     url.username = '';
     url.password = '';
+    const maskAllParams =
+      paramsMode === 'preset' &&
+      privacy.preset === 'strict' &&
+      !privacy.allowedQueryParameters;
     for (const [name] of url.searchParams) {
       const lower = name.toLowerCase();
       if (
-        (privacy.preset === 'strict' && !privacy.allowedQueryParameters) ||
+        maskAllParams ||
         (privacy.allowedQueryParameters &&
           !privacy.allowedQueryParameters.has(lower)) ||
         privacy.blockedQueryParameters.has(lower)
@@ -863,4 +879,23 @@ export function sanitizeUrl(
   } catch {
     return null;
   }
+}
+
+/**
+ * EXPERIMENTAL, open design question for upstream: sanitizes the Meta
+ * event's `window.location.href` with blocked-list-only parameter masking
+ * (the `balanced` treatment), even under `strict`, where every other URL in
+ * the recorded DOM masks every param unless explicitly allowlisted. The
+ * Meta event's URL is the recording's own address bar, not markup the page
+ * author wrote -- treating it identically to an arbitrary `<a href>` would
+ * make `strict` unusable for reconstructing which page a session happened
+ * on, since almost every app puts routing state in its own URL. Whether
+ * that asymmetry is the right default, versus a dedicated option, is not
+ * settled; see the changeset.
+ */
+export function sanitizeMetaUrl(
+  value: string,
+  privacy: CompiledPrivacyPolicy | undefined,
+): string | null {
+  return sanitizeUrl(value, privacy, { paramsMode: 'blocklist' });
 }

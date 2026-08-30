@@ -8,6 +8,7 @@ import {
   mergeSelectors,
   resolvePrivacyContext,
   sanitizeUrl,
+  sanitizeMetaUrl,
   splitSelectorList,
   resolveTextValue,
   isEventIgnored,
@@ -1242,6 +1243,46 @@ describe('sanitizeUrl v2', () => {
     expect(sanitizeUrl('', balanced)).toBe('');
     expect(sanitizeUrl('', strict)).toBe('');
     expect(sanitizeUrl('', manual)).toBe('');
+  });
+});
+
+/**
+ * EXPERIMENTAL, open design question for upstream (see `sanitizeMetaUrl`'s
+ * doc comment): the Meta event's own `href` is scoped like `balanced`
+ * (blocked-list-only param masking) even under `strict`, while every DOM
+ * URL attribute keeps `strict`'s normal mask-everything-unless-allowlisted
+ * treatment. Without this, `strict` would star every query param on the
+ * page's own address, including ordinary routing state most apps put
+ * there.
+ */
+describe('sanitizeMetaUrl scopes the Meta href differently than DOM URL attributes', () => {
+  const strict = compilePrivacyPolicy({ version: 1, preset: 'strict' });
+
+  it('keeps a non-blocked param under strict', () => {
+    expect(sanitizeMetaUrl('https://a.com/?page=2', strict)).toBe(
+      'https://a.com/?page=2',
+    );
+  });
+
+  it('still masks a blocked-list param under strict', () => {
+    expect(sanitizeMetaUrl('https://a.com/?token=x', strict)).toBe(
+      'https://a.com/?token=*',
+    );
+  });
+
+  it('is strictly narrower than plain sanitizeUrl under strict, never broader', () => {
+    const metaOut = sanitizeMetaUrl('https://a.com/?page=2&token=x', strict);
+    const domOut = sanitizeUrl('https://a.com/?page=2&token=x', strict);
+    expect(metaOut).toBe('https://a.com/?page=2&token=*');
+    // The DOM path masks `page` too -- strict masks everything unless
+    // explicitly allowlisted, and no allowlist was configured here.
+    expect(domOut).toBe('https://a.com/?page=*&token=*');
+  });
+
+  it('a DOM URL attribute is unaffected: strict still masks every param', () => {
+    expect(sanitizeUrl('https://a.com/?page=2&q=x', strict)).toBe(
+      'https://a.com/?page=*&q=*',
+    );
   });
 });
 

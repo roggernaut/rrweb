@@ -523,3 +523,42 @@ describe('record() input events under data-privacy="ignore"', () => {
     expect(texts).not.toContain('secret after');
   });
 });
+
+/**
+ * EXPERIMENTAL, open design question for upstream: the Meta event's own
+ * `href` is scoped like `balanced` (blocked-list-only param masking) even
+ * under `strict`, while a DOM URL attribute keeps `strict`'s normal
+ * mask-everything-unless-allowlisted treatment. See `sanitizeMetaUrl`'s doc
+ * comment in `rrweb-snapshot/src/privacy.ts`.
+ */
+describe('record() Meta event href under strict', () => {
+  function metaHref(events: eventWithTime[]): string | undefined {
+    const meta = events.find((event) => event.type === EventType.Meta);
+    return meta && meta.type === EventType.Meta ? meta.data.href : undefined;
+  }
+
+  it('keeps a non-blocked query param', () => {
+    const originalPushState = window.history.pushState.bind(window.history);
+    originalPushState(null, '', '/path?page=2');
+    const events: eventWithTime[] = [];
+    const stop = record({
+      emit: (event) => events.push(event),
+      privacyPolicy: { version: 1, preset: 'strict' },
+    });
+    stop?.();
+    expect(metaHref(events)).toContain('page=2');
+  });
+
+  it('still masks a blocked-list query param', () => {
+    const originalPushState = window.history.pushState.bind(window.history);
+    originalPushState(null, '', '/path?token=secret');
+    const events: eventWithTime[] = [];
+    const stop = record({
+      emit: (event) => events.push(event),
+      privacyPolicy: { version: 1, preset: 'strict' },
+    });
+    stop?.();
+    expect(metaHref(events)).toContain('token=*');
+    expect(metaHref(events)).not.toContain('secret');
+  });
+});

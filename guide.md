@@ -262,6 +262,15 @@ record({
 > not an established pattern, and it rewrites attribute values that the replay
 > then depends on. An unparseable URL is dropped entirely (the attribute is
 > removed) rather than emptied.
+>
+> One deliberate asymmetry within that design, itself an open question for
+> upstream: the Meta event's own `href` -- the recording's address, not
+> markup a page author wrote -- is scoped like `balanced` (only the
+> blocked-list parameters are masked) even under `strict`, where every DOM
+> URL attribute masks every parameter unless explicitly allowlisted.
+> Treating the Meta href identically to an arbitrary `<a href>` would make
+> `strict` unable to say which page a session happened on, since most apps
+> put routing state in their own URL.
 
 `minimal` is a permanent tier, not a transitional one: it is masking you
 configure yourself, through the classic options above. Password and
