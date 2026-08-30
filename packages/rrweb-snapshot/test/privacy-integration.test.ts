@@ -186,6 +186,34 @@ describe('text masking v2', () => {
     expect(out).not.toContain('hidden');
   });
 
+  /**
+   * The unmask presence probe resolves the selector to `null` when nothing in
+   * *this* document matches it. A nested same-origin iframe is a separate
+   * document: the parent's "nothing matches" answer used to be threaded into
+   * it verbatim, so an unmask target living only inside the frame was
+   * ignored. Each document now re-probes with the unresolved selector.
+   */
+  it('lets a nested same-origin iframe resolve the unmask selector itself', async () => {
+    document.body.innerHTML = '<p>parent hidden</p><iframe id="f"></iframe>';
+    const frame = document.querySelector('#f') as HTMLIFrameElement;
+    const inner = frame.contentDocument!;
+    inner.body.innerHTML =
+      '<div class="support-widget"><p>frame visible</p></div>' +
+      '<p>frame hidden</p>';
+
+    const serialized = await new Promise<string>((resolve) => {
+      snapshot(document, {
+        privacyPolicy: strict,
+        // the target exists only inside the frame, never in the parent
+        unmaskTextSelector: '.support-widget',
+        onIframeLoad: (_el, node) => resolve(JSON.stringify(node)),
+      });
+    });
+
+    expect(serialized).toContain('frame visible');
+    expect(serialized).not.toContain('frame hidden');
+  });
+
   it('detectors mask the whole text node under manual when configured', () => {
     const withDetectors: PrivacyPolicy = {
       version: 1,

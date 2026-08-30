@@ -216,20 +216,60 @@ describe('an unrecognized data-privacy value fails closed to mask', () => {
     expect(matchesMask('<div id="t"></div>')).toBe(false);
   });
 
-  it('activates under manual only alongside a mask rule, as before', () => {
+  /**
+   * `data-privacy` is a managed-preset feature, full stop. It used to switch
+   * itself on under `manual` as soon as a same-action rule existed -- and
+   * only for `mask`/`block`, never `unmask` -- so whether the attribute did
+   * anything depended on an unrelated rule. Under `manual` the rules now
+   * compile to their bare selectors and nothing else.
+   */
+  it('is entirely off under manual, with or without rules', () => {
     const bare = compilePrivacyPolicy({ version: 1, preset: 'manual' });
     expect(bare.maskTextSelector).toBeNull();
-    const withRule = compilePrivacyPolicy({
+    expect(bare.blockSelector).toBeNull();
+    expect(bare.unmaskTextSelector).toBeNull();
+
+    const withRules = compilePrivacyPolicy({
       version: 1,
       preset: 'manual',
-      rules: [{ target: { type: 'selector', selector: '.x' }, action: 'mask' }],
+      rules: [
+        { target: { type: 'selector', selector: '.x' }, action: 'mask' },
+        { target: { type: 'selector', selector: '.y' }, action: 'block' },
+        { target: { type: 'selector', selector: '.z' }, action: 'unmask' },
+      ],
     });
-    document.body.innerHTML = '<div id="t" data-privacy="typo"></div>';
-    expect(
-      (document.querySelector('#t') as HTMLElement).matches(
-        withRule.maskTextSelector as string,
-      ),
-    ).toBe(true);
+    expect(withRules.maskTextSelector).toBe('.x');
+    expect(withRules.blockSelector).toBe('.y');
+    expect(withRules.unmaskTextSelector).toBe('.z');
+
+    document.body.innerHTML =
+      '<div id="m" data-privacy="mask"></div>' +
+      '<div id="t" data-privacy="typo"></div>' +
+      '<div id="b" data-privacy="block"></div>' +
+      '<div id="u" data-privacy="unmask"></div>';
+    const matches = (id: string, selector: string | null) =>
+      (document.querySelector(`#${id}`) as HTMLElement).matches(
+        selector as string,
+      );
+    expect(matches('m', withRules.maskTextSelector)).toBe(false);
+    expect(matches('t', withRules.maskTextSelector)).toBe(false);
+    expect(matches('b', withRules.blockSelector)).toBe(false);
+    expect(matches('u', withRules.unmaskTextSelector)).toBe(false);
+  });
+
+  it('does not merge the native rr-* classes into a manual policy either', () => {
+    const withRules = compilePrivacyPolicy({
+      version: 1,
+      preset: 'manual',
+      rules: [
+        { target: { type: 'selector', selector: '.x' }, action: 'mask' },
+        { target: { type: 'selector', selector: '.y' }, action: 'block' },
+      ],
+    });
+    // `.rr-mask`/`.rr-block` reach a `manual` recording through the separate
+    // `maskTextClass`/`blockClass` options, not through the compiled policy.
+    expect(withRules.maskTextSelector).not.toContain('.rr-mask');
+    expect(withRules.blockSelector).not.toContain('.rr-block');
   });
 });
 
@@ -324,6 +364,31 @@ describe('validateSelector', () => {
   it('accepts valid, rejects invalid', () => {
     expect(validateSelector('.a > [data-x="1"]')).toBe(true);
     expect(validateSelector(':::nope')).toBe(false);
+  });
+
+  /**
+   * With no `document` to ask (SSR, a worker, a non-DOM harness) the probe
+   * used to throw a `ReferenceError` into the caller's catch and report every
+   * selector invalid -- dropping the entire compiled policy, fail-open. The
+   * runtime catch-to-mask around `matches()` stays the fail-closed backstop.
+   */
+  it('assumes valid when there is no document to probe with', () => {
+    vi.stubGlobal('document', undefined);
+    try {
+      expect(validateSelector('.a')).toBe(true);
+      expect(validateSelector(':::nope')).toBe(true);
+      expect(
+        compilePrivacyPolicy({
+          version: 1,
+          preset: 'manual',
+          rules: [
+            { target: { type: 'selector', selector: '.pii' }, action: 'mask' },
+          ],
+        }).maskTextSelector,
+      ).toBe('.pii');
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 /**
@@ -422,15 +487,60 @@ describe('merge helpers validate the record()-level selector', () => {
     );
   });
 
+  /**
+   * A malformed fragment used to take the whole comma-separated list with
+   * it, silently un-masking everything its valid siblings covered -- a
+   * fail-open, and the opposite of what the guide promises. Validation now
+   * falls back to fragment by fragment.
+   */
   it('keeps the valid half of a partly-malformed manual selector', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    // ':::garbage,.valid' is a single invalid selector string, so it is
-    // dropped whole; the caller keeps the compiled policy's own selectors.
     const merged = mergeSelectors(
-      ':::garbage,.valid',
+      '.pii, .broken:has-typo(',
       balanced.maskTextSelector,
+    )!;
+    expect(merged).toContain('.pii');
+    expect(merged).not.toContain('has-typo');
+    expect(merged).toContain('.rr-mask');
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('.broken:has-typo('),
     );
+
+    document.body.innerHTML = '<div class="pii">x</div>';
+    expect(document.querySelector('div')!.matches(merged)).toBe(true);
+  });
+
+  it('names only the dropped fragments in the warning', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    mergeSelectors(':::garbage,.valid', balanced.maskTextSelector);
+    const message = warn.mock.calls[0][0] as string;
+    expect(message).toContain(':::garbage');
+    expect(message).not.toContain('.valid');
+  });
+
+  it('drops a whole list only when every fragment is malformed', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const merged = mergeSelectors(
+      ':::a,:::b',
+      balanced.maskTextSelector,
+    ) as string;
     expect(merged).toBe(balanced.maskTextSelector);
+    expect(warn).toHaveBeenCalled();
+  });
+
+  it('keeps surviving fragments of a policy rule too, not just the manual half', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const compiled = compilePrivacyPolicy({
+      version: 1,
+      preset: 'manual',
+      rules: [
+        {
+          target: { type: 'selector', selector: '.pii, .broken:has-typo(' },
+          action: 'mask',
+        },
+      ],
+    });
+    expect(compiled.maskTextSelector).toBe('.pii');
     expect(warn).toHaveBeenCalled();
   });
 
@@ -501,7 +611,7 @@ describe('merge helpers validate the record()-level selector', () => {
   it('a malformed record()-level maskTextSelector no longer stars the page', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     document.body.innerHTML =
-      '<p>keep this text</p><p class="valid">also kept</p>';
+      '<p>keep this text</p><p class="valid">masked text</p>';
 
     const out = JSON.stringify(
       snapshot(document, {
@@ -513,8 +623,10 @@ describe('merge helpers validate the record()-level selector', () => {
       }),
     );
 
+    // the malformed fragment neither throws the page into catch-to-mask...
     expect(out).toContain('keep this text');
-    expect(out).not.toContain('****');
+    // ...nor takes its valid sibling down with it
+    expect(out).not.toContain('masked text');
     expect(warn).toHaveBeenCalled();
   });
 });
@@ -795,6 +907,76 @@ describe('needMaskingText accepts the legacy selector string', () => {
         true,
       ),
     ).toBe(false);
+  });
+});
+
+/**
+ * The pre-2.0 signature was
+ * `(node, maskTextClass, maskTextSelector, checkAncestors)`. Adding
+ * `unmaskTextSelector` in the fourth slot shifted an unmigrated caller's
+ * boolean into it and left `checkAncestors` `undefined` -- which fails
+ * *open*: the ancestor walk stops at the node, so a `.rr-mask` ancestor no
+ * longer masks. The boolean is shape-detected and shifted back instead.
+ */
+describe('needMaskingText accepts the legacy 4-arg positional call', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  const target = (html: string): Node => {
+    document.body.innerHTML = html;
+    return document.querySelector('#t')!;
+  };
+
+  const legacy = (
+    node: Node,
+    checkAncestors: boolean,
+    maskTextSelector: string | null = null,
+  ): boolean =>
+    needMaskingText(
+      node,
+      'rr-mask',
+      maskTextSelector,
+      checkAncestors as unknown as null,
+    );
+
+  it('still masks under a .rr-mask ancestor with checkAncestors true', () => {
+    const node = target('<div class="rr-mask"><span id="t">x</span></div>');
+    expect(legacy(node, true)).toBe(true);
+  });
+
+  it('does not walk to that ancestor when the legacy call passed false', () => {
+    const node = target('<div class="rr-mask"><span id="t">x</span></div>');
+    expect(legacy(node, false)).toBe(false);
+  });
+
+  it('still matches on the node itself with checkAncestors false', () => {
+    const node = target('<div><span id="t" class="rr-mask">x</span></div>');
+    expect(legacy(node, false)).toBe(true);
+  });
+
+  it('honors a legacy selector string alongside the shifted boolean', () => {
+    const node = target('<div class="secret"><span id="t">x</span></div>');
+    expect(legacy(node, true, '.secret')).toBe(true);
+    expect(legacy(node, false, '.secret')).toBe(false);
+  });
+
+  it('never reads the shifted boolean as an unmask selector', () => {
+    // '*' masks everything; a legacy caller supplies no unmask escape, so the
+    // shifted `true` must not open one.
+    const node = target('<div><span id="t">x</span></div>');
+    expect(legacy(node, true, '*')).toBe(true);
+  });
+
+  it('leaves the new signature untouched', () => {
+    const node = target('<div class="rr-mask"><span id="t">x</span></div>');
+    expect(needMaskingText(node, 'rr-mask', null, null, true)).toBe(true);
+    expect(needMaskingText(node, 'rr-mask', null, null, false)).toBe(false);
+    // an unmask ancestor still wins over the class when the walk is on
+    const unmasked = target(
+      '<div class="rr-mask"><span class="ok"><b id="t">x</b></span></div>',
+    );
+    expect(needMaskingText(unmasked, 'rr-mask', null, '.ok', true)).toBe(false);
   });
 });
 

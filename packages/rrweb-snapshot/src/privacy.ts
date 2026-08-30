@@ -233,6 +233,11 @@ export function shouldCapturePixels(
 }
 
 export function validateSelector(selector: string): boolean {
+  // No document to ask (SSR, a worker, a non-DOM test harness): assume valid
+  // rather than dropping every selector the policy declared. `matches()` is
+  // wrapped in a catch-to-mask at capture time, which stays the fail-closed
+  // backstop for anything actually malformed.
+  if (typeof document === 'undefined') return true;
   try {
     document.createDocumentFragment().querySelector(selector);
     return true;
@@ -303,14 +308,28 @@ function joinSelectors(
   const kept = new Set<string>();
   for (const s of selectors) {
     if (!s) continue;
-    if (!validateSelector(s)) {
-      console.warn(`[rrweb privacy] dropping invalid selector: ${s}`);
+    const fragments = splitSelectorList(s);
+    if (validateSelector(s)) {
+      for (const part of fragments) {
+        const trimmed = part.trim();
+        if (trimmed) kept.add(trimmed);
+      }
       continue;
     }
-    for (const part of splitSelectorList(s)) {
+    // One malformed fragment used to take the whole comma-separated list with
+    // it, silently un-masking everything the surviving fragments covered.
+    // Re-validate fragment by fragment and keep the ones that stand alone.
+    const dropped: string[] = [];
+    for (const part of fragments) {
       const trimmed = part.trim();
-      if (trimmed) kept.add(trimmed);
+      if (!trimmed) continue;
+      if (validateSelector(trimmed)) kept.add(trimmed);
+      else dropped.push(trimmed);
     }
+    if (dropped.length)
+      console.warn(
+        `[rrweb privacy] dropping invalid selector: ${dropped.join(', ')}`,
+      );
   }
   return [...kept].join(',') || null;
 }
@@ -353,6 +372,11 @@ export function compilePrivacyPolicy(
     bySelector[rule.action].push(rule.target.selector);
   }
 
+  // Under `manual` the rules compile to their bare selectors and nothing
+  // else: `data-privacy` and the native `rr-*` class conventions are
+  // managed-preset features, and a `mask`/`block` rule does not switch them
+  // on. (`.rr-mask`/`.rr-block` still reach `manual` recordings through the
+  // separate `maskTextClass`/`blockClass` options.)
   return {
     preset,
     maskTextSelector: managed
@@ -364,9 +388,7 @@ export function compilePrivacyPolicy(
             vendorCompat ? COMPAT_MASK_CLASSES : null,
             ...bySelector.mask,
           ])
-      : joinSelectors(
-          bySelector.mask.length ? [DATA_PRIVACY_MASK, ...bySelector.mask] : [],
-        ),
+      : joinSelectors(bySelector.mask),
     unmaskTextSelector: joinSelectors(
       managed
         ? [DATA_PRIVACY_UNMASK, NATIVE_UNMASK_CLASSES, ...bySelector.unmask]
@@ -380,9 +402,7 @@ export function compilePrivacyPolicy(
             vendorCompat ? COMPAT_BLOCK_CLASSES : null,
             ...bySelector.block,
           ]
-        : bySelector.block.length
-        ? [DATA_PRIVACY_BLOCK, ...bySelector.block]
-        : [],
+        : bySelector.block,
     ),
     maskAllInputs,
     maskedAttributes,
