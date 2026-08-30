@@ -401,7 +401,10 @@ describe('record() per-flush mask-decision memoisation', () => {
       this: Element,
       selector: string,
     ) {
-      if (selector.includes('data-privacy="allow"')) calls += 1;
+      // `.rr-unmask` identifies the compiled unmask selector unambiguously:
+      // the mask selector carries `[data-privacy="unmask"]` too, inside the
+      // `:not()` that makes an unrecognized value fail closed.
+      if (selector.includes('.rr-unmask')) calls += 1;
       return original.call(this, selector);
     });
     return () => calls;

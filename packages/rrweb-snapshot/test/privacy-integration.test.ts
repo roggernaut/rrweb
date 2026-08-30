@@ -68,6 +68,30 @@ describe('text masking v2', () => {
   });
 
   /**
+   * The fail-closed rule, end to end: a `data-privacy` typo protects the
+   * subtree instead of silently doing nothing.
+   */
+  it('masks a subtree whose data-privacy value is not recognized', () => {
+    const balanced: PrivacyPolicy = { version: 1, preset: 'balanced' };
+    expect(
+      serialize('<div data-privacy="masked"><p>typo text</p></div>', balanced),
+    ).not.toContain('typo text');
+    expect(
+      serialize('<div data-privacy=""><p>empty value</p></div>', balanced),
+    ).not.toContain('empty value');
+    // the recognized values are unaffected
+    expect(
+      serialize('<div data-privacy="unmask"><p>kept</p></div>', strict),
+    ).toContain('kept');
+    expect(
+      serialize('<div data-privacy="mask"><p>gone</p></div>', balanced),
+    ).not.toContain('gone');
+    expect(
+      serialize('<div data-privacy="block"><p>blocked</p></div>', balanced),
+    ).not.toContain('blocked');
+  });
+
+  /**
    * Different levels: nearest ancestor wins (covered above). Same element:
    * mask wins. Sentry resolves the tie with `maskDistance <= unmaskDistance`,
    * and Amplitude and Mixpanel both check their mask list first -- an element
@@ -83,7 +107,7 @@ describe('text masking v2', () => {
 
   it('same-element tie is masked for the data-privacy variant too', () => {
     const out = serialize(
-      '<div data-privacy="allow" class="rr-mask"><p>tie broken</p></div>',
+      '<div data-privacy="unmask" class="rr-mask"><p>tie broken</p></div>',
       strict,
     );
     expect(out).not.toContain('tie broken');
@@ -162,7 +186,7 @@ describe('text masking v2', () => {
       rules: [
         {
           target: { type: 'selector', selector: '.rr-unmask' },
-          action: 'allow',
+          action: 'unmask',
         },
       ],
     };
@@ -604,17 +628,17 @@ describe('finalizeAttribute', () => {
       const maskAttributeFn = vi.fn(() => 'REWRITTEN');
       expect(
         finalizeAttribute({
-          element: el('<div data-privacy="allow"></div>', 'div'),
+          element: el('<div data-privacy="unmask"></div>', 'div'),
           name: 'data-privacy',
-          value: 'allow',
+          value: 'unmask',
           privacy: strict,
           maskAttributeFn,
         }),
-      ).toBe('allow');
+      ).toBe('unmask');
       expect(maskAttributeFn).not.toHaveBeenCalled();
       // ...but it still runs for an ordinary attribute on the same element
       finalizeAttribute({
-        element: el('<div data-privacy="allow" title="x"></div>', 'div'),
+        element: el('<div data-privacy="unmask" title="x"></div>', 'div'),
         name: 'title',
         value: 'x',
         privacy: manual,
@@ -826,7 +850,7 @@ describe('finalizeAttribute', () => {
           rules: [
             {
               target: { type: 'selector', selector: '.policy-safe' },
-              action: 'allow',
+              action: 'unmask',
             },
           ],
         },
@@ -835,7 +859,7 @@ describe('finalizeAttribute', () => {
     );
 
     expect(out).toContain('"Bob"'); // record()-level option
-    expect(out).toContain('"Alice"'); // vendor class
+    expect(out).toContain('"Alice"'); // .rr-unmask
     expect(out).toContain('"Carol"'); // policy rule
     expect(out).not.toContain('"Dave"'); // no escape -> still starred
   });

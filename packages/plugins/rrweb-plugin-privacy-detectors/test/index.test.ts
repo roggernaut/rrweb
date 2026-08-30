@@ -100,7 +100,7 @@ describe('privacy detectors plugin', () => {
       rules: [
         {
           target: { type: 'selector', selector: '.rr-unmask' },
-          action: 'allow',
+          action: 'unmask',
         },
       ],
     }) as PrivacyPolicy;

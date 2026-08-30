@@ -322,8 +322,7 @@ export type PrivacyPolicy = {
 
 export type PrivacyPreset = 'strict' | 'balanced' | 'manual';
 
-/** `unmask` is an alias of `allow`. */
-export type PrivacyAction = 'allow' | 'unmask' | 'mask' | 'exclude';
+export type PrivacyAction = 'mask' | 'block' | 'unmask';
 
 export type PrivacyRule = {
   target: PrivacyTarget;
@@ -361,11 +360,11 @@ export type CompiledDetector = {
 /** Runtime form of a compiled policy, shared by snapshot and incremental observers. */
 export type CompiledPrivacyPolicy = {
   preset: PrivacyPreset;
-  /** 'mask' rules + [data-privacy="mask"] + vendor classes (+ '*' under strict) */
+  /** 'mask' rules + the fail-closed [data-privacy] token + vendor classes (+ '*' under strict) */
   maskTextSelector: string | null;
-  /** 'allow'/'unmask' rules + [data-privacy="allow"] + vendor unmask classes */
+  /** 'unmask' rules + [data-privacy="unmask"] + .rr-unmask */
   unmaskTextSelector: string | null;
-  /** 'exclude' rules + [data-privacy="exclude"] + vendor block classes */
+  /** 'block' rules + [data-privacy="block"] + vendor block classes */
   blockSelector: string | null;
   /** true under balanced/strict, and whenever any heuristic detector is active. */
   maskAllInputs: boolean;

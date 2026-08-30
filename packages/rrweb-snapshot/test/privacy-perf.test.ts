@@ -88,8 +88,8 @@ describe('privacy v2 perf smoke', () => {
 
 /**
  * Every non-manual preset compiles a non-null `unmaskTextSelector` (strict
- * and balanced both always include `[data-privacy="allow"]` and the
- * cross-vendor unmask classes, rule-configured or not). That forces
+ * and balanced both always include `[data-privacy="unmask"]` and
+ * `.rr-unmask`, rule-configured or not). That forces
  * `serializeNodeWithId`'s `checkAncestors` branch permanently on, which
  * re-walks ancestors with `Element.prototype.matches` for every single node
  * instead of trusting the inherited masking decision -- O(nodes * depth) on

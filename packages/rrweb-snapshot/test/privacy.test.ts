@@ -69,11 +69,11 @@ describe('compilePrivacyPolicy v2', () => {
     ]);
     expect(c.sanitizeUrls).toBe(true);
     expect(c.maskTextSelector).not.toContain('*');
-    expect(c.maskTextSelector).toContain('[data-privacy="mask"]');
+    expect(c.maskTextSelector).toContain('[data-privacy]');
     expect(c.maskTextSelector).toContain('.ph-mask'); // cross-vendor classes
     expect(c.maskTextSelector).toContain('.dd-privacy-mask'); // Datadog
     expect(c.maskTextSelector).toContain('[data-nr-mask]'); // New Relic
-    expect(c.blockSelector).toContain('[data-privacy="exclude"]');
+    expect(c.blockSelector).toContain('[data-privacy="block"]');
     expect(c.blockSelector).toContain('.dd-privacy-hidden'); // Datadog
     expect(c.blockSelector).toContain('[data-nr-block]'); // New Relic
     expect(c.attributePolicyInert).toBe(false);
@@ -83,14 +83,14 @@ describe('compilePrivacyPolicy v2', () => {
     expect(c.maskTextSelector).toBe('*');
     expect(c.blockMedia).toBe(true);
   });
-  it('compiles rules into selector lists, unmask as alias of allow', () => {
+  it('compiles rules into selector lists', () => {
     const c = compilePrivacyPolicy({
       version: 1,
       preset: 'balanced',
       rules: [
         { target: { type: 'selector', selector: '.pii' }, action: 'mask' },
         { target: { type: 'selector', selector: '.safe' }, action: 'unmask' },
-        { target: { type: 'selector', selector: '.gone' }, action: 'exclude' },
+        { target: { type: 'selector', selector: '.gone' }, action: 'block' },
       ],
     });
     expect(c.maskTextSelector).toContain('.pii');
@@ -106,6 +106,22 @@ describe('compilePrivacyPolicy v2', () => {
     expect(c.maskTextSelector).toContain('.sentry-mask');
     expect(c.blockSelector).toContain('.sentry-block');
   });
+  it('rejects a pre-v2 action name outright', () => {
+    for (const action of ['allow', 'exclude']) {
+      expect(() =>
+        compilePrivacyPolicy({
+          version: 1,
+          preset: 'balanced',
+          rules: [
+            {
+              target: { type: 'selector', selector: '.x' },
+              action: action as never,
+            },
+          ],
+        }),
+      ).toThrow(/Unsupported privacy action/);
+    }
+  });
   it('drops invalid selectors individually with a warning, keeps the rest', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const c = compilePrivacyPolicy({
@@ -114,9 +130,9 @@ describe('compilePrivacyPolicy v2', () => {
       rules: [
         {
           target: { type: 'selector', selector: ':::garbage' },
-          action: 'exclude',
+          action: 'block',
         },
-        { target: { type: 'selector', selector: '.valid' }, action: 'exclude' },
+        { target: { type: 'selector', selector: '.valid' }, action: 'block' },
       ],
     });
     expect(c.blockSelector).toContain('.valid');
@@ -149,6 +165,85 @@ describe('compilePrivacyPolicy v2', () => {
     expect(c.blockedQueryParameters.has('token')).toBe(true); // default list
   });
 });
+/**
+ * `data-privacy` carries a fixed vocabulary. A value outside it is almost
+ * always a typo or a value from a future version, and in both cases the author
+ * was reaching for protection -- so an unrecognized value masks rather than
+ * making no decision. The compiled mask token is the bare attribute minus the
+ * two values that mean something else, which is what makes this work without
+ * any precedence logic: `[data-privacy="unmask"]` and `[data-privacy="block"]`
+ * are excluded from the mask list by construction, and everything else in the
+ * attribute's value space falls into it.
+ */
+describe('an unrecognized data-privacy value fails closed to mask', () => {
+  const balanced = compilePrivacyPolicy({ version: 1, preset: 'balanced' });
+
+  function matchesMask(html: string): boolean {
+    document.body.innerHTML = html;
+    const el = document.querySelector('#t') as HTMLElement;
+    return el.matches(balanced.maskTextSelector as string);
+  }
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it.each([
+    ['a typo', 'masked'],
+    ['the empty value', ''],
+    ['a value from another vocabulary', 'exclude'],
+    ['the reserved input-only value', 'mask-inputs'],
+    ['a wrong-case spelling', 'Mask'],
+  ])('%s masks', (_name, value) => {
+    expect(matchesMask(`<div id="t" data-privacy="${value}"></div>`)).toBe(
+      true,
+    );
+  });
+
+  it('leaves the two recognized non-mask values out of the mask list', () => {
+    expect(matchesMask('<div id="t" data-privacy="unmask"></div>')).toBe(false);
+    expect(matchesMask('<div id="t" data-privacy="block"></div>')).toBe(false);
+    // ...and they still reach their own lists
+    document.body.innerHTML =
+      '<div id="u" data-privacy="unmask"></div>' +
+      '<div id="b" data-privacy="block"></div>';
+    expect(
+      (document.querySelector('#u') as HTMLElement).matches(
+        balanced.unmaskTextSelector as string,
+      ),
+    ).toBe(true);
+    expect(
+      (document.querySelector('#b') as HTMLElement).matches(
+        balanced.blockSelector as string,
+      ),
+    ).toBe(true);
+  });
+
+  it('recognizes data-privacy="mask" itself', () => {
+    expect(matchesMask('<div id="t" data-privacy="mask"></div>')).toBe(true);
+  });
+
+  it('does not fire on an element with no data-privacy attribute at all', () => {
+    expect(matchesMask('<div id="t"></div>')).toBe(false);
+  });
+
+  it('activates under manual only alongside a mask rule, as before', () => {
+    const bare = compilePrivacyPolicy({ version: 1, preset: 'manual' });
+    expect(bare.maskTextSelector).toBeNull();
+    const withRule = compilePrivacyPolicy({
+      version: 1,
+      preset: 'manual',
+      rules: [{ target: { type: 'selector', selector: '.x' }, action: 'mask' }],
+    });
+    document.body.innerHTML = '<div id="t" data-privacy="typo"></div>';
+    expect(
+      (document.querySelector('#t') as HTMLElement).matches(
+        withRule.maskTextSelector as string,
+      ),
+    ).toBe(true);
+  });
+});
+
 describe('validateSelector', () => {
   it('accepts valid, rejects invalid', () => {
     expect(validateSelector('.a > [data-x="1"]')).toBe(true);
@@ -199,7 +294,7 @@ describe('resolvePrivacyContext', () => {
       blockSelector: '.manual',
     });
     expect(blockSelector).toContain('.manual');
-    expect(blockSelector).toContain('[data-privacy="exclude"]');
+    expect(blockSelector).toContain('[data-privacy="block"]');
   });
 
   /**
@@ -214,7 +309,7 @@ describe('resolvePrivacyContext', () => {
     });
     expect(privacy.unmaskTextSelector).toBe(unmaskTextSelector);
     expect(privacy.unmaskTextSelector).toContain('.mine');
-    expect(privacy.unmaskTextSelector).toContain('[data-privacy="allow"]');
+    expect(privacy.unmaskTextSelector).toContain('[data-privacy="unmask"]');
   });
 
   it('leaves the compiled policy untouched when nothing was merged in', () => {

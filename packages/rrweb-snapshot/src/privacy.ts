@@ -8,13 +8,21 @@ import type {
 } from './types';
 import { untaintedTagName } from '@rrweb/utils';
 
-// Migration compatibility with other tools' mask/exclude conventions;
+// Migration compatibility with other tools' mask/block conventions;
 // data-privacy leads. See guide.md's "Vendor class recognition" section.
 const VENDOR_MASK_CLASSES =
   '.rr-mask,.mp-mask,.fs-mask,.amp-mask,.ph-mask,.sentry-mask,[data-sentry-mask],.dd-privacy-mask,[data-dd-privacy="mask"],.dd-privacy-mask-user-input,[data-dd-privacy="mask-user-input"],.nr-mask,[data-nr-mask]';
 const RRWEB_UNMASK_CLASS = '.rr-unmask';
 const VENDOR_BLOCK_CLASSES =
   '.rr-block,.mp-block,.fs-exclude,.amp-block,.ph-no-capture,.sentry-block,.dd-privacy-hidden,[data-dd-privacy="hidden"],.nr-block,[data-nr-block]';
+
+// `data-privacy` fails closed: the mask token is the bare attribute minus the
+// two values that mean something else, so an unrecognized value masks.
+const DATA_PRIVACY_MASK =
+  '[data-privacy]:not([data-privacy="unmask"]):not([data-privacy="block"])';
+const DATA_PRIVACY_UNMASK = '[data-privacy="unmask"]';
+const DATA_PRIVACY_BLOCK = '[data-privacy="block"]';
+
 const PRIVACY_PRESETS = new Set(['strict', 'balanced', 'manual']);
 const MASKED_ATTRIBUTE_DEFAULTS = ['title', 'placeholder', 'aria-label'];
 
@@ -324,7 +332,7 @@ export function compilePrivacyPolicy(
   const bySelector = {
     mask: [] as string[],
     unmask: [] as string[],
-    exclude: [] as string[],
+    block: [] as string[],
   };
   for (const rule of effective.rules || []) {
     if (
@@ -333,10 +341,9 @@ export function compilePrivacyPolicy(
       !rule.target.selector
     )
       throw new Error('Privacy rules require a non-empty selector target');
-    const action = rule.action === 'allow' ? 'unmask' : rule.action;
-    if (!(action in bySelector))
+    if (!Object.prototype.hasOwnProperty.call(bySelector, rule.action))
       throw new Error(`Unsupported privacy action: ${String(rule.action)}`);
-    bySelector[action].push(rule.target.selector);
+    bySelector[rule.action].push(rule.target.selector);
   }
 
   return {
@@ -345,29 +352,23 @@ export function compilePrivacyPolicy(
       ? preset === 'strict'
         ? '*'
         : joinSelectors([
-            '[data-privacy="mask"]',
+            DATA_PRIVACY_MASK,
             VENDOR_MASK_CLASSES,
             ...bySelector.mask,
           ])
       : joinSelectors(
-          bySelector.mask.length
-            ? ['[data-privacy="mask"]', ...bySelector.mask]
-            : [],
+          bySelector.mask.length ? [DATA_PRIVACY_MASK, ...bySelector.mask] : [],
         ),
     unmaskTextSelector: joinSelectors(
       managed
-        ? ['[data-privacy="allow"]', RRWEB_UNMASK_CLASS, ...bySelector.unmask]
+        ? [DATA_PRIVACY_UNMASK, RRWEB_UNMASK_CLASS, ...bySelector.unmask]
         : bySelector.unmask,
     ),
     blockSelector: joinSelectors(
       managed
-        ? [
-            '[data-privacy="exclude"]',
-            VENDOR_BLOCK_CLASSES,
-            ...bySelector.exclude,
-          ]
-        : bySelector.exclude.length
-        ? ['[data-privacy="exclude"]', ...bySelector.exclude]
+        ? [DATA_PRIVACY_BLOCK, VENDOR_BLOCK_CLASSES, ...bySelector.block]
+        : bySelector.block.length
+        ? [DATA_PRIVACY_BLOCK, ...bySelector.block]
         : [],
     ),
     maskAllInputs,
