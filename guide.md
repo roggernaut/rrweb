@@ -670,6 +670,12 @@ Breaking changes versus pre-2.0 masking, for anyone upgrading:
   and **unstable**: exported for cross-package use and direct unit testing,
   not part of the supported API, and free to change or disappear without a
   major bump.
+- Under URL sanitization (`balanced`/`strict`), a **relative** URL in an
+  attribute rrweb does not already absolutify -- `<form action>`,
+  `<video poster>`, and similar -- is rewritten root-relative: `pay/confirm`
+  is recorded as `/pay/confirm`. Sanitization parses against an internal
+  base URL and re-serializes the path, which normalizes away the difference
+  between a document-relative and a root-relative reference.
 
 ##### For event consumers
 

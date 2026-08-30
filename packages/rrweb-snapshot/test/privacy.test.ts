@@ -1204,7 +1204,7 @@ describe('merge helpers validate the record()-level selector', () => {
 describe('sanitizeUrl v2', () => {
   const strict = compilePrivacyPolicy({ version: 1, preset: 'strict' });
   const balanced = compilePrivacyPolicy({ version: 1, preset: 'balanced' });
-  const manual = compilePrivacyPolicy(undefined);
+  const minimal = compilePrivacyPolicy(undefined);
   it('strips userinfo credentials', () => {
     expect(
       sanitizeUrl('https://alice:hunter2@api.example.com/x', balanced),
@@ -1228,21 +1228,21 @@ describe('sanitizeUrl v2', () => {
       'https://a.com/?page=2&q=*',
     );
   });
-  it('removes hash unless disabled; manual passes through untouched', () => {
+  it('removes hash unless disabled; minimal passes through untouched', () => {
     expect(sanitizeUrl('https://a.com/x#frag', balanced)).toBe(
       'https://a.com/x',
     );
-    expect(sanitizeUrl('https://alice:pw@a.com/?token=x#f', manual)).toBe(
+    expect(sanitizeUrl('https://alice:pw@a.com/?token=x#f', minimal)).toBe(
       'https://alice:pw@a.com/?token=x#f',
     );
   });
-  it('unparseable value under non-manual fails closed by dropping the attribute', () => {
+  it('unparseable value under non-minimal fails closed by dropping the attribute', () => {
     expect(sanitizeUrl('http://[broken', balanced)).toBeNull();
   });
   it('empty in, empty out -- never resolved into a path', () => {
     expect(sanitizeUrl('', balanced)).toBe('');
     expect(sanitizeUrl('', strict)).toBe('');
-    expect(sanitizeUrl('', manual)).toBe('');
+    expect(sanitizeUrl('', minimal)).toBe('');
   });
 });
 
