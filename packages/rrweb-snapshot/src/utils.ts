@@ -391,22 +391,44 @@ const PROTECTED_AUTOCOMPLETE = new Set([
   'one-time-code',
 ]);
 
-/** Inputs always masked regardless of `maskInputOptions` or privacy preset. */
-export function isProtectedInput(element: HTMLElement): boolean {
-  if (dom.untaintedTagName(element) !== 'INPUT') return false;
-  const input = element as HTMLInputElement;
-  const type = getInputType(element);
-  if (type === 'password' || type === 'hidden') {
-    return true;
-  }
-  const autocomplete = input.autocomplete;
-  if (!autocomplete) return false;
+function hasProtectedAutocomplete(element: HTMLElement): boolean {
+  const autocomplete =
+    (element as HTMLInputElement).autocomplete ??
+    element.getAttribute('autocomplete');
+  if (!autocomplete || typeof autocomplete !== 'string') return false;
   const lower = autocomplete.toLowerCase();
   if (PROTECTED_AUTOCOMPLETE.has(lower)) return true;
   if (!AUTOCOMPLETE_SEPARATOR.test(lower)) return false;
   return lower
     .split(AUTOCOMPLETE_SEPARATOR)
     .some((token) => PROTECTED_AUTOCOMPLETE.has(token));
+}
+
+/** Inputs always masked regardless of `maskInputOptions` or privacy preset. */
+export function isProtectedInput(element: HTMLElement): boolean {
+  if (dom.untaintedTagName(element) !== 'INPUT') return false;
+  const type = getInputType(element);
+  if (type === 'password' || type === 'hidden') {
+    return true;
+  }
+  return hasProtectedAutocomplete(element);
+}
+
+/**
+ * `isProtectedInput` minus the `INPUT` tag requirement, for paths that decide
+ * whether an element's `value` is a credential rather than an ordinary
+ * attribute. A component library's `<ion-input type="password">` discloses a
+ * password through its own `type` property exactly as a native input does.
+ *
+ * Deliberately narrower than `isProtectedInput`: only `password` and the
+ * protected autocomplete tokens match. `hidden` is excluded, and so is every
+ * other `.type` string, so `<li type="disc">`, `<ol type="1">`, `<meter>` and
+ * `<progress>` are not swept in -- that over-masking is what keeping this
+ * `password`-specific avoids.
+ */
+export function isProtectedTypeLike(element: HTMLElement): boolean {
+  if (getInputType(element) === 'password') return true;
+  return hasProtectedAutocomplete(element);
 }
 
 export function maskInput({

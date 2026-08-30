@@ -310,13 +310,10 @@ element inherited from its nearest annotated ancestor.)
 implemented, so today it masks like any other unrecognized value. Do not
 use it to mean anything else.
 
-> Under `manual`, `data-privacy="mask"`/`data-privacy="block"` are each only
-> recognized once you also supply at least one selector-based `mask`/`block`
-> rule (of that same action) in `rules` -- and the unknown-value rule rides
-> along with the `mask` half; `data-privacy="unmask"` is never recognized
-> under `manual`, with or without rules. This asymmetry is a corner of the
-> current implementation, not something to design around -- switch to
-> `balanced`/`strict` for unconditional `data-privacy` support.
+> `data-privacy` is a managed-preset feature. Under `manual` it is off
+> entirely -- for every action, with or without rules -- and `rules` compile
+> to their bare selectors and nothing else. Switch to `balanced`/`strict` for
+> `data-privacy` support.
 
 ##### Selector rules: for what the markup cannot reach
 
@@ -408,10 +405,15 @@ under `strict`, or a `block`.
 
 An invalid `maskTextSelector`, `unmaskTextSelector` or `blockSelector` --
 either the `record()`-level string option or a policy rule's selector -- is
-validated at setup and **dropped with a `console.warn`**, so one malformed
-selector cannot take the others down with it. Recording continues with the
-remaining selectors; a dropped `mask`/`block` selector therefore protects
-nothing, so watch for that warning rather than treating it as cosmetic.
+validated at setup and **dropped with a `console.warn`** that names the
+fragments it dropped. Validation is per comma-separated fragment: in
+`.pii, .broken:has-typo(` only the malformed half is dropped and `.pii`
+keeps working, so one malformed fragment cannot take the others down with
+it. Recording continues with the remaining selectors; a dropped
+`mask`/`block` selector therefore protects nothing, so watch for that
+warning rather than treating it as cosmetic. Where there is no `document` to
+validate against at all (server-side rendering, a worker), selectors are
+assumed valid rather than all dropped.
 A selector that passes validation but throws while matching (a hostile
 `matches` override, a detached document) still fails closed and masks the
 affected text.
@@ -474,9 +476,14 @@ Breaking changes versus pre-2.0 masking, for anyone upgrading:
 
 - `needMaskingText` and `serializeNodeWithId` (from `rrweb-snapshot`) take the
   mask-text selector pre-split (`{maskAll, selector}`, from the exported
-  `splitMaskAllSelector`) instead of a raw string; both still accept a raw
-  string or `null` and coerce it, so an unmigrated caller keeps masking
-  rather than silently matching nothing.
+  `splitMaskAllSelector`) instead of a raw string. Two coercions keep an
+  unmigrated caller masking rather than silently matching nothing: a raw
+  string or `null` in the selector slot is split on the spot, and a
+  `needMaskingText` call using the pre-2.0 positional signature
+  `(node, maskTextClass, maskTextSelector, checkAncestors)` is detected by
+  the boolean in the fourth slot and shifted back into place, so its ancestor
+  walk still happens. Migrate anyway -- the coercions are a safety net, not a
+  supported signature.
 - `<style>` text inside masked subtrees is never masked, on any path: CSS is
   never masked.
 - `maskInputFn` output is star-replaced under `balanced`/`strict` (length
@@ -487,7 +494,8 @@ Breaking changes versus pre-2.0 masking, for anyone upgrading:
   `new-password`/`one-time-code` fields are now always masked regardless of
   `maskInputOptions`; previously some could record raw under `manual`.
 - An invalid `maskTextSelector`/`unmaskTextSelector`/`blockSelector` is now
-  dropped with a `console.warn` at setup instead of silently ignored.
+  dropped with a `console.warn` at setup instead of silently ignored, per
+  comma-separated fragment rather than whole-string.
 - Same-element mask/unmask ties now resolve to masking (previously unmask
   won).
 - Unmasking recognizes only `.rr-unmask`, `data-privacy="unmask"`, and
@@ -507,6 +515,22 @@ Breaking changes versus pre-2.0 masking, for anyone upgrading:
   preset are removed from the policy schema. Heuristic detectors return as
   an opt-in `@rrweb/rrweb-plugin-privacy-detectors` package in a follow-up
   change.
+- `data-privacy` and the native `rr-*` class conventions are managed-preset
+  features: under `manual` a `mask`/`block`/`unmask` rule compiles to its
+  bare selector and switches nothing else on. (An earlier iteration turned
+  `data-privacy` on under `manual` as soon as a same-action rule existed.)
+- These privacy helpers were removed from `rrweb-snapshot`'s exports, their
+  behavior folded into the plain masking primitives (`maskInput`,
+  `shouldMaskInput`, `resolveTextValue`, `finalizeAttribute`) plus the
+  compiled policy: `maskTextWithPrivacy`, `maskInputWithPrivacy`,
+  `shouldMaskInputWithPrivacy`, `maskAttributeWithPrivacy`,
+  `protectSerializedAttribute`, `getPrivacyAction`, and
+  `mergeBlockSelectors`.
+- `rrweb-snapshot`'s barrel now also re-exports three internals --
+  `splitSelectorList`, `stars`, and `validateSelector`. They are `@internal`
+  and **unstable**: exported for cross-package use and direct unit testing,
+  not part of the supported API, and free to change or disappear without a
+  major bump.
 
 ##### For event consumers
 
@@ -528,12 +552,17 @@ of any config you pass:
 - Masked text is star-replaced character by character (`\S` becomes `*`);
   whitespace, including newlines, is left untouched so line breaks and
   spacing in the original still show through the stars.
-- Once canvas masking is in force (`canvasMasking` configured, or
-  `blockMedia` under `strict`), canvas capture switches to the FPS
-  frame-image path: periodic full-frame snapshot events rather than
+- With a `canvasMasking` adapter configured, canvas capture switches to the
+  FPS frame-image path: periodic full-frame snapshot events rather than
   incremental drawing-command mutations. A consumer that replays canvas
   mutations command-by-command will instead see whole-frame "keyframe"
-  events at the configured sampling rate.
+  events at the configured sampling rate. Under `strict` this does not
+  apply, because `strict` emits **no** canvas events at all: `blockMedia`
+  disables `recordCanvas` outright, even where it was explicitly requested
+  (with a one-time `console.warn`).
+- Canvas elements inside a shadow root are discovered only through **native**
+  shadow roots. A polyfilled shadow root is no longer walked for canvases, so
+  canvases that live only inside one are not captured.
 
 One more thing worth flagging if your pages already use a `data-privacy`
 attribute for something unrelated to rrweb: under `balanced`/`strict`,

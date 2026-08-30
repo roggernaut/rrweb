@@ -56,6 +56,116 @@ describe('record() and a <form> whose tagName is shadowed', () => {
 });
 
 /**
+ * The mutation path used to decide "is this `value` an input value?" purely by
+ * tag name, so a component library's `<ion-input type="password">` -- a custom
+ * element, not an INPUT -- recorded its credential raw on every mutation,
+ * while the same element masked correctly in a full snapshot. The gate now
+ * also asks the element's own `type`/`autocomplete`, but stays
+ * `password`-specific so the tags that merely have a `.type` string
+ * (`<li type="disc">`, `<ol type="1">`) are not swept back in.
+ */
+describe('record() value mutations on a custom element that declares a credential', () => {
+  class IonInput extends HTMLElement {
+    get type(): string | null {
+      return this.getAttribute('type');
+    }
+    get autocomplete(): string | null {
+      return this.getAttribute('autocomplete');
+    }
+  }
+  if (!customElements.get('ion-input'))
+    customElements.define('ion-input', IonInput);
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  /** Every `value`/`type` attribute the recorder emitted, in order. */
+  async function recordAttributeMutations(
+    markup: string,
+    drive: (el: HTMLElement) => void,
+    privacyPolicy?: Record<string, unknown>,
+  ): Promise<string[]> {
+    document.body.innerHTML = markup;
+    const el = document.querySelector('#t') as HTMLElement;
+    const events: eventWithTime[] = [];
+    const stop = record({
+      emit: (event) => events.push(event),
+      ...(privacyPolicy ? { privacyPolicy: privacyPolicy as never } : {}),
+    });
+    try {
+      drive(el);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    } finally {
+      stop?.();
+    }
+    return events.flatMap((event) =>
+      event.type === EventType.IncrementalSnapshot &&
+      event.data.source === IncrementalSource.Mutation
+        ? event.data.attributes.flatMap((a) =>
+            ['value', 'type'].flatMap((name) =>
+              typeof a.attributes[name] === 'string'
+                ? [a.attributes[name] as string]
+                : [],
+            ),
+          )
+        : [],
+    );
+  }
+
+  it('masks a value mutation on <ion-input type="password">', async () => {
+    const values = await recordAttributeMutations(
+      '<ion-input id="t" type="password" value="old"></ion-input>',
+      (el) => el.setAttribute('value', 'hunter2'),
+    );
+    expect(values).toContain('*******');
+    expect(values).not.toContain('hunter2');
+  });
+
+  /**
+   * The gate also opens for a protected autocomplete token, which is what
+   * carries the value to `maskInput` under a managed preset. Under `manual`
+   * it still records raw -- `maskInputOptions` has never keyed off
+   * `autocomplete`, so that matches pre-v2 behavior rather than regressing
+   * it; `isProtectedInput`'s unconditional protection remains INPUT-scoped.
+   */
+  it('masks one declared by a protected autocomplete token under balanced', async () => {
+    const values = await recordAttributeMutations(
+      '<ion-input id="t" autocomplete="cc-number" value="old"></ion-input>',
+      (el) => el.setAttribute('value', '4111111111111111'),
+      { version: 1, preset: 'balanced' },
+    );
+    expect(values).not.toContain('4111111111111111');
+  });
+
+  it("leaves a plain custom element's value alone", async () => {
+    const values = await recordAttributeMutations(
+      '<ion-input id="t" type="text" value="old"></ion-input>',
+      (el) => el.setAttribute('value', 'plain text'),
+    );
+    expect(values).toContain('plain text');
+  });
+
+  it('does not re-mask <li value> under balanced', async () => {
+    const values = await recordAttributeMutations(
+      '<ol><li id="t" value="3">x</li></ol>',
+      (el) => el.setAttribute('value', '7'),
+      { version: 1, preset: 'balanced' },
+    );
+    expect(values).toContain('7');
+  });
+
+  it('leaves <ol type="1"> unaffected', async () => {
+    const values = await recordAttributeMutations(
+      '<ol id="t" type="1"><li>x</li></ol>',
+      (el) => el.setAttribute('type', 'a'),
+      { version: 1, preset: 'balanced' },
+    );
+    expect(values).toContain('a');
+  });
+});
+
+/**
  * `rr_open_mode` is written by the recorder itself when a <dialog> opens, and
  * carries a "generated, exempt from masking" flag for that flush. If the page
  * then writes an attribute of the same literal name, the flag no longer
