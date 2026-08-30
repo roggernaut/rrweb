@@ -88,7 +88,7 @@ describe('record() and a <form> whose tagName is shadowed', () => {
 describe('record() privacy detectors on live updates', () => {
   const withEmailDetector = {
     version: 1,
-    preset: 'manual',
+    preset: 'minimal',
     detectors: { email: true },
   } as const;
 
@@ -118,7 +118,7 @@ describe('record() privacy detectors on live updates', () => {
     expect(JSON.stringify(textMutations)).not.toContain('bob@example.com');
   });
 
-  it('leaves a characterData mutation with clean text untouched under manual', async () => {
+  it('leaves a characterData mutation with clean text untouched under minimal', async () => {
     document.body.innerHTML = '<p>hello</p>';
     const textNode = document.querySelector('p')!.firstChild as Text;
 

@@ -548,7 +548,7 @@ for those.
 Input values are never scanned. Instead, **while detectors are active every
 input value is occluded to its length** (`'*'.repeat(value.length)`),
 whatever the preset -- the plugin's policy compiles to `maskAllInputs: true`
-even on a `manual` base, and no unmask escape reopens it: neither
+even on a `minimal` base, and no unmask escape reopens it: neither
 `unmaskTextSelector`, nor a policy `unmask` rule, nor `.rr-unmask`
 reveals an input value. Scanning one would be worse than useless: a value is
 re-examined on every input event, so a card number is recorded verbatim in
@@ -571,7 +571,7 @@ record({
 ```
 
 Once loaded, text detection runs independently of the active preset --
-including `manual` -- on top of whatever masking that preset already applies,
+including `minimal` -- on top of whatever masking that preset already applies,
 and input occlusion is unconditional. The first time the plugin applies its
 policy, it logs a one-time `console.info` ("privacy-detectors active: input
 values record as length-only stars") as a visible confirmation that input
@@ -702,11 +702,11 @@ Breaking changes versus pre-2.0 masking, for anyone upgrading:
   `shouldMaskInputWithPrivacy`, `maskAttributeWithPrivacy`,
   `protectSerializedAttribute`, `getPrivacyAction`, and
   `mergeBlockSelectors`.
-- `rrweb-snapshot`'s barrel now also re-exports three internals --
-  `splitSelectorList`, `stars`, and `validateSelector`. They are `@internal`
-  and **unstable**: exported for cross-package use and direct unit testing,
-  not part of the supported API, and free to change or disappear without a
-  major bump.
+- `rrweb-snapshot`'s barrel now also re-exports four internals --
+  `splitSelectorList`, `stars`, `passesLuhn`, and `validateSelector`. They
+  are `@internal` and **unstable**: exported for cross-package use and direct
+  unit testing, not part of the supported API, and free to change or
+  disappear without a major bump.
 
 ##### For event consumers
 

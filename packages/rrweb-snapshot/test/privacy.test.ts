@@ -52,22 +52,22 @@ describe('compilePrivacyPolicy v2', () => {
     expect(c.attributePolicyInert).toBe(true);
     expect(c.detectors).toEqual([]);
   });
-  it('any active detector forces maskAllInputs, even on a manual base', () => {
+  it('any active detector forces maskAllInputs, even on a minimal base', () => {
     const c = compilePrivacyPolicy({
       version: 1,
-      preset: 'manual',
+      preset: 'minimal',
       detectors: { email: true },
     });
-    expect(c.preset).toBe('manual');
+    expect(c.preset).toBe('minimal');
     expect(c.maskAllInputs).toBe(true);
-    // ...and nothing else about the manual preset moves.
+    // ...and nothing else about the minimal preset moves.
     expect(c.maskTextSelector).toBeNull();
     expect([...c.maskedAttributes]).toEqual([]);
   });
   it('a detectors block with every flag off leaves the preset alone', () => {
     const c = compilePrivacyPolicy({
       version: 1,
-      preset: 'manual',
+      preset: 'minimal',
       detectors: {
         email: false,
         phone: false,
@@ -1221,7 +1221,7 @@ describe('merge helpers validate the record()-level selector', () => {
 describe('detectSensitiveValue', () => {
   const withDetectors = compilePrivacyPolicy({
     version: 1,
-    preset: 'manual',
+    preset: 'minimal',
     detectors: {
       email: true,
       phone: true,
@@ -1263,8 +1263,8 @@ describe('detectSensitiveValue', () => {
     );
   });
 
-  it('detects regardless of preset (works under manual)', () => {
-    expect(withDetectors.preset).toBe('manual');
+  it('detects regardless of preset (works under minimal)', () => {
+    expect(withDetectors.preset).toBe('minimal');
     expect(detectSensitiveValue('4111 1111 1111 1111', withDetectors)).toBe(
       true,
     );

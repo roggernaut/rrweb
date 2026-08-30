@@ -32,7 +32,7 @@ export const getRecordPrivacyDetectorsPlugin: (
       }
       const portable = (policy as PrivacyPolicy | undefined) || {
         version: 1 as const,
-        preset: 'manual' as const,
+        preset: 'minimal' as const,
       };
       return applyPrivacyDetectors(portable, _options);
     },

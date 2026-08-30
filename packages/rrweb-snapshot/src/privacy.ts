@@ -275,7 +275,7 @@ export function applyPrivacyDetectors(
   policy: PrivacyPolicy | undefined,
   options?: PrivacyDetectorOptions,
 ): PrivacyPolicy {
-  const base: PrivacyPolicy = policy || { version: 1, preset: 'manual' };
+  const base: PrivacyPolicy = policy || { version: 1, preset: 'minimal' };
   return {
     ...base,
     detectors: {

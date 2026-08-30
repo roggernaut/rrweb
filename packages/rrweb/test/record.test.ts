@@ -177,7 +177,7 @@ describe('record', function (this: ISuite) {
             applyPrivacyPolicy(policy) {
               const portable = (policy as { version: 1; preset: string }) || {
                 version: 1,
-                preset: 'manual',
+                preset: 'minimal',
               };
               return {
                 ...portable,

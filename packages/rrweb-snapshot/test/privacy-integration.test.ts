@@ -191,10 +191,10 @@ describe('text masking v2', () => {
     expect(out).not.toContain('hidden');
   });
 
-  it('detectors mask the whole text node under manual when configured', () => {
+  it('detectors mask the whole text node under minimal when configured', () => {
     const withDetectors: PrivacyPolicy = {
       version: 1,
-      preset: 'manual',
+      preset: 'minimal',
       detectors: { paymentCard: true, phone: true },
     };
     const out = serialize(
@@ -207,7 +207,7 @@ describe('text masking v2', () => {
   it('detectors occlude every input value at snapshot time, clean or not', () => {
     const withDetectors: PrivacyPolicy = {
       version: 1,
-      preset: 'manual',
+      preset: 'minimal',
       detectors: { email: true },
     };
     const out = serialize(
@@ -226,7 +226,7 @@ describe('text masking v2', () => {
   it('an unmask rule cannot reveal an input value while detectors are on', () => {
     const withDetectors: PrivacyPolicy = {
       version: 1,
-      preset: 'manual',
+      preset: 'minimal',
       detectors: { email: true },
       rules: [
         {
