@@ -390,6 +390,7 @@ export default class MutationBuffer {
         maskTextClass: this.maskTextClass,
         maskTextSelector: this.splitMaskTextSelector,
         unmaskTextSelector: this.effectiveUnmaskTextSelector,
+        unresolvedUnmaskTextSelector: this.privacy?.unmaskTextSelector ?? null,
         skipChild: true,
         newlyAddedElement: true,
         inlineStylesheet: this.inlineStylesheet,
