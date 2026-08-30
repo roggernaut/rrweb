@@ -256,8 +256,9 @@ record({
 | `strict`           | Everything `balanced` does, plus: all page text is masked; media element sources (`<img>`, `<video>`, `<audio>`, `<iframe>`, `<embed>`, `<object>`, `<source>`) are dropped instead of captured, except that an `<img>` source or `<video>` poster on an element with declared integer `width`/`height` attributes is replaced by a neutral same-size placeholder image so the surrounding layout does not collapse; canvas recording is disabled outright, even with a `canvasMasking` adapter configured; and URL sanitization blocks _every_ query parameter's value unless you also set `url.allowedQueryParameters` to an explicit allow-list. |
 
 `manual` is a permanent tier, not a transitional one: it is masking you
-configure yourself, through the classic options above. Passwords and
-payment fields are always masked regardless of preset or configuration.
+configure yourself, through the classic options above. Password and
+payment input fields (native form controls) are always masked regardless
+of preset or configuration.
 `balanced` and `strict` are the managed presets.
 
 Masking an input value also suppresses the `selected` flag on the
@@ -550,7 +551,8 @@ Breaking changes versus pre-2.0 masking, for anyone upgrading:
   exclusive with `maskAllElementAttributes` (the latter wins, with a one-time
   warning).
 - `password`/`hidden` inputs and autocomplete `cc-*`/`current-password`/
-  `new-password`/`one-time-code` fields are now always masked regardless of
+  `new-password`/`one-time-code` fields (native form controls; custom
+  elements follow upstream behavior) are now always masked regardless of
   `maskInputOptions`; previously some could record raw under `manual`.
 - An invalid `maskTextSelector`/`unmaskTextSelector`/`blockSelector` is now
   dropped with a `console.warn` at setup instead of silently ignored, per
