@@ -56,7 +56,7 @@ describe('privacy detectors plugin', () => {
     const plugin = getRecordPrivacyDetectorsPlugin();
     expect(plugin.applyPrivacyPolicy?.(undefined)).toMatchObject({
       version: 1,
-      preset: 'manual',
+      preset: 'minimal',
       detectors: {
         email: true,
         phone: true,
@@ -67,16 +67,16 @@ describe('privacy detectors plugin', () => {
     });
   });
 
-  it('plugin with no user policy yields a manual policy whose compiled detectors are active', () => {
+  it('plugin with no user policy yields a minimal policy whose compiled detectors are active', () => {
     const plugin = getRecordPrivacyDetectorsPlugin();
     const policy = plugin.applyPrivacyPolicy!(undefined) as PrivacyPolicy;
-    expect(policy.preset).toBe('manual');
+    expect(policy.preset).toBe('minimal');
     const compiled = compilePrivacyPolicy(policy);
     expect(compiled.detectors.length).toBeGreaterThan(0);
     expect(detectSensitiveValue('bob@example.com', compiled)).toBe(true);
   });
 
-  it.each(['manual', 'balanced', 'strict'] as const)(
+  it.each(['minimal', 'balanced', 'strict'] as const)(
     'forces maskAllInputs on a %s base policy',
     (preset) => {
       const plugin = getRecordPrivacyDetectorsPlugin();
@@ -96,7 +96,7 @@ describe('privacy detectors plugin', () => {
     const plugin = getRecordPrivacyDetectorsPlugin();
     const policy = plugin.applyPrivacyPolicy!({
       version: 1,
-      preset: 'manual',
+      preset: 'minimal',
       rules: [
         {
           target: { type: 'selector', selector: '.rr-unmask' },
@@ -135,10 +135,10 @@ describe('privacy-detectors active info log', () => {
     try {
       const fresh = await import('../src/index');
       const plugin = fresh.getRecordPrivacyDetectorsPlugin();
-      plugin.applyPrivacyPolicy?.({ version: 1, preset: 'manual' });
-      plugin.applyPrivacyPolicy?.({ version: 1, preset: 'manual' });
+      plugin.applyPrivacyPolicy?.({ version: 1, preset: 'minimal' });
+      plugin.applyPrivacyPolicy?.({ version: 1, preset: 'minimal' });
       const secondPlugin = fresh.getRecordPrivacyDetectorsPlugin();
-      secondPlugin.applyPrivacyPolicy?.({ version: 1, preset: 'manual' });
+      secondPlugin.applyPrivacyPolicy?.({ version: 1, preset: 'minimal' });
 
       const activeLogs = info.mock.calls.filter(([msg]) =>
         String(msg).includes('privacy-detectors active'),

@@ -322,7 +322,7 @@ export type PrivacyPolicy = {
   vendorCompat?: boolean;
 };
 
-export type PrivacyPreset = 'strict' | 'balanced' | 'manual';
+export type PrivacyPreset = 'strict' | 'balanced' | 'minimal';
 
 export type PrivacyAction = 'mask' | 'block' | 'unmask';
 

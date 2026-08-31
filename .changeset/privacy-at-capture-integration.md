@@ -13,7 +13,7 @@ primitives.
   `RecordPlugin.applyPrivacyPolicy` hook are new, and several masking
   decisions that used to have inconsistent defaults are now always enforced
   (e.g. protected inputs, mask/unmask ties) -- the default preset introduced
-  by this change is named `manual`, and recognizing another session-replay
+  by this change is named `minimal`, and recognizing another session-replay
   tool's privacy classes is opt-in via `vendorCompat: true` rather than a
   managed-preset default -- see the guide's migration section for the full
   list. `vendorCompat` can only ever increase masking or blocking, never
@@ -21,13 +21,13 @@ primitives.
   setting. `needMaskingText`'s fail-closed catch and an explicit
   `recordCanvas: true` under `strict` each log a one-time `console.warn`
   instead of failing silently.
-- Add an opt-in, versioned `privacyPolicy` with `strict`/`balanced`/`manual`
+- Add an opt-in, versioned `privacyPolicy` with `strict`/`balanced`/`minimal`
   presets, the vendor-neutral `data-privacy` HTML binding (`mask`/`block`/
   `unmask`, the same three names as the rule actions, with any unrecognized
   value failing closed to `mask`), fail-closed `canvasMasking`, and
   attribute-masking escape hatches; existing masking options remain the
-  `manual` default. `data-privacy` and the `rr-*` classes are managed-preset
-  features: under `manual` a rule compiles to its bare selector and switches
+  `minimal` default. `data-privacy` and the `rr-*` classes are managed-preset
+  features: under `minimal` a rule compiles to its bare selector and switches
   nothing else on. The guide's new "For event consumers" section documents
   what changes on the wire for anyone consuming the event stream directly
   (nullable attributes, SVG media placeholders, starred text, the

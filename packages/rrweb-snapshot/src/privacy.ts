@@ -29,7 +29,7 @@ const DATA_PRIVACY_MASK =
 const DATA_PRIVACY_UNMASK = '[data-privacy="unmask"]';
 const DATA_PRIVACY_BLOCK = '[data-privacy="block"]';
 
-const PRIVACY_PRESETS = new Set(['strict', 'balanced', 'manual']);
+const PRIVACY_PRESETS = new Set(['strict', 'balanced', 'minimal']);
 const MASKED_ATTRIBUTE_DEFAULTS = ['title', 'placeholder', 'aria-label'];
 
 const CSS_ATTRIBUTES = new Set(['style', '_csstext']);
@@ -123,7 +123,7 @@ export function applyPrivacyDetectors(
   policy: PrivacyPolicy | undefined,
   options?: PrivacyDetectorOptions,
 ): PrivacyPolicy {
-  const base: PrivacyPolicy = policy || { version: 1, preset: 'manual' };
+  const base: PrivacyPolicy = policy || { version: 1, preset: 'minimal' };
   return {
     ...base,
     detectors: {
@@ -337,7 +337,7 @@ function joinSelectors(
 export function compilePrivacyPolicy(
   policy?: PrivacyPolicy,
 ): CompiledPrivacyPolicy {
-  const effective: PrivacyPolicy = policy || { version: 1, preset: 'manual' };
+  const effective: PrivacyPolicy = policy || { version: 1, preset: 'minimal' };
   if (effective.version !== 1)
     throw new Error(
       `Unsupported Privacy at Capture policy version: ${String(
@@ -347,7 +347,7 @@ export function compilePrivacyPolicy(
   if (!PRIVACY_PRESETS.has(effective.preset))
     throw new Error(`Unsupported privacy preset: ${String(effective.preset)}`);
   const preset = effective.preset;
-  const managed = preset !== 'manual';
+  const managed = preset !== 'minimal';
   const vendorCompat = effective.vendorCompat === true;
   const detectors = buildDetectors(effective.detectors);
   const maskAllInputs = managed || detectors.length > 0;
@@ -372,10 +372,10 @@ export function compilePrivacyPolicy(
     bySelector[rule.action].push(rule.target.selector);
   }
 
-  // Under `manual` the rules compile to their bare selectors and nothing
+  // Under `minimal` the rules compile to their bare selectors and nothing
   // else: `data-privacy` and the native `rr-*` class conventions are
   // managed-preset features, and a `mask`/`block` rule does not switch them
-  // on. (`.rr-mask`/`.rr-block` still reach `manual` recordings through the
+  // on. (`.rr-mask`/`.rr-block` still reach `minimal` recordings through the
   // separate `maskTextClass`/`blockClass` options.)
   return {
     preset,

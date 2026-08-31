@@ -21,9 +21,9 @@ import snapshot, {
 } from '../src/snapshot';
 
 describe('compilePrivacyPolicy v2', () => {
-  it('manual preset compiles to inert options', () => {
+  it('minimal preset compiles to inert options', () => {
     const c = compilePrivacyPolicy(undefined);
-    expect(c.preset).toBe('manual');
+    expect(c.preset).toBe('minimal');
     expect(c.maskTextSelector).toBeNull();
     expect(c.blockSelector).toBeNull();
     expect(c.maskAllInputs).toBe(false);
@@ -32,15 +32,15 @@ describe('compilePrivacyPolicy v2', () => {
     expect(c.detectors).toEqual([]);
     expect(c.attributePolicyInert).toBe(true);
   });
-  it('any active detector forces maskAllInputs, even on a manual base', () => {
+  it('any active detector forces maskAllInputs, even on a minimal base', () => {
     const c = compilePrivacyPolicy({
       version: 1,
-      preset: 'manual',
+      preset: 'minimal',
       detectors: { email: true },
     });
-    expect(c.preset).toBe('manual');
+    expect(c.preset).toBe('minimal');
     expect(c.maskAllInputs).toBe(true);
-    // ...and nothing else about the manual preset moves.
+    // ...and nothing else about the minimal preset moves.
     expect(c.maskTextSelector).toBeNull();
     expect([...c.maskedAttributes]).toEqual([]);
     expect(c.sanitizeUrls).toBe(false);
@@ -48,7 +48,7 @@ describe('compilePrivacyPolicy v2', () => {
   it('a detectors block with every flag off leaves the preset alone', () => {
     const c = compilePrivacyPolicy({
       version: 1,
-      preset: 'manual',
+      preset: 'minimal',
       detectors: {
         email: false,
         phone: false,
@@ -131,7 +131,7 @@ describe('compilePrivacyPolicy v2', () => {
   });
   it('throws on bad version/preset/empty selector', () => {
     expect(() =>
-      compilePrivacyPolicy({ version: 2 as never, preset: 'manual' }),
+      compilePrivacyPolicy({ version: 2 as never, preset: 'minimal' }),
     ).toThrow();
     expect(() =>
       compilePrivacyPolicy({ version: 1, preset: 'custom' as never }),
@@ -218,20 +218,20 @@ describe('an unrecognized data-privacy value fails closed to mask', () => {
 
   /**
    * `data-privacy` is a managed-preset feature, full stop. It used to switch
-   * itself on under `manual` as soon as a same-action rule existed -- and
+   * itself on under `minimal` as soon as a same-action rule existed -- and
    * only for `mask`/`block`, never `unmask` -- so whether the attribute did
-   * anything depended on an unrelated rule. Under `manual` the rules now
+   * anything depended on an unrelated rule. Under `minimal` the rules now
    * compile to their bare selectors and nothing else.
    */
-  it('is entirely off under manual, with or without rules', () => {
-    const bare = compilePrivacyPolicy({ version: 1, preset: 'manual' });
+  it('is entirely off under minimal, with or without rules', () => {
+    const bare = compilePrivacyPolicy({ version: 1, preset: 'minimal' });
     expect(bare.maskTextSelector).toBeNull();
     expect(bare.blockSelector).toBeNull();
     expect(bare.unmaskTextSelector).toBeNull();
 
     const withRules = compilePrivacyPolicy({
       version: 1,
-      preset: 'manual',
+      preset: 'minimal',
       rules: [
         { target: { type: 'selector', selector: '.x' }, action: 'mask' },
         { target: { type: 'selector', selector: '.y' }, action: 'block' },
@@ -257,16 +257,16 @@ describe('an unrecognized data-privacy value fails closed to mask', () => {
     expect(matches('u', withRules.unmaskTextSelector)).toBe(false);
   });
 
-  it('does not merge the native rr-* classes into a manual policy either', () => {
+  it('does not merge the native rr-* classes into a minimal policy either', () => {
     const withRules = compilePrivacyPolicy({
       version: 1,
-      preset: 'manual',
+      preset: 'minimal',
       rules: [
         { target: { type: 'selector', selector: '.x' }, action: 'mask' },
         { target: { type: 'selector', selector: '.y' }, action: 'block' },
       ],
     });
-    // `.rr-mask`/`.rr-block` reach a `manual` recording through the separate
+    // `.rr-mask`/`.rr-block` reach a `minimal` recording through the separate
     // `maskTextClass`/`blockClass` options, not through the compiled policy.
     expect(withRules.maskTextSelector).not.toContain('.rr-mask');
     expect(withRules.blockSelector).not.toContain('.rr-block');
@@ -349,10 +349,10 @@ describe('vendorCompat', () => {
     }
   });
 
-  it('stays inert under manual, which never merged vendor classes', () => {
+  it('stays inert under minimal, which never merged vendor classes', () => {
     const c = compilePrivacyPolicy({
       version: 1,
-      preset: 'manual',
+      preset: 'minimal',
       vendorCompat: true,
     });
     expect(c.maskTextSelector).toBeNull();
@@ -380,7 +380,7 @@ describe('validateSelector', () => {
       expect(
         compilePrivacyPolicy({
           version: 1,
-          preset: 'manual',
+          preset: 'minimal',
           rules: [
             { target: { type: 'selector', selector: '.pii' }, action: 'mask' },
           ],
@@ -532,7 +532,7 @@ describe('merge helpers validate the record()-level selector', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const compiled = compilePrivacyPolicy({
       version: 1,
-      preset: 'manual',
+      preset: 'minimal',
       rules: [
         {
           target: { type: 'selector', selector: '.pii, .broken:has-typo(' },
@@ -570,8 +570,8 @@ describe('merge helpers validate the record()-level selector', () => {
    * fail-open. Both must survive the merge and still match.
    */
   it('an escaped comma does not swallow an unrelated selector in the dedupe', () => {
-    const manual = compilePrivacyPolicy(undefined);
-    const merged = mergeSelectors('.a\\,b,b', manual.maskTextSelector)!;
+    const minimal = compilePrivacyPolicy(undefined);
+    const merged = mergeSelectors('.a\\,b,b', minimal.maskTextSelector)!;
 
     document.body.innerHTML = '<div class="a,b">x</div><b>y</b>';
     const commaClassEl = document.querySelector('div')!;
@@ -586,7 +586,7 @@ describe('merge helpers validate the record()-level selector', () => {
     // colliding `b` from a policy rule
     const policy = compilePrivacyPolicy({
       version: 1,
-      preset: 'manual',
+      preset: 'minimal',
       rules: [{ target: { type: 'selector', selector: 'b' }, action: 'mask' }],
     });
     const merged = mergeSelectors('.a\\,b', policy.maskTextSelector)!;
@@ -634,7 +634,7 @@ describe('merge helpers validate the record()-level selector', () => {
 describe('detectSensitiveValue', () => {
   const withDetectors = compilePrivacyPolicy({
     version: 1,
-    preset: 'manual',
+    preset: 'minimal',
     detectors: {
       email: true,
       phone: true,
@@ -676,8 +676,8 @@ describe('detectSensitiveValue', () => {
     );
   });
 
-  it('detects regardless of preset (works under manual)', () => {
-    expect(withDetectors.preset).toBe('manual');
+  it('detects regardless of preset (works under minimal)', () => {
+    expect(withDetectors.preset).toBe('minimal');
     expect(detectSensitiveValue('4111 1111 1111 1111', withDetectors)).toBe(
       true,
     );
@@ -727,7 +727,7 @@ describe('detectSensitiveValue', () => {
 describe('sanitizeUrl v2', () => {
   const strict = compilePrivacyPolicy({ version: 1, preset: 'strict' });
   const balanced = compilePrivacyPolicy({ version: 1, preset: 'balanced' });
-  const manual = compilePrivacyPolicy(undefined);
+  const minimal = compilePrivacyPolicy(undefined);
   it('strips userinfo credentials', () => {
     expect(
       sanitizeUrl('https://alice:hunter2@api.example.com/x', balanced),
@@ -751,21 +751,21 @@ describe('sanitizeUrl v2', () => {
       'https://a.com/?page=2&q=*',
     );
   });
-  it('removes hash unless disabled; manual passes through untouched', () => {
+  it('removes hash unless disabled; minimal passes through untouched', () => {
     expect(sanitizeUrl('https://a.com/x#frag', balanced)).toBe(
       'https://a.com/x',
     );
-    expect(sanitizeUrl('https://alice:pw@a.com/?token=x#f', manual)).toBe(
+    expect(sanitizeUrl('https://alice:pw@a.com/?token=x#f', minimal)).toBe(
       'https://alice:pw@a.com/?token=x#f',
     );
   });
-  it('unparseable value under non-manual fails closed by dropping the attribute', () => {
+  it('unparseable value under non-minimal fails closed by dropping the attribute', () => {
     expect(sanitizeUrl('http://[broken', balanced)).toBeNull();
   });
   it('empty in, empty out -- never resolved into a path', () => {
     expect(sanitizeUrl('', balanced)).toBe('');
     expect(sanitizeUrl('', strict)).toBe('');
-    expect(sanitizeUrl('', manual)).toBe('');
+    expect(sanitizeUrl('', minimal)).toBe('');
   });
 });
 
