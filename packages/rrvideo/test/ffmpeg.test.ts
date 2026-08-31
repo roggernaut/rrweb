@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { spawnSync } from 'child_process';
 import { buildFfmpegArgs, FfmpegJpegPipe } from '../src/ffmpeg';
+import { hasFfmpeg } from './ffmpeg-available';
 
 function makeJpeg(width: number, height: number): Buffer {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rrvideo-jpeg-'));
@@ -25,7 +26,11 @@ function makeJpeg(width: number, height: number): Buffer {
     { encoding: 'utf-8' },
   );
   if (result.status !== 0) {
-    throw new Error(result.stderr || 'ffmpeg jpeg fixture failed');
+    const detail =
+      result.stderr ||
+      result.error?.message ||
+      `ffmpeg jpeg fixture failed (status ${String(result.status)})`;
+    throw new Error(detail);
   }
   const jpeg = fs.readFileSync(file);
   fs.removeSync(dir);
@@ -111,25 +116,28 @@ describe('ffmpeg jpeg pipe', () => {
     ]);
   });
 
-  it('encodes a 60fps mp4 from still frames', async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rrvideo-mp4-'));
-    const output = path.join(dir, 'out.mp4');
-    const jpeg = makeJpeg(320, 240);
-    const pipe = new FfmpegJpegPipe({
-      fps: 60,
-      outputPath: output,
-      preset: 'ultrafast',
-      crf: 28,
-    });
-    for (let i = 0; i < 30; i++) {
-      await pipe.write(jpeg);
-    }
-    await pipe.end();
-    const info = probe(output);
-    expect(info.fps).toBe(60);
-    expect(info.width).toBe(320);
-    expect(info.height).toBe(240);
-    expect(info.duration).toBeCloseTo(0.5, 1);
-    fs.removeSync(dir);
-  });
+  (hasFfmpeg() ? it : it.skip)(
+    'encodes a 60fps mp4 from still frames',
+    async () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rrvideo-mp4-'));
+      const output = path.join(dir, 'out.mp4');
+      const jpeg = makeJpeg(320, 240);
+      const pipe = new FfmpegJpegPipe({
+        fps: 60,
+        outputPath: output,
+        preset: 'ultrafast',
+        crf: 28,
+      });
+      for (let i = 0; i < 30; i++) {
+        await pipe.write(jpeg);
+      }
+      await pipe.end();
+      const info = probe(output);
+      expect(info.fps).toBe(60);
+      expect(info.width).toBe(320);
+      expect(info.height).toBe(240);
+      expect(info.duration).toBeCloseTo(0.5, 1);
+      fs.removeSync(dir);
+    },
+  );
 });

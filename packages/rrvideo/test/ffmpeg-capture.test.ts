@@ -2,6 +2,7 @@ import { execSync, spawnSync } from 'child_process';
 import * as fs from 'fs-extra';
 import * as path from 'path';
 import exampleEvents from './events/example';
+import { hasFfmpeg } from './ffmpeg-available';
 
 jest.setTimeout(120_000);
 
@@ -36,7 +37,7 @@ function probeFps(file: string): { fps: number; nbFrames: number } {
   };
 }
 
-describe('ffmpeg capture backend', () => {
+(hasFfmpeg() ? describe : describe.skip)('ffmpeg capture backend', () => {
   const generated = path.resolve(__dirname, './generated-ffmpeg');
   const execOptions = { timeout: 90_000, stdio: 'inherit' as const };
 
