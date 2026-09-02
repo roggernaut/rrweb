@@ -47,12 +47,19 @@ export function computeFrameMaskRegions(
     });
 }
 
+/**
+ * The content box in layout CSS pixels. `clientWidth`/`clientHeight` are used
+ * rather than `getBoundingClientRect()`: the rect is post-transform, so a
+ * canvas under `transform: scale(k)` would scale regions by 1/k and leave part
+ * of the secret visible. Client dimensions are the padding box, so only the
+ * padding is subtracted.
+ */
 export function getCanvasContentBoxSize(
   canvas: HTMLCanvasElement,
 ): { width: number; height: number } | null {
   let rect: { width: number; height: number };
   try {
-    rect = canvas.getBoundingClientRect();
+    rect = { width: canvas.clientWidth, height: canvas.clientHeight };
   } catch {
     return null;
   }
@@ -72,18 +79,8 @@ export function getCanvasContentBoxSize(
     return Number.isFinite(parsed) ? parsed : 0;
   };
 
-  const width =
-    rect.width -
-    px(style.paddingLeft) -
-    px(style.paddingRight) -
-    px(style.borderLeftWidth) -
-    px(style.borderRightWidth);
-  const height =
-    rect.height -
-    px(style.paddingTop) -
-    px(style.paddingBottom) -
-    px(style.borderTopWidth) -
-    px(style.borderBottomWidth);
+  const width = rect.width - px(style.paddingLeft) - px(style.paddingRight);
+  const height = rect.height - px(style.paddingTop) - px(style.paddingBottom);
 
   if (!(width > 0) || !(height > 0)) return null;
 
@@ -129,12 +126,19 @@ function isValidRegion(region: unknown): region is CanvasMaskRegion {
   );
 }
 
-/** A configured canvas masking provider always forces numeric FPS sampling; only that capture path can redact pixels. */
+/**
+ * A canvas masking provider, merely by being supplied, forces numeric FPS
+ * sampling: only that capture path can redact pixels. The decision keys on
+ * presence, not on `isConfigured()`, because the capture mode is fixed at
+ * `record()` while `isConfigured()` is re-read every frame; a provider that
+ * answered false at setup and true later would otherwise leave the
+ * mutation-mode command stream running with no masking path at all.
+ */
 export function resolveCanvasSampling(
   requestedSampling: number | 'all' | undefined,
-  canvasMaskingConfigured: boolean,
+  canvasMasking: CanvasMasking | undefined,
 ): number | 'all' | undefined {
-  if (!canvasMaskingConfigured) return requestedSampling;
+  if (!canvasMasking) return requestedSampling;
   if (typeof requestedSampling === 'number') return requestedSampling;
   console.warn(
     '[rrweb] canvasMasking requires FPS canvas capture; forcing sampling.canvas = 4',

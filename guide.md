@@ -500,8 +500,9 @@ warning rather than treating it as cosmetic. Where there is no `document` to
 validate against at all (server-side rendering, a worker), selectors are
 assumed valid rather than all dropped.
 A selector that passes validation but throws while matching (a hostile
-`matches` override, a detached document) still fails closed and masks the
-affected text.
+`matches` override, a detached document) still fails closed: a mask decision
+masks the affected text and attributes, and a block decision blocks the
+affected element, each with a one-time `console.warn`.
 
 ```js
 record({
@@ -540,9 +541,15 @@ Canvas applications can provide capture-time regions when using FPS canvas
 sampling. Coordinates are CSS pixels relative to the canvas. Return `[]` when
 the frame is safe unchanged, or `null`/`undefined` when regions cannot be
 computed; rrweb skips unanswerable frames. Invalid rectangles and thrown
-errors also fail closed. Configuring `canvasMasking` at all forces
+errors also fail closed. Regions are scaled against the canvas's layout
+content box (`clientWidth`/`clientHeight` minus padding), never its
+transformed bounding rect, so a CSS `transform` on the canvas cannot shrink
+a mask. Supplying `canvasMasking` at all forces
 `sampling.canvas` onto the FPS/OffscreenCanvas capture path (defaulting to
-`4` if you haven't already set a number), since that's the only capture path
+`4` if you haven't already set a number), regardless of what `isConfigured()`
+answers at that moment -- the capture mode is fixed at `record()` while
+`isConfigured()` is re-read every frame, and a provider that switches on
+later must already be on the path that can mask. That path is the only one
 that renders full frames through the masking adapter before they reach the
 encoding worker -- the raw command-stream capture mode
 (`sampling.canvas: 'all'`) replays canvas API calls verbatim and has no way to

@@ -138,10 +138,7 @@ function record<T = eventWithTime>(
     : undefined;
   const sampling: SamplingStrategy = {
     ...requestedSampling,
-    canvas: resolveCanvasSampling(
-      requestedSampling.canvas,
-      isCanvasMaskingConfigured(canvasMasking),
-    ),
+    canvas: resolveCanvasSampling(requestedSampling.canvas, canvasMasking),
   };
 
   registerErrorHandler(errorHandler);

@@ -12,9 +12,31 @@ import {
   isEventIgnored,
 } from '../src/privacy';
 import snapshot, {
+  _isBlockedElement,
   needMaskingText,
   splitMaskAllSelector,
 } from '../src/snapshot';
+
+describe('block decisions fail closed', () => {
+  it('blocks the element and warns once when the block selector throws while matching', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const el = document.createElement('div');
+    const matches = vi.spyOn(el, 'matches').mockImplementation(() => {
+      throw new Error('boom');
+    });
+    expect(_isBlockedElement(el, 'rr-block', '.x')).toBe(true);
+    expect(_isBlockedElement(el, 'rr-block', '.x')).toBe(true);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0][0]).toContain('block');
+    matches.mockRestore();
+    warn.mockRestore();
+  });
+
+  it('does not block when nothing matches and nothing throws', () => {
+    const el = document.createElement('div');
+    expect(_isBlockedElement(el, 'rr-block', '.x')).toBe(false);
+  });
+});
 
 describe('compilePrivacyPolicy v2', () => {
   it('minimal preset compiles to inert options', () => {

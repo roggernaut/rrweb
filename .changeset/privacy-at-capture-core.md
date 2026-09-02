@@ -38,6 +38,12 @@ primitives.
   wins a same-element tie, and a `record()`-level `maskTextSelector` takes
   part. Previously an unmask ancestor revealed those attributes through a
   nearer mask marker.
+- A block selector that throws while matching now blocks the element (with
+  a one-time `console.warn`) instead of recording it, matching the
+  fail-closed rule text and attribute decisions already followed.
+- `strict`'s masked-image placeholder falls back to the image's intrinsic
+  size when it has no `width`/`height` attributes, and is encoded so it is
+  also a valid `srcset` candidate.
 - `maskInputFn` and `maskTextFn` fail closed: a callback that throws or
   returns a non-string yields stars instead of aborting the snapshot or
   recording the raw value. An input whose `type` or `autocomplete` throws on
@@ -55,8 +61,11 @@ primitives.
   logs a one-time `console.warn` when set under `minimal`, where it has no
   effect.
 - Add fail-closed `canvasMasking` region masking for complex canvas
-  applications; configuring it forces the FPS capture path and suppresses
-  the unmasked `rr_dataURL` full-snapshot fallback. `strict` disables canvas
+  applications; supplying it forces the FPS capture path (keyed on the
+  provider's presence, since `isConfigured()` may change over the session)
+  and suppresses the unmasked `rr_dataURL` full-snapshot fallback. Regions
+  scale against the layout content box, so a CSS `transform` on the canvas
+  cannot shrink a mask. `strict` disables canvas
   recording outright -- emitting no canvas events at all -- and an explicit
   `recordCanvas: true` now logs a one-time `console.warn` instead of being
   silently ignored. Canvases inside a shadow root are now discovered only
