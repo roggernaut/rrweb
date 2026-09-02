@@ -3,6 +3,7 @@ import type {
   MaskAttributeFn,
   MaskTextFn,
   PrivacyPolicy,
+  VendorCompatId,
 } from './types';
 import { parentElement, untaintedTagName } from '@rrweb/utils';
 
@@ -10,78 +11,131 @@ const NATIVE_MASK_CLASSES = '.rr-mask';
 const NATIVE_UNMASK_CLASSES = '.rr-unmask';
 const NATIVE_BLOCK_CLASSES = '.rr-block';
 
-// Other tools' conventions, merged only under `vendorCompat`. Every token was
-// verified against the vendor's official docs or open-source SDK; the source
-// for each is in guide.md's "Vendor class recognition" table. A token whose
-// vendor semantics hide only text joins the mask list; one that removes or
-// placeholders the element's whole content joins the block list. No vendor's
-// unmask/allow or input-ignore token is ever merged: `vendorCompat` may only
-// add masking or blocking, never reveal, and `.rr-unmask` stays native-only.
-const COMPAT_MASK_CLASSES = [
-  '.mp-mask', // Mixpanel
-  '.fs-mask', // FullStory
-  '.fs-mask-without-consent', // FullStory (masked until their consent API reveals)
-  '.amp-mask', // Amplitude
-  '.ph-mask', // PostHog
-  '.sentry-mask', // Sentry
-  '[data-sentry-mask]', // Sentry
-  '.dd-privacy-mask', // Datadog
-  '[data-dd-privacy="mask"]', // Datadog
-  '.dd-privacy-mask-user-input', // Datadog (form values only there; text here)
-  '[data-dd-privacy="mask-user-input"]', // Datadog
-  '.nr-mask', // New Relic
-  '[data-nr-mask]', // New Relic
-  '.highlight-mask', // Highlight / LaunchDarkly
-  '[data-clarity-mask]', // Microsoft Clarity
-  '[data-sl="mask"]', // Smartlook
-  '[data-openreplay-obscured]', // OpenReplay
-  '[data-openreplay-masked]', // OpenReplay (deprecated alias, still honored)
-  '[data-heap-redact-text]', // Heap
-  '[data-heap-redact-attributes]', // Heap (attribute values there; text here)
-  '[data-cs-encrypt]', // Contentsquare (encrypted capture there; masked here)
-  '.mf-masked', // Mouseflow
-  '[data-mf-replace]', // Mouseflow
-  '[data-mf-replace-inner]', // Mouseflow
-  '.inspectlet-sensitive', // Inspectlet
-  '.inspectletIgnore', // Inspectlet
-  '[data-dtrum-mask]', // Dynatrace
-  '[data-qm-encrypt]', // Quantum Metric (encrypted capture there; masked here)
-  '.cls_mask', // Glassbox (input value mask)
-  '.sessionstack-sensitive', // SessionStack
-  '[data-sr-redact]', // Session Rewind
-  '[data-recording-sensitive]', // Smartlook legacy attribute, still honored
-].join(',');
-const COMPAT_BLOCK_CLASSES = [
-  '.mp-block', // Mixpanel
-  '.fs-exclude', // FullStory
-  '.fs-exclude-without-consent', // FullStory
-  '.amp-block', // Amplitude
-  '.ph-no-capture', // PostHog
-  '.sentry-block', // Sentry
-  '[data-sentry-block]', // Sentry
-  '.dd-privacy-hidden', // Datadog
-  '[data-dd-privacy="hidden"]', // Datadog
-  '.nr-block', // New Relic
-  '[data-nr-block]', // New Relic
-  '.highlight-block', // Highlight / LaunchDarkly
-  '[data-private]', // LogRocket (any value: placeholder, delete, lipsum)
-  '._lr-hide', // LogRocket (legacy)
-  '[data-hj-suppress]', // Hotjar (text and images placeholdered)
-  '.data-hj-suppress', // Hotjar (class form, also documented)
-  '[data-sl="exclude"]', // Smartlook
-  '[data-openreplay-hidden]', // OpenReplay
-  '[data-openreplay-htmlmasked]', // OpenReplay (deprecated alias)
-  '[data-cs-mask]', // Contentsquare (content removed from collection)
-  '[heap-ignore]', // Heap (attribute; the SDK selector is `[heap-ignore]`)
-  '.mf-excluded', // Mouseflow
-  '.lo-sensitive', // Lucky Orange (text scrambled, images blanked)
-  '.losensitive', // Lucky Orange (alias)
-  '.userback-block', // Userback
-  '.zipy-block', // Zipy
-  '[data-qm-block]', // Quantum Metric (customer-config convention)
-  '[data-qm-freeze-exclude]', // Quantum Metric (DOM-capture exclude)
-  '[data-recording-disable]', // Smartlook legacy attribute, still honored
-].join(',');
+// Other tools' conventions, merged only under `vendorCompat` — `true` for
+// every vendor here, or an array naming just the vendors to honor. Every
+// token was verified against the vendor's official docs or open-source SDK;
+// the source for each is in guide.md's "Vendor class recognition" table. A
+// token whose vendor semantics hide only text joins the vendor's mask list;
+// one that removes or placeholders the element's whole content joins its
+// block list. No vendor's unmask/allow or input-ignore token is ever merged,
+// under any form of the setting: `vendorCompat` may only add masking or
+// blocking, never reveal, and `.rr-unmask` stays native-only.
+const VENDOR_COMPAT: Record<
+  VendorCompatId,
+  { mask: string[]; block: string[] }
+> = {
+  mixpanel: { mask: ['.mp-mask'], block: ['.mp-block'] },
+  fullstory: {
+    // the -without-consent variants are masked until their consent API reveals
+    mask: ['.fs-mask', '.fs-mask-without-consent'],
+    block: ['.fs-exclude', '.fs-exclude-without-consent'],
+  },
+  amplitude: { mask: ['.amp-mask'], block: ['.amp-block'] },
+  posthog: { mask: ['.ph-mask'], block: ['.ph-no-capture'] },
+  sentry: {
+    mask: ['.sentry-mask', '[data-sentry-mask]'],
+    block: ['.sentry-block', '[data-sentry-block]'],
+  },
+  datadog: {
+    // mask-user-input covers form values only there; text here
+    mask: [
+      '.dd-privacy-mask',
+      '[data-dd-privacy="mask"]',
+      '.dd-privacy-mask-user-input',
+      '[data-dd-privacy="mask-user-input"]',
+    ],
+    block: ['.dd-privacy-hidden', '[data-dd-privacy="hidden"]'],
+  },
+  newrelic: {
+    mask: ['.nr-mask', '[data-nr-mask]'],
+    block: ['.nr-block', '[data-nr-block]'],
+  },
+  // Highlight / LaunchDarkly
+  highlight: { mask: ['.highlight-mask'], block: ['.highlight-block'] },
+  // [data-private] blocks under any value: placeholder, delete, lipsum
+  logrocket: { mask: [], block: ['[data-private]', '._lr-hide'] },
+  // text and images placeholdered; the class form is also documented
+  hotjar: { mask: [], block: ['[data-hj-suppress]', '.data-hj-suppress'] },
+  // Microsoft Clarity
+  clarity: { mask: ['[data-clarity-mask]'], block: [] },
+  smartlook: {
+    // the data-recording-* legacy attributes are still honored by the bundle
+    mask: ['[data-sl="mask"]', '[data-recording-sensitive]'],
+    block: ['[data-sl="exclude"]', '[data-recording-disable]'],
+  },
+  openreplay: {
+    // -masked/-htmlmasked are deprecated aliases, still honored
+    mask: ['[data-openreplay-obscured]', '[data-openreplay-masked]'],
+    block: ['[data-openreplay-hidden]', '[data-openreplay-htmlmasked]'],
+  },
+  contentsquare: {
+    // encrypted capture there, masked here; blocked content is removed there
+    mask: ['[data-cs-encrypt]'],
+    block: ['[data-cs-mask]'],
+  },
+  heap: {
+    // redact-attributes covers attribute values there; text here. The block
+    // token is the attribute: the SDK selector is `[heap-ignore]`.
+    mask: ['[data-heap-redact-text]', '[data-heap-redact-attributes]'],
+    block: ['[heap-ignore]'],
+  },
+  mouseflow: {
+    mask: ['.mf-masked', '[data-mf-replace]', '[data-mf-replace-inner]'],
+    block: ['.mf-excluded'],
+  },
+  // text scrambled, images blanked; .losensitive is an alias
+  luckyorange: { mask: [], block: ['.lo-sensitive', '.losensitive'] },
+  inspectlet: {
+    mask: ['.inspectlet-sensitive', '.inspectletIgnore'],
+    block: [],
+  },
+  dynatrace: { mask: ['[data-dtrum-mask]'], block: [] },
+  userback: { mask: [], block: ['.userback-block'] },
+  zipy: { mask: [], block: ['.zipy-block'] },
+  quantummetric: {
+    // encrypted capture there, masked here; qm-block is a customer-config
+    // convention, qm-freeze-exclude the DOM-capture exclude
+    mask: ['[data-qm-encrypt]'],
+    block: ['[data-qm-block]', '[data-qm-freeze-exclude]'],
+  },
+  // input value mask
+  glassbox: { mask: ['.cls_mask'], block: [] },
+  sessionstack: { mask: ['.sessionstack-sensitive'], block: [] },
+  sessionrewind: { mask: ['[data-sr-redact]'], block: [] },
+};
+
+const VENDOR_IDS = Object.keys(VENDOR_COMPAT) as VendorCompatId[];
+
+/** The vendors a `vendorCompat` setting names; an unknown id is dropped with a warning, mirroring invalid-selector handling. */
+function resolveVendorCompat(
+  vendorCompat: PrivacyPolicy['vendorCompat'],
+): VendorCompatId[] {
+  if (vendorCompat === true) return VENDOR_IDS;
+  if (!Array.isArray(vendorCompat)) return [];
+  const known: VendorCompatId[] = [];
+  const unknown: string[] = [];
+  for (const id of vendorCompat) {
+    if (Object.prototype.hasOwnProperty.call(VENDOR_COMPAT, id)) {
+      known.push(id);
+    } else {
+      unknown.push(String(id));
+    }
+  }
+  if (unknown.length)
+    console.warn(
+      `[rrweb privacy] dropping unknown vendorCompat id: ${unknown.join(', ')}`,
+    );
+  return known;
+}
+
+function vendorCompatSelector(
+  vendors: VendorCompatId[],
+  action: 'mask' | 'block',
+): string | null {
+  const tokens: string[] = [];
+  for (const id of vendors) tokens.push(...VENDOR_COMPAT[id][action]);
+  return tokens.join(',') || null;
+}
 
 // `data-privacy` fails closed: the mask token is the bare attribute minus the
 // two values that mean something else, so an unrecognized value masks.
@@ -298,8 +352,8 @@ export function compilePrivacyPolicy(
     throw new Error(`Unsupported privacy preset: ${String(effective.preset)}`);
   const preset = effective.preset;
   const managed = preset !== 'minimal';
-  const vendorCompat = effective.vendorCompat === true;
-  if (vendorCompat && !managed)
+  const compatVendors = resolveVendorCompat(effective.vendorCompat);
+  if (compatVendors.length && !managed)
     console.warn(
       '[rrweb privacy] vendorCompat has no effect under the minimal preset; use balanced or strict, or add the classes as mask/block rules.',
     );
@@ -336,7 +390,7 @@ export function compilePrivacyPolicy(
         : joinSelectors([
             DATA_PRIVACY_MASK,
             NATIVE_MASK_CLASSES,
-            vendorCompat ? COMPAT_MASK_CLASSES : null,
+            vendorCompatSelector(compatVendors, 'mask'),
             ...bySelector.mask,
           ])
       : joinSelectors(bySelector.mask),
@@ -350,7 +404,7 @@ export function compilePrivacyPolicy(
         ? [
             DATA_PRIVACY_BLOCK,
             NATIVE_BLOCK_CLASSES,
-            vendorCompat ? COMPAT_BLOCK_CLASSES : null,
+            vendorCompatSelector(compatVendors, 'block'),
             ...bySelector.block,
           ]
         : bySelector.block,
