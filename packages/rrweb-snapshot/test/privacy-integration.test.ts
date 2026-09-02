@@ -457,6 +457,19 @@ describe('maskInput v2', () => {
       }),
     ).toBe('***** *****');
   });
+  it('masks a password even when maskInputOptions says password: false', () => {
+    const pw = document.createElement('input');
+    pw.type = 'password';
+    const out = maskInput({
+      element: pw,
+      tagName: 'input',
+      type: 'password',
+      value: 'hunter2',
+      maskInputOptions: { password: false },
+      privacy: minimal,
+    });
+    expect(out).toBe('*'.repeat(7));
+  });
   it('minimal + maskInputFn trusted verbatim when minimal options mask', () => {
     const out = maskInput({
       element: input(),
@@ -559,6 +572,53 @@ describe('maskInput v2', () => {
       }),
     ).toBe('**');
     expect(isProtectedInput(input('autocomplete="cc-number"'))).toBe(true);
+  });
+});
+
+describe('late attribute writes after the finalization sweep', () => {
+  /**
+   * `inlineImages` writes `rr_dataURL` from an `<img>` load listener, which
+   * fires after `finalizeAttributes` has already run for that node. The
+   * late-write guard must route that value through `finalizeAttribute` or a
+   * coarse `maskAllElementAttributes` would be bypassed by every image that
+   * was still loading at snapshot time.
+   */
+  it('masks rr_dataURL written by a late image load under maskAllElementAttributes', () => {
+    const getContext = vi
+      .spyOn(HTMLCanvasElement.prototype, 'getContext')
+      .mockImplementation(
+        () =>
+          ({
+            drawImage: () => undefined,
+          } as unknown as CanvasRenderingContext2D),
+      );
+    const toDataURL = vi
+      .spyOn(HTMLCanvasElement.prototype, 'toDataURL')
+      .mockReturnValue('data:image/png;base64,AAAA');
+    document.body.innerHTML = '<img id="late" src="late.png">';
+    const img = document.getElementById('late') as HTMLImageElement;
+    // jsdom never loads images: complete stays false, so the listener path is taken.
+    Object.defineProperty(img, 'complete', { value: false });
+    Object.defineProperty(img, 'naturalWidth', { value: 4 });
+    Object.defineProperty(img, 'naturalHeight', { value: 4 });
+
+    const tree = snapshot(document, {
+      inlineImages: true,
+      maskAllElementAttributes: true,
+    });
+    const find = (n: any): any =>
+      n?.tagName === 'img' ? n : (n?.childNodes || []).map(find).find(Boolean);
+    const node = find(tree);
+    expect(node.attributes.rr_dataURL).toBeUndefined();
+
+    img.dispatchEvent(new Event('load'));
+
+    expect(node.attributes.rr_dataURL).toBe(
+      '*'.repeat('data:image/png;base64,AAAA'.length),
+    );
+    getContext.mockRestore();
+    toDataURL.mockRestore();
+    document.body.innerHTML = '';
   });
 });
 
@@ -666,8 +726,8 @@ describe('finalizeAttribute', () => {
         privacy: strict,
       });
       expect(out).toMatch(/^data:image\/svg\+xml;utf8,/);
-      expect(out).toContain('width="120"');
-      expect(out).toContain('height="80"');
+      expect(out).toContain('width=%22120%22');
+      expect(out).toContain('height=%2280%22');
       // the real source never survives into the placeholder
       expect(out).not.toContain('a.com');
     });
@@ -680,7 +740,7 @@ describe('finalizeAttribute', () => {
           value: 'a.png 1x',
           privacy: strict,
         }),
-      ).toContain('width="10"');
+      ).toContain('width=%2210%22');
       expect(
         finalizeAttribute({
           element: el(
@@ -691,7 +751,7 @@ describe('finalizeAttribute', () => {
           value: 'p.png',
           privacy: strict,
         }),
-      ).toContain('width="640"');
+      ).toContain('width=%22640%22');
     });
 
     it('keeps returning null for an img with no declared dimensions', () => {
@@ -731,6 +791,35 @@ describe('finalizeAttribute', () => {
       });
       expect(rect).not.toHaveBeenCalled();
       rect.mockRestore();
+    });
+
+    it('falls back to the intrinsic size when an img has no size attributes', () => {
+      // naturalWidth/naturalHeight are intrinsic, not a layout measurement,
+      // so a CSS-sized image still gets a same-size placeholder.
+      const img = el('<img src="a.png">');
+      Object.defineProperty(img, 'naturalWidth', { value: 320 });
+      Object.defineProperty(img, 'naturalHeight', { value: 200 });
+      const out = finalizeAttribute({
+        element: img,
+        name: 'src',
+        value: 'a.png',
+        privacy: strict,
+      });
+      expect(out).toContain('width=%22320%22');
+      expect(out).toContain('height=%22200%22');
+    });
+
+    it('emits a placeholder that is a valid srcset candidate (no whitespace)', () => {
+      const out = finalizeAttribute({
+        element: el('<img srcset="a.png 1x" width="10" height="10">'),
+        name: 'srcset',
+        value: 'a.png 1x',
+        privacy: strict,
+      }) as string;
+      expect(out.startsWith('data:image/svg+xml')).toBe(true);
+      expect(/\s/.test(out)).toBe(false);
+      // a comma after the data-URL prefix would start a new srcset candidate
+      expect(out.slice('data:image/svg+xml;utf8,'.length)).not.toContain(',');
     });
 
     it('leaves non-image media sources dropped even when sized', () => {

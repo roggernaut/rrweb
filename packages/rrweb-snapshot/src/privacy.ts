@@ -362,8 +362,9 @@ export function shouldCapturePixels(
 export function validateSelector(selector: string): boolean {
   // No document to ask (SSR, a worker, a non-DOM test harness): assume valid
   // rather than dropping every selector the policy declared. `matches()` is
-  // wrapped in a catch-to-mask at capture time, which stays the fail-closed
-  // backstop for anything actually malformed.
+  // wrapped in a catch at capture time that masks (text, attributes) or
+  // blocks (block selectors), which stays the fail-closed backstop for
+  // anything actually malformed.
   if (typeof document === 'undefined') return true;
   try {
     document.createDocumentFragment().querySelector(selector);
@@ -726,11 +727,16 @@ function isUnmasked(
 /** One element's `isUnmasked` answer, reused across its whole attribute sweep. */
 type UnmaskMemo = { element: Element | null; answer: boolean };
 
-const URI_UNSAFE = /[<>#]/g;
+// Everything a srcset parser reads as a delimiter is escaped too, so the
+// placeholder is a valid candidate URL there and not just in `src`.
+const URI_UNSAFE = /[<>#" ,]/g;
 const URI_ESCAPES: Record<string, string> = {
   '<': '%3C',
   '>': '%3E',
   '#': '%23',
+  '"': '%22',
+  ' ': '%20',
+  ',': '%2C',
 };
 const placeholderCache = new Map<string, string>();
 
@@ -749,17 +755,27 @@ function placeholderImage(width: string, height: string): string {
   return encoded;
 }
 
+/** Size attributes first; for an `<img>` the intrinsic size is the fallback. Never a layout measurement. */
 function declaredDimensions(element: Element): [string, string] | null {
   try {
     const width = element.getAttribute('width');
     const height = element.getAttribute('height');
-    if (width === null || height === null) return null;
     if (
-      !PLAIN_PIXEL_DIMENSION.test(width) ||
-      !PLAIN_PIXEL_DIMENSION.test(height)
+      width !== null &&
+      height !== null &&
+      PLAIN_PIXEL_DIMENSION.test(width) &&
+      PLAIN_PIXEL_DIMENSION.test(height)
     )
-      return null;
-    return [width, height];
+      return [width, height];
+    const { naturalWidth, naturalHeight } = element as HTMLImageElement;
+    if (
+      Number.isInteger(naturalWidth) &&
+      Number.isInteger(naturalHeight) &&
+      naturalWidth > 0 &&
+      naturalHeight > 0
+    )
+      return [String(naturalWidth), String(naturalHeight)];
+    return null;
   } catch {
     return null;
   }

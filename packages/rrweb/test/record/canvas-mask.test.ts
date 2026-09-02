@@ -158,6 +158,28 @@ describe('canvas content-box region scaling', () => {
     document.body.removeChild(canvasEl);
   });
 
+  it('scales from layout dimensions, so a CSS transform cannot shrink the mask', () => {
+    // A canvas under transform: scale(2) reports a 280x280 bounding rect but
+    // its layout (client) box is still 140x140. Regions are authored in
+    // layout CSS pixels; scaling them by the transformed rect would paint
+    // them at half size and leave the other half of the secret visible.
+    const canvasEl = document.createElement('canvas');
+    canvasEl.width = 100;
+    canvasEl.height = 100;
+    canvasEl.style.padding = '20px';
+    document.body.appendChild(canvasEl);
+    canvasEl.getBoundingClientRect = () =>
+      ({ width: 280, height: 280 } as DOMRect);
+    Object.defineProperty(canvasEl, 'clientWidth', { value: 140 });
+    Object.defineProperty(canvasEl, 'clientHeight', { value: 140 });
+
+    expect(getCanvasContentBoxSize(canvasEl)).toEqual({
+      width: 100,
+      height: 100,
+    });
+    document.body.removeChild(canvasEl);
+  });
+
   it('reports no content box (fail closed) when the content box has zero area', () => {
     const canvasEl = document.createElement('canvas');
     canvasEl.width = 100;
@@ -171,15 +193,11 @@ describe('canvas content-box region scaling', () => {
   });
 });
 
-/**
- * `record()` composes exactly this pair, so the tests do too: whether the
- * coercion happens is decided by *configured* semantics, not by the mere
- * presence of a `canvasMasking` object.
- */
+/** `record()` passes the provider itself; the coercion keys on its presence. */
 const resolveFor = (
   requested: number | 'all' | undefined,
   masking: CanvasMasking | undefined,
-) => resolveCanvasSampling(requested, isCanvasMaskingConfigured(masking));
+) => resolveCanvasSampling(requested, masking);
 
 const provider = (over: Partial<CanvasMasking> = {}): CanvasMasking => ({
   maskRegions: () => [],
@@ -213,7 +231,7 @@ describe('canvas fail-closed', () => {
   });
 });
 
-describe('canvas sampling keys on configured semantics, not presence', () => {
+describe('canvas sampling keys on provider presence', () => {
   it('coerces for a provider with no isConfigured switch', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     expect(resolveFor('all', provider())).toBe(4);
@@ -227,16 +245,18 @@ describe('canvas sampling keys on configured semantics, not presence', () => {
   });
 
   /**
-   * `isConfigured() === false` means masking is switched off, so mutation-mode
-   * capture redacts nothing but also bypasses nothing. Coercing there would
-   * downgrade a legitimate command-stream recording for no privacy gain.
+   * The capture mode is picked once at `record()`, but `isConfigured()` is
+   * re-read on every frame and snapshot. A provider that answers false at
+   * setup and true later would leave the mutation-mode command stream, which
+   * has no masking path at all, running unmasked. So the mere presence of a
+   * provider forces the FPS path; `isConfigured()` only decides, per frame,
+   * whether that path masks or skips.
    */
-  it('preserves mutation-mode sampling when isConfigured() is false', () => {
+  it('coerces for a provider whose isConfigured() is false at record() time', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const masking = provider({ isConfigured: () => false });
-    expect(resolveFor('all', masking)).toBe('all');
-    expect(resolveFor(undefined, masking)).toBeUndefined();
-    expect(warn).not.toHaveBeenCalled();
+    expect(resolveFor('all', masking)).toBe(4);
+    expect(resolveFor(undefined, masking)).toBe(4);
     warn.mockRestore();
   });
 
@@ -307,10 +327,8 @@ describe('resolveFrameDisplaySize', () => {
 
   it('measures the content box when masking is in force', () => {
     const canvas = canvasOf(300, 150);
-    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({
-      width: 200,
-      height: 100,
-    } as DOMRect);
+    Object.defineProperty(canvas, 'clientWidth', { value: 200 });
+    Object.defineProperty(canvas, 'clientHeight', { value: 100 });
     expect(resolveFrameDisplaySize({ maskRegions: () => [] }, canvas)).toEqual({
       width: 200,
       height: 100,

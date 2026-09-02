@@ -234,6 +234,8 @@ export function classMatches(el: Element, matcher: string | RegExp): boolean {
   return false;
 }
 
+let warnedBlockDecisionThrew = false;
+
 export function _isBlockedElement(
   element: HTMLElement,
   blockClass: string | RegExp,
@@ -247,7 +249,17 @@ export function _isBlockedElement(
       return element.matches(blockSelector);
     }
   } catch (e) {
-    //
+    // Fail closed: a block decision that cannot be made blocks, the same
+    // way a mask decision that throws masks.
+    if (!warnedBlockDecisionThrew) {
+      warnedBlockDecisionThrew = true;
+      console.warn(
+        `privacy block decision threw; failing closed to blocking — check custom selectors: ${
+          e instanceof Error ? e.message : String(e)
+        }`,
+      );
+    }
+    return true;
   }
 
   return false;

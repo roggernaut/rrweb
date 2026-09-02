@@ -718,9 +718,9 @@ export type CanvasMasking = {
     canvas: HTMLCanvasElement,
   ) => CanvasMaskRegion[] | null | undefined;
   /**
-   * Optional dynamic switch; omitting it means supplying `canvasMasking` alone counts as configured, and a throw counts as configured too (fail closed).
+   * Optional dynamic switch, re-read on every frame and snapshot; omitting it means supplying `canvasMasking` alone counts as configured, and a throw counts as configured too (fail closed).
    *
-   * **Must be stable as of the `record()` call** -- it picks the canvas capture mode once at setup and the mode cannot switch mid-session. If the answer isn't known yet, return `true` or set `sampling.canvas` to a number yourself.
+   * Supplying `canvasMasking` at all fixes the FPS capture path at `record()`; this switch only decides, per frame, whether that path masks or captures unchanged. It may change over the session.
    */
   isConfigured?: () => boolean;
 };
