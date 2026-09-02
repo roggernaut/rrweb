@@ -47,6 +47,11 @@ const COMPAT_MASK_CLASSES = [
   '.inspectlet-sensitive', // Inspectlet
   '.inspectletIgnore', // Inspectlet
   '[data-dtrum-mask]', // Dynatrace
+  '[data-qm-encrypt]', // Quantum Metric (encrypted capture there; masked here)
+  '.cls_mask', // Glassbox (input value mask)
+  '.sessionstack-sensitive', // SessionStack
+  '[data-sr-redact]', // Session Rewind
+  '[data-recording-sensitive]', // Smartlook legacy attribute, still honored
 ].join(',');
 const COMPAT_BLOCK_CLASSES = [
   '.mp-block', // Mixpanel
@@ -69,13 +74,15 @@ const COMPAT_BLOCK_CLASSES = [
   '[data-openreplay-hidden]', // OpenReplay
   '[data-openreplay-htmlmasked]', // OpenReplay (deprecated alias)
   '[data-cs-mask]', // Contentsquare (content removed from collection)
-  '.heap-ignore', // Heap (class form)
-  '[heap-ignore]', // Heap (attribute form)
+  '[heap-ignore]', // Heap (attribute; the SDK selector is `[heap-ignore]`)
   '.mf-excluded', // Mouseflow
   '.lo-sensitive', // Lucky Orange (text scrambled, images blanked)
   '.losensitive', // Lucky Orange (alias)
   '.userback-block', // Userback
   '.zipy-block', // Zipy
+  '[data-qm-block]', // Quantum Metric (customer-config convention)
+  '[data-qm-freeze-exclude]', // Quantum Metric (DOM-capture exclude)
+  '[data-recording-disable]', // Smartlook legacy attribute, still honored
 ].join(',');
 
 // `data-privacy` fails closed: the mask token is the bare attribute minus the
