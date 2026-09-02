@@ -281,6 +281,36 @@ describe('vendorCompat', () => {
     expect(on.blockSelector).toContain('.rr-block');
   });
 
+  it("recognizes both of Sentry's block spellings, class and attribute", () => {
+    // Sentry ships `.sentry-block` and `[data-sentry-block]` as defaults
+    // (getPrivacyOptions.ts); recognizing the class alone left the attribute
+    // form unprotected under vendorCompat.
+    expect(on.blockSelector).toContain('.sentry-block');
+    expect(on.blockSelector).toContain('[data-sentry-block]');
+  });
+
+  it("recognizes FullStory's consent-gated variants as plain mask/exclude", () => {
+    // "without consent" means masked/excluded until FullStory's own consent
+    // API reveals them; rrweb has no such API, so they are always honored.
+    expect(on.maskTextSelector).toContain('.fs-mask-without-consent');
+    expect(on.blockSelector).toContain('.fs-exclude-without-consent');
+  });
+
+  it('warns when vendorCompat is set under minimal, where it has no effect', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    compilePrivacyPolicy({ version: 1, preset: 'minimal', vendorCompat: true });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('vendorCompat'));
+    warn.mockClear();
+    compilePrivacyPolicy({
+      version: 1,
+      preset: 'balanced',
+      vendorCompat: true,
+    });
+    compilePrivacyPolicy({ version: 1, preset: 'minimal' });
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
   /**
    * `vendorCompat` may only ever add masking or blocking, never reveal:
    * `.rr-unmask` is the only unmask token, on or off. No foreign tool's
@@ -380,6 +410,52 @@ describe('splitSelectorList', () => {
 
   it('does not run past the end on a trailing backslash', () => {
     expect(splitSelectorList('.a\\')).toEqual(['.a\\']);
+  });
+
+  // A malformed fragment must only take itself down. Before these cases were
+  // handled, a stray closer or an unterminated quote swallowed every later
+  // separator, so the valid selectors after it were dropped along with it.
+  it('still splits after a stray closing bracket', () => {
+    expect(splitSelectorList('.a),.b,.c')).toEqual(['.a)', '.b', '.c']);
+    expect(splitSelectorList('.a]),.b')).toEqual(['.a])', '.b']);
+  });
+
+  it('still splits after an unterminated quote', () => {
+    expect(splitSelectorList('[data-x="unterminated],.b')).toEqual([
+      '[data-x="unterminated]',
+      '.b',
+    ]);
+    expect(splitSelectorList(".a',.b")).toEqual([".a'", '.b']);
+  });
+
+  it('still splits after an unclosed opener', () => {
+    expect(splitSelectorList(':is(.a,.b')).toEqual([':is(.a', '.b']);
+    expect(splitSelectorList('[data-x,.b')).toEqual(['[data-x', '.b']);
+  });
+
+  it('keeps a balanced list intact once an earlier fragment is malformed', () => {
+    expect(splitSelectorList('.a),:is(.b,.c),.d')).toEqual([
+      '.a)',
+      ':is(.b,.c)',
+      '.d',
+    ]);
+  });
+});
+
+describe('malformed fragments do not drop their valid neighbours', () => {
+  it('keeps a mask rule that follows a fragment with a stray closer', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const c = compilePrivacyPolicy({
+      version: 1,
+      preset: 'balanced',
+      rules: [
+        { target: { type: 'selector', selector: '.a),.b' }, action: 'mask' },
+      ],
+    });
+    expect(c.maskTextSelector).toContain('.b');
+    expect(c.maskTextSelector).not.toContain('.a)');
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('.a)'));
+    warn.mockRestore();
   });
 });
 

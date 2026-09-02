@@ -383,5 +383,49 @@ describe('utils', () => {
       input.type = 'text';
       expect(isProtectedInput(input)).toBe(false);
     });
+
+    it('protects by the autocomplete attribute even when the IDL getter reports it empty', () => {
+      // Browsers expose the *parsed* autofill value through the IDL property,
+      // which is '' when the token order is invalid. The attribute still says
+      // cc-number, and that is what a masking decision must read.
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.setAttribute('autocomplete', 'cc-number shipping');
+      Object.defineProperty(input, 'autocomplete', { get: () => '' });
+      expect(isProtectedInput(input)).toBe(true);
+    });
+
+    it('fails closed when the type getter throws', () => {
+      // A proxied or cross-realm element can throw "Illegal invocation" on
+      // property access; a masking decision must not propagate that.
+      const input = document.createElement('input');
+      Object.defineProperty(input, 'type', {
+        get: () => {
+          throw new TypeError('Illegal invocation');
+        },
+      });
+      expect(isProtectedInput(input)).toBe(true);
+    });
+
+    it('fails closed when the autocomplete getter throws', () => {
+      const input = document.createElement('input');
+      input.type = 'text';
+      Object.defineProperty(input, 'autocomplete', {
+        get: () => {
+          throw new TypeError('Illegal invocation');
+        },
+      });
+      input.getAttribute = () => {
+        throw new TypeError('Illegal invocation');
+      };
+      expect(isProtectedInput(input)).toBe(true);
+    });
+
+    it('protects a multi-token autocomplete that carries a protected token', () => {
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.setAttribute('autocomplete', 'section-pay shipping cc-number');
+      expect(isProtectedInput(input)).toBe(true);
+    });
   });
 });

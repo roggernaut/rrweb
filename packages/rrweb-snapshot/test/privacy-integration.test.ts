@@ -3,7 +3,12 @@
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import snapshot from '../src/snapshot';
-import { compilePrivacyPolicy, finalizeAttribute } from '../src/privacy';
+import {
+  compilePrivacyPolicy,
+  finalizeAttribute,
+  resolvePrivacyContext,
+  resolveTextValue,
+} from '../src/privacy';
 import { maskInput, isProtectedInput } from '../src/utils';
 import type { PrivacyPolicy } from '../src/types';
 
@@ -258,6 +263,73 @@ describe('maskInput v2', () => {
       privacy: balanced,
     });
     expect(out).toBe('*'.repeat('[redacted]'.length));
+  });
+  // The callback decides length, never content, and a broken callback must
+  // not take the snapshot down or record the raw value: same contract as
+  // `maskAttributeFn` in `finalizeAttribute`.
+  it('balanced + maskInputFn returning a non-string fails closed to stars', () => {
+    const out = maskInput({
+      element: input(),
+      tagName: 'input',
+      type: 'text',
+      value: 'secret',
+      maskInputOptions: {},
+      maskInputFn: (() => undefined) as unknown as (v: string) => string,
+      privacy: balanced,
+    });
+    expect(out).toBe('*'.repeat('secret'.length));
+  });
+  it('maskInputFn that throws fails closed to stars, on any preset', () => {
+    const boom = () => {
+      throw new Error('boom');
+    };
+    for (const privacy of [balanced, minimal]) {
+      const out = maskInput({
+        element: input(),
+        tagName: 'input',
+        type: 'text',
+        value: 'secret',
+        maskInputOptions: { text: true },
+        maskInputFn: boom,
+        privacy,
+      });
+      expect(out).toBe('*'.repeat('secret'.length));
+    }
+  });
+  it('minimal + maskInputFn returning a non-string fails closed to stars', () => {
+    const out = maskInput({
+      element: input(),
+      tagName: 'input',
+      type: 'text',
+      value: 'secret',
+      maskInputOptions: { text: true },
+      maskInputFn: (() => 42) as unknown as (v: string) => string,
+      privacy: minimal,
+    });
+    expect(out).toBe('*'.repeat('secret'.length));
+  });
+  it('maskTextFn that throws or returns a non-string fails closed to stars', () => {
+    const parent = document.createElement('p');
+    const base = {
+      value: 'hello world',
+      parent,
+      needsMask: true,
+      exemptScript: false,
+    };
+    expect(
+      resolveTextValue({
+        ...base,
+        maskTextFn: () => {
+          throw new Error('boom');
+        },
+      }),
+    ).toBe('***** *****');
+    expect(
+      resolveTextValue({
+        ...base,
+        maskTextFn: (() => null) as unknown as (v: string) => string,
+      }),
+    ).toBe('***** *****');
   });
   it('minimal + maskInputFn trusted verbatim when minimal options mask', () => {
     const out = maskInput({
@@ -733,8 +805,8 @@ describe('finalizeAttribute', () => {
   });
 
   it('a selector that throws grants no unmask escape; the attribute stays masked', () => {
-    const closest = vi
-      .spyOn(Element.prototype, 'closest')
+    const matches = vi
+      .spyOn(Element.prototype, 'matches')
       .mockImplementation(() => {
         throw new Error('boom');
       });
@@ -746,7 +818,76 @@ describe('finalizeAttribute', () => {
         privacy: balanced,
       }),
     ).toBe('***');
-    closest.mockRestore();
+    matches.mockRestore();
+  });
+
+  /**
+   * Attributes resolve exactly like text: the nearest annotated ancestor
+   * decides, and on the same element mask beats unmask. Before this, the
+   * attribute path consulted only the unmask selector, so an unmask ancestor
+   * revealed `title`/`placeholder`/`aria-label` through a nearer mask marker
+   * that text masking would have honored.
+   */
+  it('same element carrying mask and unmask keeps the attribute masked', () => {
+    expect(
+      finalizeAttribute({
+        element: el('<img title="Bob" class="rr-mask rr-unmask">'),
+        name: 'title',
+        value: 'Bob',
+        privacy: balanced,
+      }),
+    ).toBe('***');
+  });
+
+  it('the nearest annotated ancestor decides for attributes too', () => {
+    expect(
+      finalizeAttribute({
+        element: el(
+          '<div class="rr-unmask"><div class="rr-mask"><img title="Bob"></div></div>',
+        ),
+        name: 'title',
+        value: 'Bob',
+        privacy: balanced,
+      }),
+    ).toBe('***');
+    expect(
+      finalizeAttribute({
+        element: el(
+          '<div class="rr-mask"><div class="rr-unmask"><img title="Bob"></div></div>',
+        ),
+        name: 'title',
+        value: 'Bob',
+        privacy: balanced,
+      }),
+    ).toBe('Bob');
+  });
+
+  it('under strict the mask-everything default does not join the attribute tie', () => {
+    expect(
+      finalizeAttribute({
+        element: el('<div class="rr-unmask"><img title="Bob"></div>'),
+        name: 'title',
+        value: 'Bob',
+        privacy: strict,
+      }),
+    ).toBe('Bob');
+  });
+
+  it('a record()-level maskTextSelector takes part in the attribute tie', () => {
+    const ctx = resolvePrivacyContext({
+      privacyPolicy: { version: 1, preset: 'balanced' },
+      maskTextSelector: '.widget',
+    });
+    expect(
+      finalizeAttribute({
+        element: el(
+          '<div class="rr-unmask"><div class="widget"><img title="Bob"></div></div>',
+        ),
+        name: 'title',
+        value: 'Bob',
+        privacy: ctx.privacy,
+      }),
+    ).toBe('***');
   });
 
   it('honors a record()-level unmaskTextSelector, not just policy selectors', () => {

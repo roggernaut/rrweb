@@ -30,7 +30,23 @@ primitives.
   selector-based policy `rules` still work but compile to their bare
   selectors and switch nothing else on. An invalid selector is dropped per
   comma-separated fragment, so a malformed fragment no longer takes its
-  valid siblings with it. CSS is never masked, on any preset.
+  valid siblings with it, even when the malformed fragment has a stray
+  closing bracket or an unterminated quote. CSS is never masked, on any
+  preset.
+- Masked-attribute defaults (`title`/`placeholder`/`aria-label`) now resolve
+  mask/unmask exactly like text: nearest annotated ancestor decides, mask
+  wins a same-element tie, and a `record()`-level `maskTextSelector` takes
+  part. Previously an unmask ancestor revealed those attributes through a
+  nearer mask marker.
+- `maskInputFn` and `maskTextFn` fail closed: a callback that throws or
+  returns a non-string yields stars instead of aborting the snapshot or
+  recording the raw value. An input whose `type` or `autocomplete` throws on
+  read is treated as protected, and the `autocomplete` attribute is read
+  before the IDL property so an unparseable token order cannot hide a
+  `cc-number`.
+- `vendorCompat` also recognizes `[data-sentry-block]` and FullStory's
+  `.fs-mask-without-consent` / `.fs-exclude-without-consent`, and logs a
+  one-time `console.warn` when set under `minimal`, where it has no effect.
 - Add fail-closed `canvasMasking` region masking for complex canvas
   applications; configuring it forces the FPS capture path and suppresses
   the unmasked `rr_dataURL` full-snapshot fallback. `strict` disables canvas

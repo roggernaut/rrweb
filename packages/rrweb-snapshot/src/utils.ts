@@ -366,6 +366,17 @@ export function isNodeMetaEqual(a: serializedNode, b: serializedNode): boolean {
  * where passwords should be masked.
  */
 export function getInputType(element: HTMLElement): Lowercase<string> | null {
+  try {
+    return readInputType(element);
+  } catch {
+    // A proxied or cross-realm element can throw on property access; the
+    // masking paths treat an unreadable type as protected (see `isProtectedInput`).
+    return null;
+  }
+}
+
+/** `getInputType` without the guard, for callers that fail closed on a throw. */
+function readInputType(element: HTMLElement): Lowercase<string> | null {
   // when omitting the type of input element(e.g. <input />), the type is treated as text
   const type = (element as HTMLInputElement).type;
 
@@ -392,9 +403,12 @@ const PROTECTED_AUTOCOMPLETE = new Set([
 ]);
 
 function hasProtectedAutocomplete(element: HTMLElement): boolean {
+  // The attribute first: the IDL getter exposes the *parsed* autofill value,
+  // which is '' (not nullish) when the token order is invalid, so reading it
+  // first would hide a `cc-number` the markup plainly declares.
   const autocomplete =
-    (element as HTMLInputElement).autocomplete ??
-    element.getAttribute('autocomplete');
+    element.getAttribute('autocomplete') ||
+    (element as HTMLInputElement).autocomplete;
   if (!autocomplete || typeof autocomplete !== 'string') return false;
   const lower = autocomplete.toLowerCase();
   if (PROTECTED_AUTOCOMPLETE.has(lower)) return true;
@@ -407,11 +421,16 @@ function hasProtectedAutocomplete(element: HTMLElement): boolean {
 /** Inputs always masked regardless of `maskInputOptions` or privacy preset. */
 export function isProtectedInput(element: HTMLElement): boolean {
   if (dom.untaintedTagName(element) !== 'INPUT') return false;
-  const type = getInputType(element);
-  if (type === 'password' || type === 'hidden') {
+  try {
+    const type = readInputType(element);
+    if (type === 'password' || type === 'hidden') {
+      return true;
+    }
+    return hasProtectedAutocomplete(element);
+  } catch {
+    // An element whose type or autocomplete cannot be read is protected.
     return true;
   }
-  return hasProtectedAutocomplete(element);
 }
 
 /**
@@ -427,8 +446,12 @@ export function isProtectedInput(element: HTMLElement): boolean {
  * `password`-specific avoids.
  */
 export function isProtectedTypeLike(element: HTMLElement): boolean {
-  if (getInputType(element) === 'password') return true;
-  return hasProtectedAutocomplete(element);
+  try {
+    if (readInputType(element) === 'password') return true;
+    return hasProtectedAutocomplete(element);
+  } catch {
+    return true;
+  }
 }
 
 export function maskInput({
@@ -458,7 +481,15 @@ export function maskInput({
     return value;
 
   if (!maskInputFn) return stars(value);
-  const masked = maskInputFn(value, element);
+  // A callback that throws or returns a non-string fails closed to the raw
+  // value's length, the same contract `finalizeAttribute` gives `maskAttributeFn`.
+  let masked: unknown;
+  try {
+    masked = maskInputFn(value, element);
+  } catch {
+    return stars(value);
+  }
+  if (typeof masked !== 'string') return stars(value);
   return presetWantsMask ? stars(masked) : masked;
 }
 

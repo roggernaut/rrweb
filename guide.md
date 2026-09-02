@@ -325,10 +325,13 @@ those, declare the same intent by selector in the policy.
 Rules (`rules: [{ target: { type: 'selector', selector }, action }]`) accept
 `mask`, `unmask`, or `block` -- the same three names as the `data-privacy`
 values -- and work under every preset, including `minimal`. An unrecognized
-action throws at compile time rather than being ignored. For text, the
+action throws at compile time rather than being ignored. For text and for
+the masked-attribute defaults (`title`/`placeholder`/`aria-label`), the
 nearest matching ancestor decides, walking from the node up to the document
 root; if the very same element matches both a mask and an unmask selector,
-**mask** wins there (the same tie-break Sentry, Amplitude and Mixpanel use).
+**mask** wins there (the same tie-break Sentry, Amplitude and Mixpanel use
+for text). `strict`'s mask-everything default is a fallback, not a marker,
+so it never takes part in that tie: an unmask ancestor still escapes it.
 `block` removes a subtree from capture entirely (it replays as a
 placeholder), which is why a `block` decision can't be reopened by a nested
 `mask` or `unmask`.
@@ -385,12 +388,23 @@ packages/browser-rum-core/src/domain/privacyConstants.ts` (the
 `mask-user-input`/`hidden` values; `allow` and `mask-unless-allowlisted` are
 deliberately excluded, since those are unmask conventions). The New Relic
 tokens come from `newrelic-browser-agent src/common/config/init.js`
-(`[data-nr-mask]`, `nr-mask`, `nr-block`, `[data-nr-block]`; `nr-unmask`/
-`nr-ignore` are deliberately excluded for the same reason).
+(`[data-nr-mask]`, `nr-mask`, `nr-block`, `[data-nr-block]`; `nr-unmask` is
+deliberately excluded for the same reason, and `nr-ignore` because it is an
+input-ignore convention rather than a mask or block one -- these lists carry
+mask and block tokens only). The Sentry tokens come from
+`sentry-javascript packages/replay-internal/src/util/getPrivacyOptions.ts`,
+which ships both the class and the attribute spelling for mask and block.
+The FullStory tokens come from FullStory's "How do I protect my users'
+privacy" help article; its `-without-consent` variants are masked/excluded
+until FullStory's own consent API reveals them, and since rrweb has no such
+API they are honored unconditionally. Datadog's `mask-user-input` masks only
+form values in Datadog; here it joins the text mask list, which is wider, in
+the safe direction.
 
 (`.rr-mask` and `.rr-block` also work under `minimal`, through the existing
 `maskTextClass`/`blockClass` options above. `vendorCompat` has no effect
-under `minimal`, which merges no class conventions of its own.)
+under `minimal`, which merges no class conventions of its own; setting it
+there logs a one-time `console.warn` rather than being silently ignored.)
 
 ##### Escape hatches and selector validation
 
@@ -410,7 +424,9 @@ validated at setup and **dropped with a `console.warn`** that names the
 fragments it dropped. Validation is per comma-separated fragment: in
 `.pii, .broken:has-typo(` only the malformed half is dropped and `.pii`
 keeps working, so one malformed fragment cannot take the others down with
-it. Recording continues with the remaining selectors; a dropped
+it -- including when the malformed half has a stray closing bracket or an
+unterminated quote, which is demoted to plain text rather than allowed to
+swallow the separators after it. Recording continues with the remaining selectors; a dropped
 `mask`/`block` selector therefore protects nothing, so watch for that
 warning rather than treating it as cosmetic. Where there is no `document` to
 validate against at all (server-side rendering, a worker), selectors are
@@ -442,7 +458,13 @@ narrow what the callback chose to keep, never restore something the policy
 would otherwise mask. `style`/`_cssText` are exempt from all of this.
 Likewise, under `minimal`, `maskInputFn`'s return value is trusted verbatim;
 under `balanced`/`strict`, `maskInputFn` output is star-replaced -- the
-callback controls length, never content.
+callback controls length, never content. Every callback fails closed the
+same way: a `maskInputFn` or `maskTextFn` that throws, or returns anything
+other than a string, yields stars for the raw value instead of aborting the
+snapshot or recording the value. Protected inputs (see above) never reach
+`maskInputFn` at all, and an input whose `type` or `autocomplete` cannot be
+read (a proxied or cross-realm element that throws on property access) is
+treated as protected.
 
 ##### Canvas masking
 
