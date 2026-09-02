@@ -33,7 +33,9 @@ primitives.
   at all, unlike the legacy events-only, per-element `.rr-ignore`),
   fail-closed `canvasMasking`, and
   attribute-masking escape hatches; existing masking options remain the
-  `minimal` default. `data-privacy` and the `rr-*` classes are managed-preset
+  `minimal` default. Every masking callback fails closed: one that throws or
+  returns a non-string yields stars, and an input whose `type`/`autocomplete`
+  cannot be read is treated as protected. `data-privacy` and the `rr-*` classes are managed-preset
   features: under `minimal` a rule compiles to its bare selector and switches
   nothing else on. The guide's new "For event consumers" section documents
   what changes on the wire for anyone consuming the event stream directly

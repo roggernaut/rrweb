@@ -7,7 +7,7 @@ import type {
   PrivacyPolicy,
   VendorCompatId,
 } from './types';
-import { untaintedTagName } from '@rrweb/utils';
+import { parentElement, untaintedTagName } from '@rrweb/utils';
 
 const NATIVE_MASK_CLASSES = '.rr-mask';
 const NATIVE_UNMASK_CLASSES = '.rr-unmask';
@@ -336,7 +336,15 @@ export function resolveTextValue({
   const isScript = tagName === 'SCRIPT';
   if (needsMask) {
     if (isScript && exemptScript) return value;
-    return maskTextFn ? maskTextFn(value, parent) : starText(value);
+    if (!maskTextFn) return starText(value);
+    // A callback that throws or returns a non-string fails closed to stars.
+    let masked: unknown;
+    try {
+      masked = maskTextFn(value, parent);
+    } catch {
+      return starText(value);
+    }
+    return typeof masked === 'string' ? masked : starText(value);
   }
   if (isScript) return value;
   if (privacy && detectSensitiveValue(value, privacy)) return starText(value);
@@ -395,30 +403,49 @@ export function resolveUnmaskTextSelector(
 
 /** @internal exported for direct unit testing; not part of the privacy API. */
 export function splitSelectorList(selector: string): string[] {
-  const parts: string[] = [];
-  let depth = 0;
-  let quote: string | null = null;
-  let start = 0;
-  for (let index = 0; index < selector.length; index += 1) {
-    const char = selector[index];
-    if (char === '\\') {
-      index += 1;
-      continue;
+  // A quote or opener that never closes is demoted to plain text and the
+  // scan restarts, so one malformed fragment cannot swallow the separators
+  // after it; a stray closer is simply ignored. Each restart demotes one more
+  // index, so the loop is bounded by the selector's length.
+  const demoted = new Set<number>();
+  for (;;) {
+    const parts: string[] = [];
+    const openers: number[] = [];
+    let quote: string | null = null;
+    let quoteAt = -1;
+    let start = 0;
+    for (let index = 0; index < selector.length; index += 1) {
+      const char = selector[index];
+      if (char === '\\') {
+        index += 1;
+        continue;
+      }
+      if (quote) {
+        if (char === quote) quote = null;
+        continue;
+      }
+      if (demoted.has(index)) continue;
+      if (char === '"' || char === "'") {
+        quote = char;
+        quoteAt = index;
+      } else if (char === '(' || char === '[') openers.push(index);
+      else if (char === ')' || char === ']') openers.pop();
+      else if (char === ',' && openers.length === 0) {
+        parts.push(selector.slice(start, index));
+        start = index + 1;
+      }
     }
     if (quote) {
-      if (char === quote) quote = null;
+      demoted.add(quoteAt);
       continue;
     }
-    if (char === '"' || char === "'") quote = char;
-    else if (char === '(' || char === '[') depth += 1;
-    else if (char === ')' || char === ']') depth -= 1;
-    else if (char === ',' && depth === 0) {
-      parts.push(selector.slice(start, index));
-      start = index + 1;
+    if (openers.length) {
+      demoted.add(openers[openers.length - 1]);
+      continue;
     }
+    parts.push(selector.slice(start));
+    return parts;
   }
-  parts.push(selector.slice(start));
-  return parts;
 }
 
 function joinSelectors(
@@ -600,17 +627,29 @@ export function resolvePrivacyContext({
   unmaskTextSelector?: string | null;
 }): PrivacyContext {
   const base = compiled || compilePrivacyPolicy(privacyPolicy);
+  const mergedMaskTextSelector = mergeSelectors(
+    maskTextSelector,
+    base.maskTextSelector,
+  );
   const mergedUnmaskTextSelector = mergeSelectors(
     unmaskTextSelector,
     base.unmaskTextSelector,
   );
+  // Both merged selectors are written back so `finalizeAttribute`, which
+  // reads the policy, resolves mask/unmask ties with the same lists text does.
+  const unchanged =
+    mergedMaskTextSelector === base.maskTextSelector &&
+    mergedUnmaskTextSelector === base.unmaskTextSelector;
   return {
-    privacy:
-      mergedUnmaskTextSelector === base.unmaskTextSelector
-        ? base
-        : { ...base, unmaskTextSelector: mergedUnmaskTextSelector },
+    privacy: unchanged
+      ? base
+      : {
+          ...base,
+          maskTextSelector: mergedMaskTextSelector,
+          unmaskTextSelector: mergedUnmaskTextSelector,
+        },
     blockSelector: mergeSelectors(blockSelector, base.blockSelector),
-    maskTextSelector: mergeSelectors(maskTextSelector, base.maskTextSelector),
+    maskTextSelector: mergedMaskTextSelector,
     unmaskTextSelector: mergedUnmaskTextSelector,
   };
 }
@@ -640,6 +679,21 @@ export function stars(value: string): string {
   return '*'.repeat(value.length);
 }
 
+/** The mask selector without the `'*'` mask-everything fallback, which is a default rather than a marker and so never takes part in a tie. */
+function concreteMaskSelector(privacy: CompiledPrivacyPolicy): string | null {
+  const selector = privacy.maskTextSelector;
+  if (!selector) return null;
+  if (selector.indexOf('*') === -1) return selector;
+  const kept = splitSelectorList(selector)
+    .map((part) => part.trim())
+    .filter((part) => part && part !== '*');
+  return kept.join(',') || null;
+}
+
+/**
+ * Attributes resolve like text: the nearest annotated ancestor decides, and
+ * on the same element mask beats unmask. Any throw keeps the attribute masked.
+ */
 function isUnmasked(
   element: Element,
   privacy: CompiledPrivacyPolicy,
@@ -647,9 +701,18 @@ function isUnmasked(
 ): boolean {
   if (!privacy.unmaskTextSelector) return false;
   if (memo && memo.element === element) return memo.answer;
-  let answer: boolean;
+  let answer = false;
   try {
-    answer = !!element.closest(privacy.unmaskTextSelector);
+    const mask = concreteMaskSelector(privacy);
+    let current: Element | null = element;
+    while (current) {
+      if (mask && current.matches(mask)) break;
+      if (current.matches(privacy.unmaskTextSelector)) {
+        answer = true;
+        break;
+      }
+      current = parentElement(current);
+    }
   } catch {
     answer = false;
   }
