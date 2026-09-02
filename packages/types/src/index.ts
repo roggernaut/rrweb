@@ -344,6 +344,8 @@ export type CompiledPrivacyPolicy = {
   unmaskTextSelector: string | null;
   /** 'block' rules + [data-privacy="block"] + .rr-block (+ compat classes) */
   blockSelector: string | null;
+  /** [data-privacy="ignore"] under balanced/strict: content is masked through the fail-closed mask token, and input events from the subtree are suppressed */
+  ignoreSelector: string | null;
   /** true under balanced/strict */
   maskAllInputs: boolean;
   /** ['title','placeholder','aria-label'] under balanced/strict, else empty */

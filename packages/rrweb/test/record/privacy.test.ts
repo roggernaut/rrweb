@@ -351,3 +351,108 @@ describe('record() warns once when strict disables an explicit recordCanvas', ()
     }
   });
 });
+
+/**
+ * `data-privacy="ignore"` is `mask` plus event silence: the subtree's content
+ * masks like `mask`, and no input events are emitted for it at all — absence,
+ * not stars. The nearest `data-privacy` annotation decides, so a descendant
+ * `unmask` re-enables events; the legacy `.rr-ignore` control stays what it
+ * always was, per-element and events-only.
+ */
+describe('record() input events under data-privacy="ignore"', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  async function recordedInputEvents(
+    markup: string,
+    options: Parameters<typeof record>[0] = {},
+  ): Promise<eventWithTime[]> {
+    document.body.innerHTML = markup;
+    const events: eventWithTime[] = [];
+    const stop = record({ emit: (event) => events.push(event), ...options });
+    try {
+      const input = document.querySelector('#t') as HTMLInputElement;
+      input.value = 'typed secret';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    } finally {
+      stop?.();
+    }
+    return events.filter(
+      (event) =>
+        event.type === EventType.IncrementalSnapshot &&
+        event.data.source === IncrementalSource.Input,
+    );
+  }
+
+  const balanced = {
+    privacyPolicy: { version: 1, preset: 'balanced' },
+  } as Parameters<typeof record>[0];
+
+  it('emits no input events at all inside an ignore subtree', async () => {
+    const inputs = await recordedInputEvents(
+      '<div data-privacy="ignore"><input id="t"></div>',
+      balanced,
+    );
+    expect(inputs).toHaveLength(0);
+  });
+
+  it('same-element ignore + .rr-unmask resolves to ignore: still silent', async () => {
+    const inputs = await recordedInputEvents(
+      '<input id="t" class="rr-unmask" data-privacy="ignore">',
+      balanced,
+    );
+    expect(inputs).toHaveLength(0);
+  });
+
+  it('a descendant unmask inside ignore re-enables input events', async () => {
+    const inputs = await recordedInputEvents(
+      '<div data-privacy="ignore"><div data-privacy="unmask"><input id="t"></div></div>',
+      balanced,
+    );
+    expect(inputs.length).toBeGreaterThan(0);
+  });
+
+  it('does nothing under minimal, where data-privacy is off', async () => {
+    const inputs = await recordedInputEvents(
+      '<div data-privacy="ignore"><input id="t"></div>',
+    );
+    expect(inputs.length).toBeGreaterThan(0);
+  });
+
+  it('legacy .rr-ignore suppresses events on the element itself only', async () => {
+    const onSelf = await recordedInputEvents(
+      '<input id="t" class="rr-ignore">',
+      balanced,
+    );
+    expect(onSelf).toHaveLength(0);
+    const onAncestor = await recordedInputEvents(
+      '<div class="rr-ignore"><input id="t"></div>',
+      balanced,
+    );
+    expect(onAncestor.length).toBeGreaterThan(0);
+  });
+
+  it('a characterData mutation under ignore arrives masked', async () => {
+    document.body.innerHTML =
+      '<div data-privacy="ignore"><p id="t">before text</p></div>';
+    const events: eventWithTime[] = [];
+    const stop = record({ ...balanced, emit: (event) => events.push(event) });
+    try {
+      const text = document.querySelector('#t')!.firstChild as Text;
+      text.data = 'secret after';
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    } finally {
+      stop?.();
+    }
+    const texts = events.flatMap((event) =>
+      event.type === EventType.IncrementalSnapshot &&
+      event.data.source === IncrementalSource.Mutation
+        ? event.data.texts.map((t) => t.value)
+        : [],
+    );
+    expect(texts).toContain('****** *****');
+    expect(texts).not.toContain('secret after');
+  });
+});

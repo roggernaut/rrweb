@@ -1,4 +1,10 @@
-import { maskInput, Mirror, getInputType, toLowerCase } from 'rrweb-snapshot';
+import {
+  maskInput,
+  Mirror,
+  getInputType,
+  isEventIgnored,
+  toLowerCase,
+} from 'rrweb-snapshot';
 import type { FontFaceSet } from 'css-font-loading-module';
 import {
   throttle,
@@ -414,6 +420,9 @@ function initInputObserver({
     ) {
       return;
     }
+    if (isEventIgnored(target, privacy)) {
+      return;
+    }
     let text = (target as HTMLInputElement).value;
     let isChecked = false;
     const type: Lowercase<string> = getInputType(target) || '';
@@ -444,7 +453,7 @@ function initInputObserver({
       doc
         .querySelectorAll(`input[type="radio"][name="${name}"]`)
         .forEach((el) => {
-          if (el !== target) {
+          if (el !== target && !isEventIgnored(el, privacy)) {
             const text = (el as HTMLInputElement).value;
             cbWithDedup(
               el,

@@ -9,6 +9,7 @@ import {
   resolvePrivacyContext,
   splitSelectorList,
   resolveTextValue,
+  isEventIgnored,
 } from '../src/privacy';
 import snapshot, {
   needMaskingText,
@@ -225,6 +226,67 @@ describe('an unrecognized data-privacy value fails closed to mask', () => {
     // `maskTextClass`/`blockClass` options, not through the compiled policy.
     expect(withRules.maskTextSelector).not.toContain('.rr-mask');
     expect(withRules.blockSelector).not.toContain('.rr-block');
+  });
+});
+
+/**
+ * `data-privacy="ignore"` is `mask` plus event silence: content masks through
+ * the fail-closed mask token (no dedicated mask entry), and the compiled
+ * `ignoreSelector` lets the record side suppress the subtree's input events.
+ * Severity ladder: unmask < mask < ignore < block, nearest annotation wins.
+ */
+describe('data-privacy="ignore"', () => {
+  const balanced = compilePrivacyPolicy({ version: 1, preset: 'balanced' });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('content is masked by the compiled policy, exactly as mask is', () => {
+    document.body.innerHTML =
+      '<div id="i" data-privacy="ignore"></div>' +
+      '<div id="m" data-privacy="mask"></div>';
+    const mask = balanced.maskTextSelector as string;
+    expect((document.querySelector('#i') as HTMLElement).matches(mask)).toBe(
+      true,
+    );
+    expect((document.querySelector('#m') as HTMLElement).matches(mask)).toBe(
+      true,
+    );
+  });
+
+  it('compiles an ignoreSelector under managed presets, none under minimal', () => {
+    expect(balanced.ignoreSelector).toBe('[data-privacy="ignore"]');
+    expect(
+      compilePrivacyPolicy({ version: 1, preset: 'strict' }).ignoreSelector,
+    ).toBe('[data-privacy="ignore"]');
+    expect(
+      compilePrivacyPolicy({ version: 1, preset: 'minimal' }).ignoreSelector,
+    ).toBeNull();
+  });
+
+  it('isEventIgnored: the nearest data-privacy annotation decides', () => {
+    document.body.innerHTML =
+      '<div data-privacy="ignore"><input id="in-ignore">' +
+      '<div data-privacy="unmask"><input id="in-unmask"></div>' +
+      '<div data-privacy="mask"><input id="in-mask"></div></div>' +
+      '<input id="outside">';
+    const el = (id: string) => document.querySelector(`#${id}`) as HTMLElement;
+    expect(isEventIgnored(el('in-ignore'), balanced)).toBe(true);
+    expect(isEventIgnored(el('in-unmask'), balanced)).toBe(false);
+    expect(isEventIgnored(el('in-mask'), balanced)).toBe(false);
+    expect(isEventIgnored(el('outside'), balanced)).toBe(false);
+  });
+
+  it('isEventIgnored is inert under minimal, where data-privacy is off', () => {
+    document.body.innerHTML = '<div data-privacy="ignore"><input id="t"></div>';
+    const minimal = compilePrivacyPolicy({ version: 1, preset: 'minimal' });
+    expect(
+      isEventIgnored(document.querySelector('#t') as HTMLElement, minimal),
+    ).toBe(false);
+    expect(
+      isEventIgnored(document.querySelector('#t') as HTMLElement, undefined),
+    ).toBe(false);
   });
 });
 

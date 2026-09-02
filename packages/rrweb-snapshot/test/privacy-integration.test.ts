@@ -234,6 +234,52 @@ describe('text masking v2', () => {
   });
 });
 
+describe('data-privacy="ignore" snapshots exactly like mask', () => {
+  const balanced: PrivacyPolicy = { version: 1, preset: 'balanced' };
+
+  it('masks text and attributes identically to data-privacy="mask"', () => {
+    const markup = (verb: string) =>
+      `<div data-privacy="${verb}" title="secret title"><p>secret text</p></div>`;
+    const asIgnore = serialize(markup('ignore'), balanced);
+    expect(asIgnore).not.toContain('secret text');
+    expect(asIgnore).not.toContain('secret title');
+    // Identical to the mask serialization, apart from the verb itself and
+    // the serializer's global node-id counter.
+    const normalize = (out: string) =>
+      out.replace(/"(rootId|id)":\d+/g, '"$1":0');
+    expect(
+      normalize(
+        asIgnore.replace('"data-privacy":"ignore"', '"data-privacy":"mask"'),
+      ),
+    ).toBe(normalize(serialize(markup('mask'), balanced)));
+  });
+
+  it('a descendant unmask re-enables content inside an ignore subtree', () => {
+    const out = serialize(
+      '<div data-privacy="ignore"><p>hidden text</p><div data-privacy="unmask"><p>shown text</p></div></div>',
+      balanced,
+    );
+    expect(out).not.toContain('hidden text');
+    expect(out).toContain('shown text');
+  });
+
+  it('same-element ignore + .rr-unmask resolves to ignore: still masked', () => {
+    const out = serialize(
+      '<div class="rr-unmask" data-privacy="ignore"><p>secret text</p></div>',
+      balanced,
+    );
+    expect(out).not.toContain('secret text');
+  });
+
+  it('legacy .rr-ignore never masks content', () => {
+    const out = serialize(
+      '<div class="rr-ignore"><p>legacy text</p></div>',
+      balanced,
+    );
+    expect(out).toContain('legacy text');
+  });
+});
+
 describe('maskInput v2', () => {
   const balanced = compilePrivacyPolicy({ version: 1, preset: 'balanced' });
   const minimal = compilePrivacyPolicy(undefined);

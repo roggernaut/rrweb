@@ -85,10 +85,12 @@ const COMPAT_BLOCK_CLASSES = [
 
 // `data-privacy` fails closed: the mask token is the bare attribute minus the
 // two values that mean something else, so an unrecognized value masks.
+const DATA_PRIVACY = '[data-privacy]';
 const DATA_PRIVACY_MASK =
   '[data-privacy]:not([data-privacy="unmask"]):not([data-privacy="block"])';
 const DATA_PRIVACY_UNMASK = '[data-privacy="unmask"]';
 const DATA_PRIVACY_BLOCK = '[data-privacy="block"]';
+const DATA_PRIVACY_IGNORE = '[data-privacy="ignore"]';
 
 const PRIVACY_PRESETS = new Set(['strict', 'balanced', 'minimal']);
 const MASKED_ATTRIBUTE_DEFAULTS = ['title', 'placeholder', 'aria-label'];
@@ -353,11 +355,31 @@ export function compilePrivacyPolicy(
           ]
         : bySelector.block,
     ),
+    ignoreSelector: managed ? DATA_PRIVACY_IGNORE : null,
     maskAllInputs: managed,
     maskedAttributes,
     attributePolicyInert: !blockMedia && maskedAttributes.size === 0,
     blockMedia,
   };
+}
+
+/**
+ * Whether input events from `element`'s subtree are suppressed entirely: the
+ * nearest `data-privacy` annotation, ancestor-or-self, is `ignore`. A nearer
+ * annotation of any other value overrides, per the severity ladder
+ * `unmask, mask, ignore, block`. Any throw fails closed to suppression.
+ */
+export function isEventIgnored(
+  element: Element,
+  privacy: CompiledPrivacyPolicy | undefined,
+): boolean {
+  if (!privacy?.ignoreSelector) return false;
+  try {
+    const annotated = element.closest(DATA_PRIVACY);
+    return annotated !== null && annotated.matches(privacy.ignoreSelector);
+  } catch {
+    return true;
+  }
 }
 
 /** Validates and merges a `record()`-level selector with the compiled policy's; invalid fragments are dropped with a warning. */
