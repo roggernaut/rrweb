@@ -44,12 +44,13 @@ primitives.
   read is treated as protected, and the `autocomplete` attribute is read
   before the IDL property so an unparseable token order cannot hide a
   `cc-number`.
-- `vendorCompat` now covers the mask and block conventions of twenty
+- `vendorCompat` now covers the mask and block conventions of twenty-four
   session-replay tools (Mixpanel, FullStory, Amplitude, PostHog, Sentry,
   Datadog, New Relic, Highlight/LaunchDarkly, LogRocket, Hotjar, Microsoft
   Clarity, Smartlook, OpenReplay, Contentsquare, Heap, Mouseflow, Lucky
-  Orange, Inspectlet, Dynatrace, Userback, Zipy), each token verified
-  against official documentation or SDK source and listed with its source in
+  Orange, Inspectlet, Dynatrace, Userback, Zipy, Quantum Metric, Glassbox,
+  SessionStack, Session Rewind), each token verified against official
+  documentation or the vendor's shipped SDK and listed with its source in
   the guide. No vendor's reveal or input-ignore token is ever merged. It
   logs a one-time `console.warn` when set under `minimal`, where it has no
   effect.

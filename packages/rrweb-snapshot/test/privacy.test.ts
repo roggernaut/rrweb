@@ -319,6 +319,11 @@ describe('vendorCompat', () => {
     '.inspectlet-sensitive', // Inspectlet
     '.inspectletIgnore', // Inspectlet
     '[data-dtrum-mask]', // Dynatrace
+    '[data-qm-encrypt]', // Quantum Metric (encrypted capture there; masked here)
+    '.cls_mask', // Glassbox (input value mask)
+    '.sessionstack-sensitive', // SessionStack
+    '[data-sr-redact]', // Session Rewind
+    '[data-recording-sensitive]', // Smartlook legacy (still honored by the bundle)
   ];
   const extendedBlock = [
     '.highlight-block', // Highlight / LaunchDarkly
@@ -330,13 +335,15 @@ describe('vendorCompat', () => {
     '[data-openreplay-hidden]', // OpenReplay
     '[data-openreplay-htmlmasked]', // OpenReplay (deprecated alias)
     '[data-cs-mask]', // Contentsquare (content removed from collection)
-    '.heap-ignore', // Heap (class form)
     '[heap-ignore]', // Heap (attribute form)
     '.mf-excluded', // Mouseflow
     '.lo-sensitive', // Lucky Orange (text scrambled, images blanked)
     '.losensitive', // Lucky Orange (alias)
     '.userback-block', // Userback
     '.zipy-block', // Zipy
+    '[data-qm-block]', // Quantum Metric (customer-config convention)
+    '[data-qm-freeze-exclude]', // Quantum Metric (DOM-capture exclude)
+    '[data-recording-disable]', // Smartlook legacy (still honored by the bundle)
   ];
   const foreignRevealOrIgnore = [
     '[data-hl-record]',
@@ -353,6 +360,11 @@ describe('vendorCompat', () => {
     '[data-dtrum-allow]',
     '.userback-ignore',
     '.mf-listen',
+    '[data-qm-allow]',
+    '[data-recording-ignore]',
+    '.smartlook-hide',
+    '.smartlook-show',
+    '.heap-ignore', // documented only as the attribute; the class has no evidence
   ];
 
   it('recognizes the extended vendor set as mask or block', () => {
