@@ -326,6 +326,131 @@ describe('vendorCompat', () => {
     expect(on.blockSelector).toContain('.rr-block');
   });
 
+  it("recognizes both of Sentry's block spellings, class and attribute", () => {
+    // Sentry ships `.sentry-block` and `[data-sentry-block]` as defaults
+    // (getPrivacyOptions.ts); recognizing the class alone left the attribute
+    // form unprotected under vendorCompat.
+    expect(on.blockSelector).toContain('.sentry-block');
+    expect(on.blockSelector).toContain('[data-sentry-block]');
+  });
+
+  it("recognizes FullStory's consent-gated variants as plain mask/exclude", () => {
+    // "without consent" means masked/excluded until FullStory's own consent
+    // API reveals them; rrweb has no such API, so they are always honored.
+    expect(on.maskTextSelector).toContain('.fs-mask-without-consent');
+    expect(on.blockSelector).toContain('.fs-exclude-without-consent');
+  });
+
+  /**
+   * The extended vendor set. Every token here was verified against the
+   * vendor's official documentation or open-source SDK (see guide.md's
+   * "Vendor class recognition" table). Mapping rule: a token whose vendor
+   * semantics hide only text joins the mask list; one that removes or
+   * placeholders the element's whole content (images, children) joins the
+   * block list, the more protective of the two.
+   */
+  const extendedMask = [
+    '.highlight-mask', // Highlight / LaunchDarkly
+    '[data-clarity-mask]', // Microsoft Clarity
+    '[data-sl="mask"]', // Smartlook
+    '[data-openreplay-obscured]', // OpenReplay
+    '[data-openreplay-masked]', // OpenReplay (deprecated alias, still honored)
+    '[data-heap-redact-text]', // Heap
+    '[data-heap-redact-attributes]', // Heap
+    '[data-cs-encrypt]', // Contentsquare (encrypted capture; masked here)
+    '.mf-masked', // Mouseflow
+    '[data-mf-replace]', // Mouseflow
+    '[data-mf-replace-inner]', // Mouseflow
+    '.inspectlet-sensitive', // Inspectlet
+    '.inspectletIgnore', // Inspectlet
+    '[data-dtrum-mask]', // Dynatrace
+  ];
+  const extendedBlock = [
+    '.highlight-block', // Highlight / LaunchDarkly
+    '[data-private]', // LogRocket (any value)
+    '._lr-hide', // LogRocket (legacy)
+    '[data-hj-suppress]', // Hotjar (attribute form)
+    '.data-hj-suppress', // Hotjar (class form, also documented)
+    '[data-sl="exclude"]', // Smartlook
+    '[data-openreplay-hidden]', // OpenReplay
+    '[data-openreplay-htmlmasked]', // OpenReplay (deprecated alias)
+    '[data-cs-mask]', // Contentsquare (content removed from collection)
+    '.heap-ignore', // Heap (class form)
+    '[heap-ignore]', // Heap (attribute form)
+    '.mf-excluded', // Mouseflow
+    '.lo-sensitive', // Lucky Orange (text scrambled, images blanked)
+    '.losensitive', // Lucky Orange (alias)
+    '.userback-block', // Userback
+    '.zipy-block', // Zipy
+  ];
+  const foreignRevealOrIgnore = [
+    '[data-hl-record]',
+    '.highlight-ignore',
+    '[data-public]',
+    '[data-hj-allow]',
+    '.data-hj-allow',
+    '[data-clarity-unmask]',
+    '[data-sl="unmask"]',
+    '[data-openreplay-unmask]',
+    '[data-cs-capture]',
+    '.lo-not-sensitive',
+    '.lonotsensitive',
+    '[data-dtrum-allow]',
+    '.userback-ignore',
+    '.mf-listen',
+  ];
+
+  it('recognizes the extended vendor set as mask or block', () => {
+    for (const token of extendedMask)
+      expect(on.maskTextSelector).toContain(token);
+    for (const token of extendedBlock)
+      expect(on.blockSelector).toContain(token);
+  });
+
+  it('never merges a foreign reveal or input-ignore token, on either setting', () => {
+    for (const token of foreignRevealOrIgnore) {
+      for (const list of [
+        on.maskTextSelector,
+        on.blockSelector,
+        on.unmaskTextSelector,
+        off.maskTextSelector,
+        off.blockSelector,
+        off.unmaskTextSelector,
+      ])
+        expect(list ?? '').not.toContain(token);
+    }
+  });
+
+  it('every compat token is a valid selector and survives the merge', () => {
+    // A typo in the list would be dropped with a warning at compile time
+    // and silently protect nothing; this pins the whole list as valid.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    compilePrivacyPolicy({
+      version: 1,
+      preset: 'balanced',
+      vendorCompat: true,
+    });
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+    for (const token of [...extendedMask, ...extendedBlock])
+      expect(validateSelector(token)).toBe(true);
+  });
+
+  it('warns when vendorCompat is set under minimal, where it has no effect', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    compilePrivacyPolicy({ version: 1, preset: 'minimal', vendorCompat: true });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('vendorCompat'));
+    warn.mockClear();
+    compilePrivacyPolicy({
+      version: 1,
+      preset: 'balanced',
+      vendorCompat: true,
+    });
+    compilePrivacyPolicy({ version: 1, preset: 'minimal' });
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
   /**
    * `vendorCompat` may only ever add masking or blocking, never reveal:
    * `.rr-unmask` is the only unmask token, on or off. No foreign tool's

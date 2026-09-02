@@ -12,15 +12,71 @@ const NATIVE_MASK_CLASSES = '.rr-mask';
 const NATIVE_UNMASK_CLASSES = '.rr-unmask';
 const NATIVE_BLOCK_CLASSES = '.rr-block';
 
-// Other tools' conventions, merged only under `vendorCompat`.
-// See guide.md's "Vendor class recognition" section.
-const COMPAT_MASK_CLASSES =
-  '.mp-mask,.fs-mask,.amp-mask,.ph-mask,.sentry-mask,[data-sentry-mask],.dd-privacy-mask,[data-dd-privacy="mask"],.dd-privacy-mask-user-input,[data-dd-privacy="mask-user-input"],.nr-mask,[data-nr-mask]';
-// No COMPAT_UNMASK_CLASSES: `vendorCompat` may only ever add masking or
-// blocking, never reveal. `.rr-unmask` stays native-only — see
-// guide.md's "Vendor class recognition" section.
-const COMPAT_BLOCK_CLASSES =
-  '.mp-block,.fs-exclude,.amp-block,.ph-no-capture,.sentry-block,.dd-privacy-hidden,[data-dd-privacy="hidden"],.nr-block,[data-nr-block]';
+// Other tools' conventions, merged only under `vendorCompat`. Every token was
+// verified against the vendor's official docs or open-source SDK; the source
+// for each is in guide.md's "Vendor class recognition" table. A token whose
+// vendor semantics hide only text joins the mask list; one that removes or
+// placeholders the element's whole content joins the block list. No vendor's
+// unmask/allow or input-ignore token is ever merged: `vendorCompat` may only
+// add masking or blocking, never reveal, and `.rr-unmask` stays native-only.
+const COMPAT_MASK_CLASSES = [
+  '.mp-mask', // Mixpanel
+  '.fs-mask', // FullStory
+  '.fs-mask-without-consent', // FullStory (masked until their consent API reveals)
+  '.amp-mask', // Amplitude
+  '.ph-mask', // PostHog
+  '.sentry-mask', // Sentry
+  '[data-sentry-mask]', // Sentry
+  '.dd-privacy-mask', // Datadog
+  '[data-dd-privacy="mask"]', // Datadog
+  '.dd-privacy-mask-user-input', // Datadog (form values only there; text here)
+  '[data-dd-privacy="mask-user-input"]', // Datadog
+  '.nr-mask', // New Relic
+  '[data-nr-mask]', // New Relic
+  '.highlight-mask', // Highlight / LaunchDarkly
+  '[data-clarity-mask]', // Microsoft Clarity
+  '[data-sl="mask"]', // Smartlook
+  '[data-openreplay-obscured]', // OpenReplay
+  '[data-openreplay-masked]', // OpenReplay (deprecated alias, still honored)
+  '[data-heap-redact-text]', // Heap
+  '[data-heap-redact-attributes]', // Heap (attribute values there; text here)
+  '[data-cs-encrypt]', // Contentsquare (encrypted capture there; masked here)
+  '.mf-masked', // Mouseflow
+  '[data-mf-replace]', // Mouseflow
+  '[data-mf-replace-inner]', // Mouseflow
+  '.inspectlet-sensitive', // Inspectlet
+  '.inspectletIgnore', // Inspectlet
+  '[data-dtrum-mask]', // Dynatrace
+].join(',');
+const COMPAT_BLOCK_CLASSES = [
+  '.mp-block', // Mixpanel
+  '.fs-exclude', // FullStory
+  '.fs-exclude-without-consent', // FullStory
+  '.amp-block', // Amplitude
+  '.ph-no-capture', // PostHog
+  '.sentry-block', // Sentry
+  '[data-sentry-block]', // Sentry
+  '.dd-privacy-hidden', // Datadog
+  '[data-dd-privacy="hidden"]', // Datadog
+  '.nr-block', // New Relic
+  '[data-nr-block]', // New Relic
+  '.highlight-block', // Highlight / LaunchDarkly
+  '[data-private]', // LogRocket (any value: placeholder, delete, lipsum)
+  '._lr-hide', // LogRocket (legacy)
+  '[data-hj-suppress]', // Hotjar (text and images placeholdered)
+  '.data-hj-suppress', // Hotjar (class form, also documented)
+  '[data-sl="exclude"]', // Smartlook
+  '[data-openreplay-hidden]', // OpenReplay
+  '[data-openreplay-htmlmasked]', // OpenReplay (deprecated alias)
+  '[data-cs-mask]', // Contentsquare (content removed from collection)
+  '.heap-ignore', // Heap (class form)
+  '[heap-ignore]', // Heap (attribute form)
+  '.mf-excluded', // Mouseflow
+  '.lo-sensitive', // Lucky Orange (text scrambled, images blanked)
+  '.losensitive', // Lucky Orange (alias)
+  '.userback-block', // Userback
+  '.zipy-block', // Zipy
+].join(',');
 
 // `data-privacy` fails closed: the mask token is the bare attribute minus the
 // two values that mean something else, so an unrecognized value masks.
