@@ -287,6 +287,9 @@ recognized directly in markup, no extra configuration required:
 
 ```html
 <section data-privacy="block">Never capture this subtree</section>
+<section data-privacy="ignore">
+  Mask content, and never emit its input events
+</section>
 <section data-privacy="mask">Mask content in this subtree</section>
 <span data-privacy="unmask">This content may be captured</span>
 ```
@@ -300,7 +303,21 @@ a field to a form is the person who knows whether it is sensitive, and they
 can say so in the same edit rather than in a selector list maintained
 somewhere else.
 
-The three values above are the whole vocabulary, and they are case-sensitive.
+The four values above are the whole vocabulary, and they are case-sensitive.
+They form a severity ladder, `unmask < mask < ignore < block`, and the
+nearest annotated ancestor decides. `ignore` is `mask` plus event silence:
+the subtree's content is masked exactly as under `data-privacy="mask"`, and
+nothing typed or clicked in it is ever emitted -- not even a length-only
+starred value. A descendant `data-privacy="unmask"` inside an `ignore`
+subtree re-enables both content and events, exactly as it does inside
+`mask`; `block` remains absolute, and on one element the strictest verb
+present wins.
+
+The legacy `.rr-ignore` class (with the `ignoreClass`/`ignoreSelector`
+options) is an event-suppression-only noise control -- per-element, input
+events only, and it never masks content -- NOT a privacy mechanism.
+`data-privacy="ignore"` is its privacy-grade replacement.
+
 **Any other value masks.** `data-privacy="masked"`, `data-privacy="Block"`,
 `data-privacy=""` -- each of these protects the subtree exactly as
 `data-privacy="mask"` would. A value outside the vocabulary is a typo or a

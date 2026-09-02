@@ -24,9 +24,12 @@ primitives.
   `recordCanvas: true` under `strict` each log a one-time `console.warn`
   instead of failing silently.
 - Add an opt-in, versioned `privacyPolicy` with `strict`/`balanced`/`minimal`
-  presets, the vendor-neutral `data-privacy` HTML binding (`mask`/`block`/
-  `unmask`, the same three names as the rule actions, with any unrecognized
-  value failing closed to `mask`), fail-closed `canvasMasking`, and
+  presets, the vendor-neutral `data-privacy` HTML binding (the severity
+  ladder `unmask` < `mask` < `ignore` < `block`, nearest annotated ancestor
+  deciding, with any unrecognized value failing closed to `mask`; `ignore`
+  masks like `mask` and additionally emits no input events for the subtree
+  at all, unlike the legacy events-only, per-element `.rr-ignore`),
+  fail-closed `canvasMasking`, and
   attribute-masking escape hatches; existing masking options remain the
   `minimal` default. `data-privacy` and the `rr-*` classes are managed-preset
   features: under `minimal` a rule compiles to its bare selector and switches
