@@ -557,6 +557,166 @@ describe('vendorCompat', () => {
     expect(c.maskTextSelector).toBeNull();
     expect(c.blockSelector).toBeNull();
   });
+
+  /**
+   * `vendorCompat` also takes an array of vendor ids, merging only those
+   * vendors' tokens: `true` stays the union of every vendor, `[]` merges
+   * none, and an unknown id is dropped with a warning naming it.
+   */
+  describe('granular vendor selection', () => {
+    afterEach(() => {
+      document.body.innerHTML = '';
+    });
+
+    /** An element carrying `token` (class or attribute form), attached. */
+    function elementFor(token: string): HTMLElement {
+      const el = document.createElement('div');
+      const attr = /^\[([^\]=]+)(?:="([^"]*)")?\]$/.exec(token);
+      if (attr) el.setAttribute(attr[1], attr[2] ?? '');
+      else el.className = token.slice(1);
+      document.body.appendChild(el);
+      return el;
+    }
+
+    it('true behaves as the full legacy set: every vendor token still matches', () => {
+      const coreMask = [
+        '.mp-mask',
+        '.fs-mask',
+        '.fs-mask-without-consent',
+        '.amp-mask',
+        '.ph-mask',
+        '.sentry-mask',
+        '[data-sentry-mask]',
+        '.dd-privacy-mask',
+        '[data-dd-privacy="mask"]',
+        '.dd-privacy-mask-user-input',
+        '[data-dd-privacy="mask-user-input"]',
+        '.nr-mask',
+        '[data-nr-mask]',
+      ];
+      const coreBlock = [
+        '.mp-block',
+        '.fs-exclude',
+        '.fs-exclude-without-consent',
+        '.amp-block',
+        '.ph-no-capture',
+        '.sentry-block',
+        '[data-sentry-block]',
+        '.dd-privacy-hidden',
+        '[data-dd-privacy="hidden"]',
+        '.nr-block',
+        '[data-nr-block]',
+      ];
+      for (const token of [...coreMask, ...extendedMask])
+        expect(elementFor(token).matches(on.maskTextSelector as string)).toBe(
+          true,
+        );
+      for (const token of [...coreBlock, ...extendedBlock])
+        expect(elementFor(token).matches(on.blockSelector as string)).toBe(
+          true,
+        );
+    });
+
+    it('true equals naming every vendor', () => {
+      const all = compilePrivacyPolicy({
+        version: 1,
+        preset: 'balanced',
+        vendorCompat: [
+          'mixpanel',
+          'fullstory',
+          'amplitude',
+          'posthog',
+          'sentry',
+          'datadog',
+          'newrelic',
+          'highlight',
+          'logrocket',
+          'hotjar',
+          'clarity',
+          'smartlook',
+          'openreplay',
+          'contentsquare',
+          'heap',
+          'mouseflow',
+          'luckyorange',
+          'inspectlet',
+          'dynatrace',
+          'userback',
+          'zipy',
+          'quantummetric',
+          'glassbox',
+          'sessionstack',
+          'sessionrewind',
+        ],
+      });
+      expect(all.maskTextSelector).toBe(on.maskTextSelector);
+      expect(all.blockSelector).toBe(on.blockSelector);
+    });
+
+    it('an array merges only the named vendors', () => {
+      const posthogOnly = compilePrivacyPolicy({
+        version: 1,
+        preset: 'balanced',
+        vendorCompat: ['posthog'],
+      });
+      const mask = posthogOnly.maskTextSelector as string;
+      expect(elementFor('.ph-mask').matches(mask)).toBe(true);
+      expect(elementFor('.mp-mask').matches(mask)).toBe(false);
+      expect(posthogOnly.blockSelector).toContain('.ph-no-capture');
+      expect(posthogOnly.blockSelector).not.toContain('.mp-block');
+    });
+
+    it('an empty array merges no vendor tokens at all', () => {
+      const none = compilePrivacyPolicy({
+        version: 1,
+        preset: 'balanced',
+        vendorCompat: [],
+      });
+      expect(none.maskTextSelector).toBe(off.maskTextSelector);
+      expect(none.blockSelector).toBe(off.blockSelector);
+    });
+
+    it('warns naming an unknown id and skips it, keeping the known ones', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const c = compilePrivacyPolicy({
+        version: 1,
+        preset: 'balanced',
+        vendorCompat: ['posthog', 'hotjarr' as never],
+      });
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('hotjarr'));
+      expect(c.blockSelector).toContain('.ph-no-capture');
+      expect(c.maskTextSelector).toContain('.ph-mask');
+      warn.mockRestore();
+    });
+
+    it('booleans still compile: false merges nothing', () => {
+      const asFalse = compilePrivacyPolicy({
+        version: 1,
+        preset: 'balanced',
+        vendorCompat: false,
+      });
+      expect(asFalse.maskTextSelector).toBe(off.maskTextSelector);
+      expect(asFalse.blockSelector).toBe(off.blockSelector);
+    });
+
+    it('never merges an unmask token under the array form either', () => {
+      const named = compilePrivacyPolicy({
+        version: 1,
+        preset: 'balanced',
+        vendorCompat: ['amplitude', 'fullstory', 'datadog'],
+      });
+      for (const foreign of [
+        '.amp-unmask',
+        '.fs-unmask',
+        '.dd-privacy-allow',
+        '[data-dd-privacy="allow"]',
+      ]) {
+        expect(named.maskTextSelector).not.toContain(foreign);
+        expect(named.blockSelector).not.toContain(foreign);
+        expect(named.unmaskTextSelector).not.toContain(foreign);
+      }
+    });
+  });
 });
 
 describe('validateSelector', () => {

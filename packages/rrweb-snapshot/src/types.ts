@@ -81,6 +81,7 @@ export type {
   PrivacyAction,
   PrivacyRule,
   PrivacyTarget,
+  VendorCompatId,
   PrivacyDetectorOptions,
   PrivacyUrlOptions,
   CompiledDetector,

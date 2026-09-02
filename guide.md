@@ -381,10 +381,29 @@ record({
 });
 ```
 
+`vendorCompat` takes three forms. `true` merges the mask/block tokens of
+every vendor in the table below. An array of vendor ids merges only the
+named vendors' tokens -- say `vendorCompat: ['posthog', 'datadog']` for a
+page annotated for exactly those two tools; the ids are `mixpanel`,
+`fullstory`, `amplitude`, `posthog`, `sentry`, `datadog`, `newrelic`,
+`highlight`, `logrocket`, `hotjar`, `clarity`, `smartlook`, `openreplay`,
+`contentsquare`, `heap`, `mouseflow`, `luckyorange`, `inspectlet`,
+`dynatrace`, `userback`, `zipy`, `quantummetric`, `glassbox`,
+`sessionstack`, and `sessionrewind`, and an unknown id is dropped with a
+`console.warn` naming it. An empty array (like `false` or leaving it
+unset) merges nothing.
+
 It is off by default because recognizing a foreign token changes what rrweb
 records based on markup the embedder may not control -- a class name that
 means "mask" to one tool may be an ordinary styling hook here -- so the
 decision to honor another vendor's vocabulary is made explicitly.
+
+**Honoring your own unmask class.** A tool adopting rrweb that wants its own
+reveal token honored (say `.acme-unmask`) declares it explicitly, through
+`unmaskTextSelector` or an `unmask` policy rule -- never through
+`vendorCompat`. The invariant holds for every form of the setting:
+`vendorCompat` merges mask and block tokens only, so no unmask/allow token
+of any vendor is ever merged.
 
 Every token below was verified against the vendor's official documentation
 or open-source SDK. The mapping rule: a token whose vendor semantics hide

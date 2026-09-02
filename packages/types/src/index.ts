@@ -318,9 +318,37 @@ export type PrivacyPolicy = {
   rules?: PrivacyRule[];
   detectors?: PrivacyDetectorOptions;
   url?: PrivacyUrlOptions;
-  /** Opt in to recognizing other session-replay tools' privacy classes/attributes; off by default. */
-  vendorCompat?: boolean;
+  /** Opt in to recognizing other session-replay tools' privacy classes/attributes; off by default. `true` recognizes every verified vendor; an array recognizes only the named ones. */
+  vendorCompat?: boolean | VendorCompatId[];
 };
+
+/** A vendor whose mask/block conventions `vendorCompat` can recognize; see guide.md's "Vendor class recognition" table. */
+export type VendorCompatId =
+  | 'mixpanel'
+  | 'fullstory'
+  | 'amplitude'
+  | 'posthog'
+  | 'sentry'
+  | 'datadog'
+  | 'newrelic'
+  | 'highlight'
+  | 'logrocket'
+  | 'hotjar'
+  | 'clarity'
+  | 'smartlook'
+  | 'openreplay'
+  | 'contentsquare'
+  | 'heap'
+  | 'mouseflow'
+  | 'luckyorange'
+  | 'inspectlet'
+  | 'dynatrace'
+  | 'userback'
+  | 'zipy'
+  | 'quantummetric'
+  | 'glassbox'
+  | 'sessionstack'
+  | 'sessionrewind';
 
 export type PrivacyPreset = 'strict' | 'balanced' | 'minimal';
 

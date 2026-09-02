@@ -18,9 +18,11 @@ primitives.
   managed-preset default -- see the guide's migration section for the full
   list. It covers the verified mask/block conventions of twenty-five
   session-replay tools (each token sourced in the guide's "Vendor class
-  recognition" table) and can only ever increase masking or blocking, never
-  reveal: no foreign tool's unmask or input-ignore convention is ever
-  honored, on any setting. `needMaskingText`'s fail-closed catch and an explicit
+  recognition" table), taking `true` for every vendor or an array of vendor
+  ids for just the named ones (an unknown id is dropped with a `console.warn`
+  naming it), and can only ever increase masking or blocking, never reveal:
+  no foreign tool's unmask or input-ignore convention is ever honored, under
+  any form of the setting. `needMaskingText`'s fail-closed catch and an explicit
   `recordCanvas: true` under `strict` each log a one-time `console.warn`
   instead of failing silently.
 - Add an opt-in, versioned `privacyPolicy` with `strict`/`balanced`/`minimal`
