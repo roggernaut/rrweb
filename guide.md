@@ -369,11 +369,50 @@ records based on markup the embedder may not control -- a class name that
 means "mask" to one tool may be an ordinary styling hook here -- so the
 decision to honor another vendor's vocabulary is made explicitly.
 
-- Compat mask: `.mp-mask`, `.fs-mask`, `.amp-mask`, `.ph-mask`, `.sentry-mask`, `[data-sentry-mask]`, `.dd-privacy-mask`, `[data-dd-privacy="mask"]`, `.dd-privacy-mask-user-input`, `[data-dd-privacy="mask-user-input"]`, `.nr-mask`, `[data-nr-mask]`
-- Compat block: `.mp-block`, `.fs-exclude`, `.amp-block`, `.ph-no-capture`, `.sentry-block`, `.dd-privacy-hidden`, `[data-dd-privacy="hidden"]`, `.nr-block`, `[data-nr-block]`
+Every token below was verified against the vendor's official documentation
+or open-source SDK. The mapping rule: a token whose vendor semantics hide
+only text joins the **mask** list; one that removes or placeholders the
+element's whole content (images, children) joins the **block** list, the
+more protective of the two. Vendors whose masking is configured purely from
+their own console with no reserved markup (Pendo, Statsig, Sprig, Userpilot,
+Cobrowse) have nothing to recognize.
 
-These are the conventions of Mixpanel, Amplitude, PostHog, Sentry,
-FullStory, Datadog, and New Relic. `vendorCompat` can only ever **increase**
+| Vendor                   | Mask tokens                                                                                                          | Block tokens                                                                  | Source                                                                                                                                                                                    |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Mixpanel                 | `.mp-mask`                                                                                                           | `.mp-block`                                                                   | mixpanel-js `src/recorder/masking.js`, `src/mixpanel-core.js`                                                                                                                             |
+| FullStory                | `.fs-mask`, `.fs-mask-without-consent`                                                                               | `.fs-exclude`, `.fs-exclude-without-consent`                                  | "How do I protect my users' privacy in Fullstory?" (`-without-consent` variants are masked until FullStory's consent API reveals them; rrweb has no such API, so they are always honored) |
+| Amplitude                | `.amp-mask`                                                                                                          | `.amp-block`                                                                  | Amplitude-TypeScript `session-replay-browser/src/constants.ts`                                                                                                                            |
+| PostHog                  | `.ph-mask`                                                                                                           | `.ph-no-capture`                                                              | posthog-js `lazy-loaded-session-recorder.ts`                                                                                                                                              |
+| Sentry                   | `.sentry-mask`, `[data-sentry-mask]`                                                                                 | `.sentry-block`, `[data-sentry-block]`                                        | sentry-javascript `replay-internal/src/util/getPrivacyOptions.ts`                                                                                                                         |
+| Datadog                  | `.dd-privacy-mask`, `[data-dd-privacy="mask"]`, `.dd-privacy-mask-user-input`, `[data-dd-privacy="mask-user-input"]` | `.dd-privacy-hidden`, `[data-dd-privacy="hidden"]`                            | browser-sdk `browser-rum-core/src/domain/privacyConstants.ts` (`mask-user-input` masks only form values there; here it masks text too, the safe direction)                                |
+| New Relic                | `.nr-mask`, `[data-nr-mask]`                                                                                         | `.nr-block`, `[data-nr-block]`                                                | newrelic-browser-agent `src/common/config/init.js`                                                                                                                                        |
+| Highlight / LaunchDarkly | `.highlight-mask`                                                                                                    | `.highlight-block`                                                            | LaunchDarkly "Configuration for session replay"; `sdk/highlight-run/src/client/index.tsx`                                                                                                 |
+| LogRocket                |                                                                                                                      | `[data-private]` (any value), `._lr-hide`                                     | LogRocket DOM reference (`data-private` records only dimensions, which matches block)                                                                                                     |
+| Hotjar                   |                                                                                                                      | `[data-hj-suppress]`, `.data-hj-suppress`                                     | "How to Suppress Text, Images, Videos and User Input" (both spellings documented; images are placeholdered, so block)                                                                     |
+| Microsoft Clarity        | `[data-clarity-mask]`                                                                                                |                                                                               | "Clarity masking"                                                                                                                                                                         |
+| Smartlook                | `[data-sl="mask"]`                                                                                                   | `[data-sl="exclude"]`                                                         | Smartlook web Privacy API                                                                                                                                                                 |
+| OpenReplay               | `[data-openreplay-obscured]`, `[data-openreplay-masked]` (deprecated alias)                                          | `[data-openreplay-hidden]`, `[data-openreplay-htmlmasked]` (deprecated alias) | OpenReplay "Sanitize data"; `tracker/src/main/app/sanitizer.ts`                                                                                                                           |
+| Contentsquare            | `[data-cs-encrypt]` (encrypted capture there; masked here)                                                           | `[data-cs-mask]` (content removed from collection)                            | Contentsquare "Personal data handling"                                                                                                                                                    |
+| Heap                     | `[data-heap-redact-text]`, `[data-heap-redact-attributes]` (attribute values there; text here)                       | `.heap-ignore`, `[heap-ignore]`                                               | Heap "Ignoring sensitive data and PII" (docs do not say class or attribute; both are recognized)                                                                                          |
+| Mouseflow                | `.mf-masked`, `[data-mf-replace]`, `[data-mf-replace-inner]`                                                         | `.mf-excluded`                                                                | Mouseflow "Excluding, masking and replacing content via code"                                                                                                                             |
+| Lucky Orange             |                                                                                                                      | `.lo-sensitive`, `.losensitive` (text scrambled and images blanked, so block) | Lucky Orange "Privacy tools"                                                                                                                                                              |
+| Inspectlet               | `.inspectlet-sensitive`, `.inspectletIgnore`                                                                         |                                                                               | Inspectlet "Excluding sensitive data"                                                                                                                                                     |
+| Dynatrace                | `[data-dtrum-mask]`                                                                                                  |                                                                               | Dynatrace Session Replay "URL exclusion and masking"                                                                                                                                      |
+| Userback                 |                                                                                                                      | `.userback-block`                                                             | Userback "Session replay"                                                                                                                                                                 |
+| Zipy                     |                                                                                                                      | `.zipy-block`                                                                 | Zipy "Sensitive user data"                                                                                                                                                                |
+
+Not recognized, deliberately: every vendor's reveal token (`.fs-unmask`,
+`.amp-unmask`, `.nr-unmask`, `[data-dd-privacy="allow"]`, `[data-hl-record]`,
+`[data-public]`, `[data-hj-allow]`, `[data-clarity-unmask]`,
+`[data-sl="unmask"]`, `[data-openreplay-unmask]`, `[data-cs-capture]`,
+`.lo-not-sensitive`, `[data-dtrum-allow]`), every input-ignore token
+(`.sentry-ignore`, `.ph-ignore-input`, `.nr-ignore`, `.highlight-ignore`,
+`.userback-ignore`), and Mouseflow's `.mf-listen` modifier. Tokens that could
+not be verified against a reachable official source (Quantum Metric,
+Glassbox, SessionStack, Session Rewind, Smartlook's legacy
+`data-recording-*` attributes) are left out until they can be.
+
+`vendorCompat` can only ever **increase**
 masking, never reveal: enabling it merges only these mask and block lists.
 No foreign tool's unmask/allow convention is ever honored, on either
 setting -- not even Amplitude's own `.amp-unmask` -- because doing so would
@@ -382,24 +421,10 @@ only from `.rr-unmask`, the neutral `data-privacy="unmask"` attribute, or an
 explicit policy/recording option. If you want the compat mask/block lists,
 add the classes you need as `mask`/`block` rules instead.
 
-The Datadog tokens come from `browser-sdk
-packages/browser-rum-core/src/domain/privacyConstants.ts` (the
-`data-dd-privacy` attribute and `dd-privacy-` class prefix, `mask`/
-`mask-user-input`/`hidden` values; `allow` and `mask-unless-allowlisted` are
-deliberately excluded, since those are unmask conventions). The New Relic
-tokens come from `newrelic-browser-agent src/common/config/init.js`
-(`[data-nr-mask]`, `nr-mask`, `nr-block`, `[data-nr-block]`; `nr-unmask` is
-deliberately excluded for the same reason, and `nr-ignore` because it is an
-input-ignore convention rather than a mask or block one -- these lists carry
-mask and block tokens only). The Sentry tokens come from
-`sentry-javascript packages/replay-internal/src/util/getPrivacyOptions.ts`,
-which ships both the class and the attribute spelling for mask and block.
-The FullStory tokens come from FullStory's "How do I protect my users'
-privacy" help article; its `-without-consent` variants are masked/excluded
-until FullStory's own consent API reveals them, and since rrweb has no such
-API they are honored unconditionally. Datadog's `mask-user-input` masks only
-form values in Datadog; here it joins the text mask list, which is wider, in
-the safe direction.
+Datadog's `allow` and `mask-unless-allowlisted` values are excluded as
+reveal conventions, and every input-ignore token is excluded because these
+lists carry mask and block tokens only; ignore is a different control (it
+silences a field's change events) and is not something compat can add.
 
 (`.rr-mask` and `.rr-block` also work under `minimal`, through the existing
 `maskTextClass`/`blockClass` options above. `vendorCompat` has no effect

@@ -44,9 +44,15 @@ primitives.
   read is treated as protected, and the `autocomplete` attribute is read
   before the IDL property so an unparseable token order cannot hide a
   `cc-number`.
-- `vendorCompat` also recognizes `[data-sentry-block]` and FullStory's
-  `.fs-mask-without-consent` / `.fs-exclude-without-consent`, and logs a
-  one-time `console.warn` when set under `minimal`, where it has no effect.
+- `vendorCompat` now covers the mask and block conventions of twenty
+  session-replay tools (Mixpanel, FullStory, Amplitude, PostHog, Sentry,
+  Datadog, New Relic, Highlight/LaunchDarkly, LogRocket, Hotjar, Microsoft
+  Clarity, Smartlook, OpenReplay, Contentsquare, Heap, Mouseflow, Lucky
+  Orange, Inspectlet, Dynatrace, Userback, Zipy), each token verified
+  against official documentation or SDK source and listed with its source in
+  the guide. No vendor's reveal or input-ignore token is ever merged. It
+  logs a one-time `console.warn` when set under `minimal`, where it has no
+  effect.
 - Add fail-closed `canvasMasking` region masking for complex canvas
   applications; configuring it forces the FPS capture path and suppresses
   the unmasked `rr_dataURL` full-snapshot fallback. `strict` disables canvas
