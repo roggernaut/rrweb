@@ -15,6 +15,7 @@ import {
   resolveTextValue,
   resolveUnmaskTextSelector,
   isEventIgnored,
+  VENDOR_COMPAT,
 } from '../src/privacy';
 import snapshot, {
   _isBlockedElement,
@@ -474,9 +475,12 @@ describe('vendorCompat', () => {
     '[data-qm-freeze-exclude]', // Quantum Metric (DOM-capture exclude)
     '[data-recording-disable]', // Smartlook legacy (still honored by the bundle)
   ];
+  // Reveal tokens are never merged anywhere; ignore-like tokens listed here
+  // are the ones with no verified events-only semantics, so they stay
+  // unmerged too. (`.highlight-ignore` moved to ignoreEvents once its
+  // events-only behavior was verified from the highlight-run source.)
   const foreignRevealOrIgnore = [
     '[data-hl-record]',
-    '.highlight-ignore',
     '[data-public]',
     '[data-hj-allow]',
     '.data-hj-allow',
@@ -503,17 +507,177 @@ describe('vendorCompat', () => {
       expect(on.blockSelector).toContain(token);
   });
 
-  it('never merges a foreign reveal or input-ignore token, on either setting', () => {
+  it('never merges a foreign reveal token, on either setting', () => {
     for (const token of foreignRevealOrIgnore) {
       for (const list of [
         on.maskTextSelector,
         on.blockSelector,
         on.unmaskTextSelector,
+        on.ignoreEventsSelector,
         off.maskTextSelector,
         off.blockSelector,
         off.unmaskTextSelector,
+        off.ignoreEventsSelector,
       ])
         expect(list ?? '').not.toContain(token);
+    }
+  });
+
+  /**
+   * A vendor ignore token is events-only there, so it compiles into the
+   * events-only `ignoreEventsSelector` and never into mask, block, or
+   * unmask — an element carrying one keeps its recorded content.
+   */
+  describe('ignoreEvents tokens', () => {
+    const ignoreTokens = [
+      '.sentry-ignore',
+      '[data-sentry-ignore]',
+      '.ph-ignore-input',
+      '.nr-ignore',
+      '.highlight-ignore',
+    ];
+
+    it('compiles the vendor ignore tokens into ignoreEventsSelector', () => {
+      for (const token of ignoreTokens)
+        expect(on.ignoreEventsSelector).toContain(token);
+      expect(off.ignoreEventsSelector).toBeNull();
+      expect(
+        compilePrivacyPolicy({
+          version: 1,
+          preset: 'minimal',
+          vendorCompat: true,
+        }).ignoreEventsSelector,
+      ).toBeNull();
+    });
+
+    it('never leaks an ignore token into mask, block, or unmask', () => {
+      for (const token of ignoreTokens) {
+        expect(on.maskTextSelector ?? '').not.toContain(token);
+        expect(on.blockSelector ?? '').not.toContain(token);
+        expect(on.unmaskTextSelector ?? '').not.toContain(token);
+      }
+    });
+
+    it('an array compiles only the named vendors ignore tokens', () => {
+      const sentryOnly = compilePrivacyPolicy({
+        version: 1,
+        preset: 'balanced',
+        vendorCompat: ['sentry'],
+      });
+      expect(sentryOnly.ignoreEventsSelector).toContain('.sentry-ignore');
+      expect(sentryOnly.ignoreEventsSelector).toContain('[data-sentry-ignore]');
+      expect(sentryOnly.ignoreEventsSelector ?? '').not.toContain(
+        '.ph-ignore-input',
+      );
+      const posthogOnly = compilePrivacyPolicy({
+        version: 1,
+        preset: 'balanced',
+        vendorCompat: ['posthog'],
+      });
+      expect(posthogOnly.ignoreEventsSelector).toBe('.ph-ignore-input');
+      const datadogOnly = compilePrivacyPolicy({
+        version: 1,
+        preset: 'balanced',
+        vendorCompat: ['datadog'],
+      });
+      // Datadog has no customer-facing ignore token (its IGNORE level is
+      // internal to the SDK); nothing compiles here.
+      expect(datadogOnly.ignoreEventsSelector).toBeNull();
+    });
+
+    it('isEventIgnored: matches on the annotated element itself, not ancestors', () => {
+      document.body.innerHTML =
+        '<input id="self" class="sentry-ignore">' +
+        '<div class="sentry-ignore"><input id="nested"></div>';
+      const sentry = compilePrivacyPolicy({
+        version: 1,
+        preset: 'balanced',
+        vendorCompat: ['sentry'],
+      });
+      const el = (id: string) =>
+        document.querySelector(`#${id}`) as HTMLElement;
+      // Element-matched, mirroring the vendors' own input observers, which
+      // test the event target only.
+      expect(isEventIgnored(el('self'), sentry)).toBe(true);
+      expect(isEventIgnored(el('nested'), sentry)).toBe(false);
+      // Another vendor's compat does not honor the token.
+      const posthog = compilePrivacyPolicy({
+        version: 1,
+        preset: 'balanced',
+        vendorCompat: ['posthog'],
+      });
+      expect(isEventIgnored(el('self'), posthog)).toBe(false);
+    });
+
+    it('suppresses events only: an ignore-annotated element is not masked', () => {
+      document.body.innerHTML = '<p id="t" class="sentry-ignore">text</p>';
+      const sentry = compilePrivacyPolicy({
+        version: 1,
+        preset: 'balanced',
+        vendorCompat: ['sentry'],
+      });
+      const el = document.querySelector('#t') as HTMLElement;
+      expect(isEventIgnored(el, sentry)).toBe(true);
+      expect(el.matches(sentry.maskTextSelector as string)).toBe(false);
+      expect(el.matches(sentry.blockSelector as string)).toBe(false);
+    });
+
+    it('a throwing matches() fails closed to suppression', () => {
+      const sentry = compilePrivacyPolicy({
+        version: 1,
+        preset: 'balanced',
+        vendorCompat: ['sentry'],
+      });
+      const el = document.createElement('input');
+      vi.spyOn(el, 'matches').mockImplementation(() => {
+        throw new Error('boom');
+      });
+      expect(isEventIgnored(el, sentry)).toBe(true);
+    });
+  });
+
+  /**
+   * The registry-wide monotonicity invariant, pinned statically: no vendor
+   * entry — mask, block, or ignoreEvents — may carry a selector that could
+   * reveal content. Checked both against the vendors' known allow/unmask
+   * vocabularies and against the generic substrings those vocabularies use,
+   * so a future entry that smuggles one in fails here regardless of vendor.
+   */
+  it('no registry entry carries an allow/unmask-like selector, in any slot', () => {
+    const revealSubstrings = ['unmask', 'unblock', 'allow'];
+    const knownRevealTokens = [
+      '[data-hl-record]',
+      '[data-public]',
+      '[data-hj-allow]',
+      '.data-hj-allow',
+      '[data-clarity-unmask]',
+      '[data-sl="unmask"]',
+      '[data-openreplay-unmask]',
+      '[data-cs-capture]',
+      '.lo-not-sensitive',
+      '.lonotsensitive',
+      '.smartlook-show',
+      '.mf-listen',
+      '.ph-include',
+    ];
+    for (const [vendor, entry] of Object.entries(VENDOR_COMPAT)) {
+      const selectors = [
+        ...entry.mask,
+        ...entry.block,
+        ...(entry.ignoreEvents ?? []),
+      ];
+      for (const selector of selectors) {
+        const lower = selector.toLowerCase();
+        for (const substring of revealSubstrings)
+          expect(
+            lower.includes(substring),
+            `${vendor}: ${selector} looks like a reveal token`,
+          ).toBe(false);
+        expect(
+          knownRevealTokens.includes(selector),
+          `${vendor}: ${selector} is a known reveal token`,
+        ).toBe(false);
+      }
     }
   });
 

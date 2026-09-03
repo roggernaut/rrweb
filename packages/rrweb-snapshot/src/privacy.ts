@@ -16,15 +16,19 @@ const NATIVE_BLOCK_CLASSES = '.rr-block';
 // Other tools' conventions, merged only under `vendorCompat` — `true` for
 // every vendor here, or an array naming just the vendors to honor. Every
 // token was verified against the vendor's official docs or open-source SDK;
-// the source for each is in guide.md's "Vendor class recognition" table. A
-// token whose vendor semantics hide only text joins the vendor's mask list;
-// one that removes or placeholders the element's whole content joins its
-// block list. No vendor's unmask/allow or input-ignore token is ever merged,
-// under any form of the setting: `vendorCompat` may only add masking or
-// blocking, never reveal, and `.rr-unmask` stays native-only.
-const VENDOR_COMPAT: Record<
+// the source for each is in guide.md's "Vendor class recognition" table.
+// The mapping rule: each token maps to the closest treatment our verbs
+// express (mask, block, ignoreEvents), never a less protective one.
+// `ignoreEvents` tokens suppress input events from the annotated element
+// only, exactly as the vendor's own recorder does — they never imply
+// masking, unlike `data-privacy="ignore"`, which is mask plus silence. No
+// vendor's unmask/allow token is ever merged, under any form of the
+// setting: `vendorCompat` may only reduce what is recorded, never reveal,
+// and `.rr-unmask` stays native-only.
+/** @internal exported for the registry invariant tests; not part of the privacy API. */
+export const VENDOR_COMPAT: Record<
   VendorCompatId,
-  { mask: string[]; block: string[] }
+  { mask: string[]; block: string[]; ignoreEvents?: string[] }
 > = {
   mixpanel: { mask: ['.mp-mask'], block: ['.mp-block'] },
   fullstory: {
@@ -33,13 +37,25 @@ const VENDOR_COMPAT: Record<
     block: ['.fs-exclude', '.fs-exclude-without-consent'],
   },
   amplitude: { mask: ['.amp-mask'], block: ['.amp-block'] },
-  posthog: { mask: ['.ph-mask'], block: ['.ph-no-capture'] },
+  posthog: {
+    // posthog-js lazy-loaded-session-recorder.ts: ph-mask -> maskTextClass,
+    // ph-no-capture -> blockClass, ph-ignore-input -> ignoreClass
+    mask: ['.ph-mask'],
+    block: ['.ph-no-capture'],
+    ignoreEvents: ['.ph-ignore-input'],
+  },
   sentry: {
+    // sentry-javascript replay-internal/src/util/getPrivacyOptions.ts
     mask: ['.sentry-mask', '[data-sentry-mask]'],
     block: ['.sentry-block', '[data-sentry-block]'],
+    ignoreEvents: ['.sentry-ignore', '[data-sentry-ignore]'],
   },
   datadog: {
-    // mask-user-input covers form values only there; text here
+    // browser-sdk browser-rum-core/src/domain/privacy.ts: mask-user-input
+    // masks form values (and form-element text such as <option> labels)
+    // only there; mapped to text mask here because form values are already
+    // masked globally wherever compat applies (`maskAllInputs`), and
+    // dropping the token would record the form-element text it protects
     mask: [
       '.dd-privacy-mask',
       '[data-dd-privacy="mask"]',
@@ -49,11 +65,21 @@ const VENDOR_COMPAT: Record<
     block: ['.dd-privacy-hidden', '[data-dd-privacy="hidden"]'],
   },
   newrelic: {
+    // newrelic-browser-agent src/common/config/init.js: nr-mask/[data-nr-mask]
+    // -> maskText, nr-block/[data-nr-block] -> block, nr-ignore -> ignoreClass
+    // (class only; no attribute form ships)
     mask: ['.nr-mask', '[data-nr-mask]'],
     block: ['.nr-block', '[data-nr-block]'],
+    ignoreEvents: ['.nr-ignore'],
   },
-  // Highlight / LaunchDarkly
-  highlight: { mask: ['.highlight-mask'], block: ['.highlight-block'] },
+  // Highlight / LaunchDarkly: highlight-run client/index.tsx passes
+  // blockClass 'highlight-block' and ignoreClass 'highlight-ignore' to its
+  // rrweb fork, whose default maskTextClass is 'highlight-mask'
+  highlight: {
+    mask: ['.highlight-mask'],
+    block: ['.highlight-block'],
+    ignoreEvents: ['.highlight-ignore'],
+  },
   // [data-private] blocks under any value: placeholder, delete, lipsum
   logrocket: { mask: [], block: ['[data-private]', '._lr-hide'] },
   // text and images placeholdered; the class form is also documented
@@ -132,10 +158,10 @@ function resolveVendorCompat(
 
 function vendorCompatSelector(
   vendors: VendorCompatId[],
-  action: 'mask' | 'block',
+  action: 'mask' | 'block' | 'ignoreEvents',
 ): string | null {
   const tokens: string[] = [];
-  for (const id of vendors) tokens.push(...VENDOR_COMPAT[id][action]);
+  for (const id of vendors) tokens.push(...(VENDOR_COMPAT[id][action] ?? []));
   return tokens.join(',') || null;
 }
 
@@ -556,6 +582,9 @@ export function compilePrivacyPolicy(
         : bySelector.block,
     ),
     ignoreSelector: managed ? DATA_PRIVACY_IGNORE : null,
+    ignoreEventsSelector: managed
+      ? joinSelectors([vendorCompatSelector(compatVendors, 'ignoreEvents')])
+      : null,
     maskAllInputs,
     maskedAttributes,
     attributePolicyInert:
@@ -588,7 +617,18 @@ export function isEventIgnored(
   element: Element,
   privacy: CompiledPrivacyPolicy | undefined,
 ): boolean {
-  if (!privacy?.ignoreSelector) return false;
+  if (!privacy) return false;
+  // A vendorCompat ignore token silences events from the annotated element
+  // itself, exactly as the vendor's own input observer does; it carries no
+  // masking and takes no part in the data-privacy severity ladder below.
+  if (privacy.ignoreEventsSelector) {
+    try {
+      if (element.matches(privacy.ignoreEventsSelector)) return true;
+    } catch {
+      return true;
+    }
+  }
+  if (!privacy.ignoreSelector) return false;
   try {
     const annotated = element.closest(DATA_PRIVACY);
     return annotated !== null && annotated.matches(privacy.ignoreSelector);

@@ -384,8 +384,9 @@ record({
 });
 ```
 
-`vendorCompat` takes three forms. `true` merges the mask/block tokens of
-every vendor in the table below. An array of vendor ids merges only the
+`vendorCompat` takes three forms. `true` merges the mask, block, and
+events-only ignore tokens of every vendor in the table below. An array of
+vendor ids merges only the
 named vendors' tokens -- say `vendorCompat: ['posthog', 'datadog']` for a
 page annotated for exactly those two tools; the ids are `mixpanel`,
 `fullstory`, `amplitude`, `posthog`, `sentry`, `datadog`, `newrelic`,
@@ -409,10 +410,14 @@ reveal token honored (say `.acme-unmask`) declares it explicitly, through
 of any vendor is ever merged.
 
 Every token below was verified against the vendor's official documentation
-or open-source SDK. The mapping rule: a token whose vendor semantics hide
-only text joins the **mask** list; one that removes or placeholders the
-element's whole content (images, children) joins the **block** list, the
-more protective of the two. Vendors whose masking is configured purely from
+or open-source SDK. The mapping rule: each token maps to the closest
+treatment rrweb's verbs express -- **mask** (text occluded, element still
+recorded), **block** (subtree removed or placeholdered), or **ignore**
+(input events suppressed, content untouched) -- and never to a less
+protective one. A vendor's ignore token silences input events from the
+annotated element itself, exactly as that vendor's recorder does; it
+carries no masking, unlike the native `data-privacy="ignore"`, which is
+mask plus silence. Vendors whose masking is configured purely from
 their own console with no reserved markup (Pendo, Statsig, Sprig, Userpilot,
 Cobrowse) have nothing to recognize.
 
@@ -444,13 +449,22 @@ Cobrowse) have nothing to recognize.
 | SessionStack             | `.sessionstack-sensitive`                                                                                            |                                                                               | SessionStack "Sensitive data" (archived copy; the live page blocks non-browser clients)                                                                                                                                                                                                        |
 | Session Rewind           | `[data-sr-redact]`                                                                                                   |                                                                               | Session Rewind "Privacy settings" (Notion docs) and the `session-rewind-prod.js` recorder                                                                                                                                                                                                      |
 
+Ignore tokens, recognized as events-only: Sentry's `.sentry-ignore` and
+`[data-sentry-ignore]` (their rrweb `ignoreSelector` defaults), PostHog's
+`.ph-ignore-input` (their `ignoreClass`), New Relic's `.nr-ignore` (their
+constant `ignore_class`; no attribute form ships), and Highlight's
+`.highlight-ignore` (their `ignoreClass`). Each was verified from the
+vendor's source to suppress input events only, so honoring it can only
+reduce what is recorded; the annotated element's content records normally,
+exactly as it does under that vendor.
+
 Not recognized, deliberately: every vendor's reveal token (`.fs-unmask`,
 `.amp-unmask`, `.nr-unmask`, `[data-dd-privacy="allow"]`, `[data-hl-record]`,
 `[data-public]`, `[data-hj-allow]`, `[data-clarity-unmask]`,
 `[data-sl="unmask"]`, `[data-openreplay-unmask]`, `[data-cs-capture]`,
-`.lo-not-sensitive`, `[data-dtrum-allow]`, `[data-qm-allow]`), every
-input-ignore token (`.sentry-ignore`, `.ph-ignore-input`, `.nr-ignore`,
-`.highlight-ignore`, `.userback-ignore`, `[data-recording-ignore]`), and
+`.lo-not-sensitive`, `[data-dtrum-allow]`, `[data-qm-allow]`), the
+ignore-like tokens whose events-only semantics have no verified source
+(`.userback-ignore`, `[data-recording-ignore]`), and
 Mouseflow's `.mf-listen` modifier. Smartlook's `smartlook-hide` class is a
 mobile-WebView convention with no presence in the web bundle, and Heap's
 bare `heap-redact` is a documentation umbrella term rather than a token;
@@ -458,8 +472,8 @@ neither is recognized. Nothing here rests on a guessed spelling: a token
 without a reachable official document or a shipped SDK to read it from is
 left out.
 
-`vendorCompat` can only ever **increase**
-masking, never reveal: enabling it merges only these mask and block lists.
+`vendorCompat` can only ever **reduce** what is recorded, never reveal:
+enabling it merges only these mask, block, and events-only ignore lists.
 No foreign tool's unmask/allow convention is ever honored, on either
 setting -- not even Amplitude's own `.amp-unmask` -- because doing so would
 let markup the embedder may not control turn masking off. Unmasking comes
@@ -468,9 +482,9 @@ explicit policy/recording option. If you want the compat mask/block lists,
 add the classes you need as `mask`/`block` rules instead.
 
 Datadog's `allow` and `mask-unless-allowlisted` values are excluded as
-reveal conventions, and every input-ignore token is excluded because these
-lists carry mask and block tokens only; ignore is a different control (it
-silences a field's change events) and is not something compat can add.
+reveal conventions. Datadog has no customer-facing ignore token: its
+internal `ignore` level covers scripts and metadata tags, not annotated
+elements, so nothing of Datadog's compiles into the ignore list.
 
 (`.rr-mask` and `.rr-block` also work under `minimal`, through the existing
 `maskTextClass`/`blockClass` options above. `vendorCompat` has no effect
