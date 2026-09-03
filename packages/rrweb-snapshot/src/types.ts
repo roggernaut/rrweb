@@ -82,6 +82,7 @@ export type {
   PrivacyRule,
   PrivacyTarget,
   VendorCompatId,
+  PrivacyUrlOptions,
   CompiledPrivacyPolicy,
 } from '@rrweb/types';
 

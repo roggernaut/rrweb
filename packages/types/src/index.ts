@@ -318,6 +318,7 @@ export type PrivacyPolicy = {
   rules?: PrivacyRule[];
   /** Opt in to recognizing other session-replay tools' privacy classes/attributes; off by default. `true` recognizes every verified vendor; an array recognizes only the named ones. */
   vendorCompat?: boolean | VendorCompatId[];
+  url?: PrivacyUrlOptions;
 };
 
 /** A vendor whose mask/block conventions `vendorCompat` can recognize; see guide.md's "Vendor class recognition" table. */
@@ -363,6 +364,14 @@ export type PrivacyTarget = {
   selector: string;
 };
 
+export type PrivacyUrlOptions = {
+  /** Query parameter names whose values are always removed. */
+  blockedQueryParameters?: string[];
+  /** When supplied, all query parameter values except these are removed. */
+  allowedQueryParameters?: string[];
+  removeHash?: boolean;
+};
+
 /** Runtime form of a compiled policy, shared by snapshot and incremental observers. */
 export type CompiledPrivacyPolicy = {
   preset: PrivacyPreset;
@@ -384,6 +393,12 @@ export type CompiledPrivacyPolicy = {
   attributePolicyInert: boolean;
   /** true under strict; the `strict` preset alias every media gate reads */
   blockMedia: boolean;
+  /** true under balanced/strict */
+  sanitizeUrls: boolean;
+  /** precomputed, lowercased */
+  blockedQueryParameters: Set<string>;
+  allowedQueryParameters: Set<string> | null;
+  removeHash: boolean;
 };
 
 export type RecordPlugin<TOptions = unknown> = {

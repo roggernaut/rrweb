@@ -543,7 +543,7 @@ describe('finalizeAttribute', () => {
     ).toBe('Bob');
   });
 
-  it('strict nulls media sources, and only on media tags', () => {
+  it('strict nulls media sources; URLs sanitized elsewhere', () => {
     expect(
       finalizeAttribute({
         element: el(),
@@ -552,7 +552,15 @@ describe('finalizeAttribute', () => {
         privacy: strict,
       }),
     ).toBeNull();
-    // non-media element keeps its src under strict
+    expect(
+      finalizeAttribute({
+        element: el('<a href="#"></a>', 'a'),
+        name: 'href',
+        value: 'https://u:p@a.com/x?token=t',
+        privacy: balanced,
+      }),
+    ).toBe('https://a.com/x?token=*');
+    // non-media element keeps a sanitized src under strict
     expect(
       finalizeAttribute({
         element: el('<div></div>', 'div'),
@@ -560,7 +568,7 @@ describe('finalizeAttribute', () => {
         value: 'https://a.com/x?page=1',
         privacy: strict,
       }),
-    ).toBe('https://a.com/x?page=1');
+    ).toBe('https://a.com/x?page=*');
   });
 
   describe('dimension-preserving placeholders for blocked images', () => {
@@ -1054,7 +1062,15 @@ describe('finalizeAttribute', () => {
     expect(out).not.toContain('"Dave"'); // no escape -> still starred
   });
 
-  it('the unmask escape cannot reopen a blocked media source', () => {
+  it('the unmask escape cannot reopen a URL or a blocked media source', () => {
+    expect(
+      finalizeAttribute({
+        element: el('<img class="rr-unmask" src="https://a.com/?token=t">'),
+        name: 'src',
+        value: 'https://a.com/?token=t',
+        privacy: balanced,
+      }),
+    ).toBe('https://a.com/?token=*');
     expect(
       finalizeAttribute({
         element: el('<img class="rr-unmask" src="https://a.com/i.png">'),
@@ -1174,7 +1190,8 @@ describe('finalizeAttribute', () => {
         maskAttributeFn: () => '',
       }),
     ).toBeNull();
-    // On the branches that do not drop it, an emptied value stays empty.
+    // On the branches that do not drop it, an emptied value stays empty
+    // instead of being resolved into a path by sanitizeUrl.
     expect(
       finalizeAttribute({
         element: el('<a href="#"></a>', 'a'),
@@ -1216,7 +1233,7 @@ describe('finalizeAttribute', () => {
     ).toBe('*'.repeat('a longer value'.length));
   });
 
-  it('applies the strict media-source rule to the renamed rr_src', () => {
+  it('applies the strict media-source and URL rules to the renamed rr_src', () => {
     const iframe = () => el('<iframe src="https://x.com/"></iframe>', 'iframe');
     expect(
       finalizeAttribute({
@@ -1226,6 +1243,14 @@ describe('finalizeAttribute', () => {
         privacy: strict,
       }),
     ).toBeNull();
+    expect(
+      finalizeAttribute({
+        element: iframe(),
+        name: 'rr_src',
+        value: 'https://u:p@x.com/?token=t',
+        privacy: balanced,
+      }),
+    ).toBe('https://x.com/?token=*');
   });
 
   it('passes through null/empty values and untouched attributes', () => {
@@ -1252,8 +1277,8 @@ describe('attribute finalization through the serializer', () => {
   /**
    * A cross-origin `<iframe>` rrweb cannot see into has its `src` renamed to
    * `rr_src` *before* finalization runs, so the renamed name has to carry the
-   * same policy weight as `src` -- otherwise `strict`'s media-source drop
-   * would miss it and the frame URL would ride out of the recording verbatim.
+   * same policy weight as `src` -- otherwise userinfo and query tokens ride
+   * out of the recording verbatim.
    */
   function serializeOpaqueIframe(
     src: string,
@@ -1271,6 +1296,16 @@ describe('attribute finalization through the serializer', () => {
     );
     return JSON.stringify(snapshot(document, { privacyPolicy }));
   }
+
+  it('sanitizes the renamed rr_src of a cross-origin iframe under balanced', () => {
+    const out = serializeOpaqueIframe('https://u:p@x.com/?token=t', {
+      version: 1,
+      preset: 'balanced',
+    });
+    expect(out).toContain('"rr_src":"https://x.com/?token=*"');
+    expect(out).not.toContain('u:p@x.com');
+    expect(out).not.toContain('token=t');
+  });
 
   it('drops the renamed rr_src of a cross-origin iframe under strict', () => {
     const out = serializeOpaqueIframe('https://u:p@x.com/?token=t', {

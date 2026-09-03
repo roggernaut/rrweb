@@ -218,6 +218,18 @@ const RENDERING_METADATA_ATTRIBUTES = new Set([
 
 const OPERATIONAL_ATTRIBUTES = new Set(['data-privacy', 'data-rr-is-password']);
 
+const URL_ATTRIBUTES = new Set([
+  'action',
+  'background',
+  'data',
+  'formaction',
+  'href',
+  'poster',
+  'rr_src',
+  'src',
+  'xlink:href',
+]);
+
 /** Attributes that point at media bytes; dropped entirely under `strict`. */
 const MEDIA_SOURCE_ATTRIBUTES = new Set([
   'background',
@@ -251,6 +263,17 @@ export const FORM_VALUE_TAGS = new Set([
   'SELECT',
   'TEXTAREA',
 ]);
+
+const DEFAULT_BLOCKED_QUERY_PARAMETERS = [
+  'access_token',
+  'auth',
+  'code',
+  'key',
+  'password',
+  'secret',
+  'session',
+  'token',
+];
 
 /** Occludes text content, preserving whitespace so layout survives; contrast `stars`, which occludes to length. */
 function starText(value: string): string {
@@ -416,6 +439,7 @@ export function compilePrivacyPolicy(
     );
   const maskedAttributes = new Set(managed ? MASKED_ATTRIBUTE_DEFAULTS : []);
   const blockMedia = preset === 'strict';
+  const sanitizeUrls = managed;
 
   const bySelector = {
     mask: [] as string[],
@@ -472,8 +496,22 @@ export function compilePrivacyPolicy(
       : null,
     maskAllInputs: managed,
     maskedAttributes,
-    attributePolicyInert: !blockMedia && maskedAttributes.size === 0,
+    attributePolicyInert:
+      !blockMedia && !sanitizeUrls && maskedAttributes.size === 0,
     blockMedia,
+    sanitizeUrls,
+    blockedQueryParameters: new Set(
+      [
+        ...DEFAULT_BLOCKED_QUERY_PARAMETERS,
+        ...(effective.url?.blockedQueryParameters || []),
+      ].map((n) => n.toLowerCase()),
+    ),
+    allowedQueryParameters: effective.url?.allowedQueryParameters
+      ? new Set(
+          effective.url.allowedQueryParameters.map((n) => n.toLowerCase()),
+        )
+      : null,
+    removeHash: effective.url?.removeHash !== false,
   };
 }
 
@@ -747,6 +785,7 @@ export function finalizeAttribute({
     if (MEDIA_TAGS.has(tagName))
       return blockedMediaValue(element, tagName, normalizedName);
   }
+  if (URL_ATTRIBUTES.has(normalizedName)) return sanitizeUrl(current, privacy);
   if (privacy.maskedAttributes.has(normalizedName)) {
     return isUnmasked(element, privacy, unmaskMemo) ? current : stars(current);
   }
@@ -793,4 +832,70 @@ export function finalizeAttributes(
       unmaskMemo,
     });
   }
+}
+
+/**
+ * EXPERIMENTAL: no session-replay vendor sanitizes URLs in the recorded DOM;
+ * see the changeset.
+ *
+ * `paramsMode` is an internal knob, not part of the public policy surface:
+ * `'preset'` (the default) is `strict`'s normal mask-every-param-unless-
+ * allowlisted behavior; `'blocklist'` forces the `balanced` treatment
+ * (mask only `blockedQueryParameters`/non-`allowedQueryParameters`) even
+ * under `strict`. `sanitizeMetaUrl` is the one caller that needs it -- see
+ * its doc comment. This keeps the preset special-case inside the URL layer
+ * instead of leaking a `strict`-vs-Meta branch into core.
+ */
+export function sanitizeUrl(
+  value: string,
+  privacy: CompiledPrivacyPolicy | undefined,
+  { paramsMode = 'preset' }: { paramsMode?: 'preset' | 'blocklist' } = {},
+): string | null {
+  if (!value) return value;
+  if (!privacy || !privacy.sanitizeUrls) return value;
+  try {
+    const url = new URL(value, 'https://rrweb.invalid');
+    url.username = '';
+    url.password = '';
+    const maskAllParams =
+      paramsMode === 'preset' &&
+      privacy.preset === 'strict' &&
+      !privacy.allowedQueryParameters;
+    for (const [name] of url.searchParams) {
+      const lower = name.toLowerCase();
+      if (
+        maskAllParams ||
+        (privacy.allowedQueryParameters &&
+          !privacy.allowedQueryParameters.has(lower)) ||
+        privacy.blockedQueryParameters.has(lower)
+      ) {
+        url.searchParams.set(name, '*');
+      }
+    }
+    if (privacy.removeHash) url.hash = '';
+    if (url.origin === 'https://rrweb.invalid')
+      return `${url.pathname}${url.search}${url.hash}`;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * EXPERIMENTAL, open design question for upstream: sanitizes the Meta
+ * event's `window.location.href` with blocked-list-only parameter masking
+ * (the `balanced` treatment), even under `strict`, where every other URL in
+ * the recorded DOM masks every param unless explicitly allowlisted. The
+ * Meta event's URL is the recording's own address bar, not markup the page
+ * author wrote -- treating it identically to an arbitrary `<a href>` would
+ * make `strict` unusable for reconstructing which page a session happened
+ * on, since almost every app puts routing state in its own URL. Whether
+ * that asymmetry is the right default, versus a dedicated option, is not
+ * settled; see the changeset.
+ */
+export function sanitizeMetaUrl(
+  value: string,
+  privacy: CompiledPrivacyPolicy | undefined,
+): string | null {
+  return sanitizeUrl(value, privacy, { paramsMode: 'blocklist' });
 }
