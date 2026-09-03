@@ -318,6 +318,7 @@ export type PrivacyPolicy = {
   rules?: PrivacyRule[];
   /** Opt in to recognizing other session-replay tools' privacy classes/attributes; off by default. `true` recognizes every verified vendor; an array recognizes only the named ones. */
   vendorCompat?: boolean | VendorCompatId[];
+  detectors?: PrivacyDetectorOptions;
 };
 
 /** A vendor whose mask/block conventions `vendorCompat` can recognize; see guide.md's "Vendor class recognition" table. */
@@ -363,6 +364,20 @@ export type PrivacyTarget = {
   selector: string;
 };
 
+/** Explicit opt-in flags for built-in heuristic detectors; presets do not enable these. */
+export type PrivacyDetectorOptions = Partial<{
+  email: boolean;
+  phone: boolean;
+  paymentCard: boolean;
+  ssn: boolean;
+  ipAddress: boolean;
+}>;
+
+export type CompiledDetector = {
+  name: string;
+  test: (value: string) => boolean;
+};
+
 /** Runtime form of a compiled policy, shared by snapshot and incremental observers. */
 export type CompiledPrivacyPolicy = {
   preset: PrivacyPreset;
@@ -376,7 +391,7 @@ export type CompiledPrivacyPolicy = {
   ignoreSelector: string | null;
   /** vendorCompat input-ignore tokens: input events from a matching element are suppressed, and nothing else changes — no masking implied, unlike `data-privacy="ignore"`. Matched on the element itself, mirroring the vendors' own input observers. */
   ignoreEventsSelector: string | null;
-  /** true under balanced/strict */
+  /** true under balanced/strict, and whenever any heuristic detector is active. */
   maskAllInputs: boolean;
   /** ['title','placeholder','aria-label'] under balanced/strict, else empty */
   maskedAttributes: Set<string>;
@@ -384,6 +399,8 @@ export type CompiledPrivacyPolicy = {
   attributePolicyInert: boolean;
   /** true under strict; the `strict` preset alias every media gate reads */
   blockMedia: boolean;
+  /** Populated by an opt-in detector plugin; [] otherwise. */
+  detectors: CompiledDetector[];
 };
 
 export type RecordPlugin<TOptions = unknown> = {
@@ -394,6 +411,12 @@ export type RecordPlugin<TOptions = unknown> = {
     options: TOptions,
   ) => listenerHandler;
   eventProcessor?: <TExtend>(event: eventWithTime) => eventWithTime & TExtend;
+  /**
+   * Transform the portable privacy policy before it is compiled. Used by
+   * opt-in detector plugins so heuristic PII matching is not core recorder
+   * behavior.
+   */
+  applyPrivacyPolicy?: (policy: unknown) => unknown;
   getMirror?: (mirrors: {
     nodeMirror: IMirror<Node>;
     crossOriginIframeMirror: ICrossOriginIframeMirror;
