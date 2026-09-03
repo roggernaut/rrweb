@@ -421,6 +421,73 @@ describe('record() input events under data-privacy="ignore"', () => {
     expect(inputs.length).toBeGreaterThan(0);
   });
 
+  /**
+   * A vendorCompat ignore token is events-only: the vendor's own recorder
+   * suppresses input events from the annotated element and records its
+   * content normally, and compat reproduces exactly that — unlike
+   * `data-privacy="ignore"`, which is mask plus silence.
+   */
+  it('a vendorCompat ignore token suppresses events, for its vendor only', async () => {
+    const sentryCompat = {
+      privacyPolicy: {
+        version: 1,
+        preset: 'balanced',
+        vendorCompat: ['sentry'],
+      },
+    } as Parameters<typeof record>[0];
+    const underSentry = await recordedInputEvents(
+      '<input id="t" class="sentry-ignore">',
+      sentryCompat,
+    );
+    expect(underSentry).toHaveLength(0);
+    // The same markup under another vendor's compat is not suppressed.
+    const underPosthog = await recordedInputEvents(
+      '<input id="t" class="sentry-ignore">',
+      {
+        privacyPolicy: {
+          version: 1,
+          preset: 'balanced',
+          vendorCompat: ['posthog'],
+        },
+      } as Parameters<typeof record>[0],
+    );
+    expect(underPosthog.length).toBeGreaterThan(0);
+    const phToken = await recordedInputEvents(
+      '<input id="t" class="ph-ignore-input">',
+      {
+        privacyPolicy: {
+          version: 1,
+          preset: 'balanced',
+          vendorCompat: ['posthog'],
+        },
+      } as Parameters<typeof record>[0],
+    );
+    expect(phToken).toHaveLength(0);
+  });
+
+  it('a vendorCompat ignore token does not mask: content is still recorded', async () => {
+    document.body.innerHTML =
+      '<p id="t" class="sentry-ignore">annotated text</p>';
+    const events: eventWithTime[] = [];
+    const stop = record({
+      emit: (event) => events.push(event),
+      privacyPolicy: {
+        version: 1,
+        preset: 'balanced',
+        vendorCompat: ['sentry'],
+      },
+    });
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    } finally {
+      stop?.();
+    }
+    const serialized = JSON.stringify(
+      events.filter((event) => event.type === EventType.FullSnapshot),
+    );
+    expect(serialized).toContain('annotated text');
+  });
+
   it('legacy .rr-ignore suppresses events on the element itself only', async () => {
     const onSelf = await recordedInputEvents(
       '<input id="t" class="rr-ignore">',
