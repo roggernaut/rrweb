@@ -85,3 +85,55 @@ describe('privacy v2 perf smoke', () => {
     spy.mockRestore();
   });
 });
+
+/**
+ * Every non-minimal preset compiles a non-null `unmaskTextSelector` (strict
+ * and balanced both always include `[data-privacy="unmask"]` and
+ * `.rr-unmask`, rule-configured or not). That forces
+ * `serializeNodeWithId`'s `checkAncestors` branch permanently on, which
+ * re-walks ancestors with `Element.prototype.matches` for every single node
+ * instead of trusting the inherited masking decision -- O(nodes * depth) on
+ * a page that has no unmask target anywhere. `resolveUnmaskTextSelector`
+ * probes once per snapshot/flush and passes `null` downward when nothing
+ * matches, restoring the cheap short-circuit.
+ */
+describe('privacy v2 unmask-selector short-circuit perf', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+    vi.restoreAllMocks();
+  });
+
+  function buildDeepWideDom(depth: number, leaves: number) {
+    document.body.innerHTML =
+      '<div>'.repeat(depth) +
+      '<p>leaf text</p>'.repeat(leaves) +
+      '</div>'.repeat(depth);
+  }
+
+  it('strict snapshot with no unmask target anywhere avoids per-node ancestor walks', () => {
+    buildDeepWideDom(40, 40);
+    const spy = vi.spyOn(Element.prototype, 'matches');
+
+    snapshot(document, { privacyPolicy: { version: 1, preset: 'strict' } });
+
+    // Without the short-circuit this scales with leaves * depth (thousands
+    // of calls for 40x40); with it, the one-time presence probe means the
+    // per-node walk never engages, so the call count stays close to a
+    // single linear pass over the tree. A loose bound catches a regression
+    // to the old O(nodes * depth) behavior without pinning an exact count.
+    expect(spy.mock.calls.length).toBeLessThan(200);
+    spy.mockRestore();
+  });
+
+  it('strict snapshot still finds and honors an .rr-unmask target when one exists', () => {
+    document.body.innerHTML =
+      '<div class="rr-unmask"><p>visible</p></div><p>hidden</p>';
+
+    const out = JSON.stringify(
+      snapshot(document, { privacyPolicy: { version: 1, preset: 'strict' } }),
+    );
+
+    expect(out).toContain('visible');
+    expect(out).not.toContain('hidden');
+  });
+});

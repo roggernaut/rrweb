@@ -40,6 +40,7 @@ import {
   finalizeAttributes,
   resolvePrivacyContext,
   resolveTextValue,
+  resolveUnmaskTextSelector,
   shouldCapturePixels,
   splitSelectorList,
 } from './privacy';
@@ -1075,7 +1076,16 @@ export function serializeNodeWithId(
     maskTextClass: string | RegExp;
     /** The pre-split pair from `splitMaskAllSelector`; a raw string is still accepted, coerced by `needMaskingText`. */
     maskTextSelector: MaskTextSelector | string | null;
+    /** Resolved against *this* document by the unmask presence probe. */
     unmaskTextSelector: string | null;
+    /**
+     * The same selector before the probe resolved it away. Carried so the two
+     * deferred re-serializations below (a nested iframe document, a late
+     * stylesheet) can re-probe against their own document: a target that
+     * exists only inside an iframe is absent from the parent and would
+     * otherwise be resolved to `null` for the whole tree.
+     */
+    unresolvedUnmaskTextSelector?: string | null;
     skipChild: boolean;
     inlineStylesheet: boolean;
     newlyAddedElement?: boolean;
@@ -1105,6 +1115,8 @@ export function serializeNodeWithId(
     stylesheetLoadTimeout?: number;
     cssCaptured?: boolean;
     privacy?: CompiledPrivacyPolicy;
+    /** `needMaskingText` results memoised for one `snapshot()` call; not passed to the two deferred re-serializations below. */
+    maskDecisionCache?: Map<Node, boolean>;
   },
 ): serializedNodeWithId | null {
   const {
@@ -1115,6 +1127,7 @@ export function serializeNodeWithId(
     maskTextClass,
     maskTextSelector,
     unmaskTextSelector,
+    unresolvedUnmaskTextSelector = unmaskTextSelector,
     skipChild = false,
     inlineStylesheet = true,
     maskInputOptions = {},
@@ -1136,6 +1149,7 @@ export function serializeNodeWithId(
     newlyAddedElement = false,
     cssCaptured = false,
     privacy,
+    maskDecisionCache,
   } = options;
   let { needsMask } = options;
   let { preserveWhiteSpace = true } = options;
@@ -1143,14 +1157,21 @@ export function serializeNodeWithId(
   if (!needsMask || unmaskTextSelector) {
     const checkAncestors =
       needsMask === undefined || Boolean(unmaskTextSelector);
-    needsMask = needMaskingText(
-      n as Element,
-      maskTextClass,
-      maskTextSelector,
-      unmaskTextSelector,
-      checkAncestors,
-      needsMask === true,
-    );
+    const walkStart = isElement(n) ? n : dom.parentElement(n) || n;
+    const cached = maskDecisionCache?.get(walkStart);
+    if (cached !== undefined) {
+      needsMask = cached;
+    } else {
+      needsMask = needMaskingText(
+        n as Element,
+        maskTextClass,
+        maskTextSelector,
+        unmaskTextSelector,
+        checkAncestors,
+        needsMask === true,
+      );
+      maskDecisionCache?.set(walkStart, needsMask);
+    }
   }
 
   const _serializedNode = serializeNode(n, {
@@ -1237,6 +1258,7 @@ export function serializeNodeWithId(
       maskTextClass,
       maskTextSelector,
       unmaskTextSelector,
+      unresolvedUnmaskTextSelector,
       skipChild,
       inlineStylesheet,
       maskInputOptions,
@@ -1258,6 +1280,7 @@ export function serializeNodeWithId(
       keepIframeSrcFn,
       cssCaptured: false,
       privacy,
+      maskDecisionCache,
     };
 
     if (
@@ -1317,7 +1340,14 @@ export function serializeNodeWithId(
             needsMask,
             maskTextClass,
             maskTextSelector,
-            unmaskTextSelector,
+            // The nested document runs its own presence probe: an unmask
+            // target may exist only in here, where the parent's resolved
+            // value (probed against the parent document) says `null`.
+            unmaskTextSelector: resolveUnmaskTextSelector(
+              iframeDoc,
+              unresolvedUnmaskTextSelector,
+            ),
+            unresolvedUnmaskTextSelector,
             skipChild: false,
             inlineStylesheet,
             maskInputOptions,
@@ -1374,7 +1404,13 @@ export function serializeNodeWithId(
             needsMask,
             maskTextClass,
             maskTextSelector,
-            unmaskTextSelector,
+            // Deferred to stylesheet load, so re-probe: the document may have
+            // grown an unmask target since the original pass resolved.
+            unmaskTextSelector: resolveUnmaskTextSelector(
+              doc,
+              unresolvedUnmaskTextSelector,
+            ),
+            unresolvedUnmaskTextSelector,
             skipChild: false,
             inlineStylesheet,
             maskInputOptions,
@@ -1478,15 +1514,27 @@ function snapshot(
     privacyPolicy,
     privacy: compiledPrivacy,
   } = options || {};
-  const { privacy, blockSelector, maskTextSelector, unmaskTextSelector } =
-    resolvePrivacyContext({
-      privacy: compiledPrivacy,
-      privacyPolicy,
-      blockSelector: manualBlockSelector,
-      maskTextSelector: manualMaskTextSelector,
-      unmaskTextSelector: manualUnmaskTextSelector,
-    });
+  const {
+    privacy,
+    blockSelector,
+    maskTextSelector,
+    unmaskTextSelector: mergedUnmaskTextSelector,
+  } = resolvePrivacyContext({
+    privacy: compiledPrivacy,
+    privacyPolicy,
+    blockSelector: manualBlockSelector,
+    maskTextSelector: manualMaskTextSelector,
+    unmaskTextSelector: manualUnmaskTextSelector,
+  });
+  // Resolved per document: the unresolved selector rides along beside it, so
+  // nested iframe documents re-probe for themselves rather than inheriting
+  // this document's "nothing matches" answer.
+  const unmaskTextSelector = resolveUnmaskTextSelector(
+    n,
+    mergedUnmaskTextSelector,
+  );
   const splitMaskTextSelector = splitMaskAllSelector(maskTextSelector);
+  const maskDecisionCache = new Map<Node, boolean>();
   const maskInputOptions: MaskInputOptions =
     maskAllInputs === true
       ? {
@@ -1522,6 +1570,7 @@ function snapshot(
     maskTextClass,
     maskTextSelector: splitMaskTextSelector,
     unmaskTextSelector,
+    unresolvedUnmaskTextSelector: mergedUnmaskTextSelector,
     skipChild: false,
     inlineStylesheet,
     maskInputOptions,
@@ -1543,6 +1592,7 @@ function snapshot(
     keepIframeSrcFn,
     newlyAddedElement: false,
     privacy,
+    maskDecisionCache,
   });
 }
 
