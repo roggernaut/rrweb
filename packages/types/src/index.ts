@@ -311,6 +311,113 @@ export interface ICrossOriginIframeMirror {
   reset(iframe?: HTMLIFrameElement): void;
 }
 
+/** A versioned, portable Privacy at Capture policy; mirrors `rrweb-snapshot`'s internal `PrivacyPolicy`, the source of truth. */
+export type PrivacyPolicy = {
+  version: 1;
+  preset: PrivacyPreset;
+  rules?: PrivacyRule[];
+  detectors?: PrivacyDetectorOptions;
+  url?: PrivacyUrlOptions;
+  /** Opt in to recognizing other session-replay tools' privacy classes/attributes; off by default. `true` recognizes every verified vendor; an array recognizes only the named ones. */
+  vendorCompat?: boolean | VendorCompatId[];
+};
+
+/** A vendor whose mask/block conventions `vendorCompat` can recognize; see guide.md's "Vendor class recognition" table. */
+export type VendorCompatId =
+  | 'mixpanel'
+  | 'fullstory'
+  | 'amplitude'
+  | 'posthog'
+  | 'sentry'
+  | 'datadog'
+  | 'newrelic'
+  | 'highlight'
+  | 'logrocket'
+  | 'hotjar'
+  | 'clarity'
+  | 'smartlook'
+  | 'openreplay'
+  | 'contentsquare'
+  | 'heap'
+  | 'mouseflow'
+  | 'luckyorange'
+  | 'inspectlet'
+  | 'dynatrace'
+  | 'userback'
+  | 'zipy'
+  | 'quantummetric'
+  | 'glassbox'
+  | 'sessionstack'
+  | 'sessionrewind';
+
+export type PrivacyPreset = 'strict' | 'balanced' | 'minimal';
+
+export type PrivacyAction = 'mask' | 'block' | 'unmask';
+
+export type PrivacyRule = {
+  target: PrivacyTarget;
+  action: PrivacyAction;
+};
+
+export type PrivacyTarget = {
+  type: 'selector';
+  /** A CSS selector. Rules also apply to descendants of the matched node. */
+  selector: string;
+};
+
+/** Explicit opt-in flags for built-in heuristic detectors; presets do not enable these. */
+export type PrivacyDetectorOptions = Partial<{
+  email: boolean;
+  phone: boolean;
+  paymentCard: boolean;
+  ssn: boolean;
+  ipAddress: boolean;
+}>;
+
+export type PrivacyUrlOptions = {
+  /** Query parameter names whose values are always removed. */
+  blockedQueryParameters?: string[];
+  /** When supplied, all query parameter values except these are removed. */
+  allowedQueryParameters?: string[];
+  removeHash?: boolean;
+};
+
+export type CompiledDetector = {
+  name: string;
+  test: (value: string) => boolean;
+};
+
+/** Runtime form of a compiled policy, shared by snapshot and incremental observers. */
+export type CompiledPrivacyPolicy = {
+  preset: PrivacyPreset;
+  /** 'mask' rules + the fail-closed [data-privacy] token + .rr-mask (+ compat classes, + '*' under strict) */
+  maskTextSelector: string | null;
+  /** 'unmask' rules + [data-privacy="unmask"] + .rr-unmask (native-only; vendorCompat never adds unmask tokens) */
+  unmaskTextSelector: string | null;
+  /** 'block' rules + [data-privacy="block"] + .rr-block (+ compat classes) */
+  blockSelector: string | null;
+  /** [data-privacy="ignore"] under balanced/strict: content is masked through the fail-closed mask token, and input events from the subtree are suppressed */
+  ignoreSelector: string | null;
+  /** vendorCompat input-ignore tokens: input events from a matching element are suppressed, and nothing else changes — no masking implied, unlike `data-privacy="ignore"`. Matched on the element itself, mirroring the vendors' own input observers. */
+  ignoreEventsSelector: string | null;
+  /** true under balanced/strict, and whenever any heuristic detector is active. */
+  maskAllInputs: boolean;
+  /** ['title','placeholder','aria-label'] under balanced/strict, else empty */
+  maskedAttributes: Set<string>;
+  /** true when the policy has nothing to say about attributes; lets `finalizeAttribute` return its input untouched. */
+  attributePolicyInert: boolean;
+  /** true under strict; the `strict` preset alias every media gate reads */
+  blockMedia: boolean;
+  /** true under balanced/strict; the managed preset alias */
+  sanitizeUrls: boolean;
+  /** precomputed, lowercased */
+  blockedQueryParameters: Set<string>;
+  allowedQueryParameters: Set<string> | null;
+  removeHash: boolean;
+  /** Populated by an opt-in detector plugin; [] otherwise. */
+  detectors: CompiledDetector[];
+};
+
 export type RecordPlugin<TOptions = unknown> = {
   name: string;
   observer?: (
@@ -608,17 +715,14 @@ export type CanvasMaskRegion = {
 
 /** Runtime canvas adapter for applications whose sensitive pixels are not DOM nodes. */
 export type CanvasMasking = {
-  /**
-   * Return rectangles to paint black, `[]` to capture the frame unchanged, or
-   * `null`/`undefined` when a safe answer cannot be produced. Unanswerable
-   * frames are skipped rather than captured without masking.
-   */
+  /** Rectangles to paint black, `[]` to capture unchanged, or `null`/`undefined` to skip an unanswerable frame rather than capture it unmasked. */
   maskRegions: (
     canvas: HTMLCanvasElement,
   ) => CanvasMaskRegion[] | null | undefined;
   /**
-   * Optional dynamic switch. When omitted, supplying `canvasMasking` means it
-   * is configured. Throwing is treated as configured so snapshots fail closed.
+   * Optional dynamic switch, re-read on every frame and snapshot; omitting it means supplying `canvasMasking` alone counts as configured, and a throw counts as configured too (fail closed).
+   *
+   * Supplying `canvasMasking` at all fixes the FPS capture path at `record()`; this switch only decides, per frame, whether that path masks or captures unchanged. It may change over the session.
    */
   isConfigured?: () => boolean;
 };

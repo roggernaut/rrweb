@@ -25,7 +25,8 @@ import {
   is2DCanvasBlank,
   isElement,
   isShadowRoot,
-  maskInputValue,
+  maskInput,
+  shouldMaskInput,
   isNativeShadowDom,
   stringifyStylesheet,
   getInputType,
@@ -35,12 +36,13 @@ import {
   markCssSplits,
 } from './snapshot-utils';
 import {
-  compilePrivacyPolicy,
-  maskAttributeWithPrivacy,
-  maskInputWithPrivacy,
-  maskTextWithPrivacy,
-  mergeBlockSelectors,
-  protectSerializedAttribute,
+  finalizeAttribute,
+  finalizeAttributes,
+  resolvePrivacyContext,
+  resolveTextValue,
+  resolveUnmaskTextSelector,
+  shouldCapturePixels,
+  splitSelectorList,
 } from './privacy';
 import dom from '@rrweb/utils';
 
@@ -223,29 +225,41 @@ export function ignoreAttribute(
   return ['video', 'audio'].includes(tagName) && name === 'autoplay';
 }
 
+export function classMatches(el: Element, matcher: string | RegExp): boolean {
+  const { classList } = el;
+  if (typeof matcher === 'string') return classList.contains(matcher);
+  for (let index = classList.length; index--; ) {
+    if (matcher.test(classList[index])) return true;
+  }
+  return false;
+}
+
+let warnedBlockDecisionThrew = false;
+
 export function _isBlockedElement(
   element: HTMLElement,
   blockClass: string | RegExp,
   blockSelector: string | null,
 ): boolean {
   try {
-    if (typeof blockClass === 'string') {
-      if (element.classList.contains(blockClass)) {
-        return true;
-      }
-    } else {
-      for (let eIndex = element.classList.length; eIndex--; ) {
-        const className = element.classList[eIndex];
-        if (blockClass.test(className)) {
-          return true;
-        }
-      }
+    if (classMatches(element, blockClass)) {
+      return true;
     }
     if (blockSelector) {
       return element.matches(blockSelector);
     }
   } catch (e) {
-    //
+    // Fail closed: a block decision that cannot be made blocks, the same
+    // way a mask decision that throws masks.
+    if (!warnedBlockDecisionThrew) {
+      warnedBlockDecisionThrew = true;
+      console.warn(
+        `privacy block decision threw; failing closed to blocking — check custom selectors: ${
+          e instanceof Error ? e.message : String(e)
+        }`,
+      );
+    }
+    return true;
   }
 
   return false;
@@ -262,57 +276,107 @@ export function classMatchesRegex(
     return classMatchesRegex(dom.parentNode(node), regex, checkAncestors);
   }
 
-  for (let eIndex = (node as HTMLElement).classList.length; eIndex--; ) {
-    const className = (node as HTMLElement).classList[eIndex];
-    if (regex.test(className)) {
-      return true;
-    }
-  }
+  if (classMatches(node as HTMLElement, regex)) return true;
   if (!checkAncestors) return false;
   return classMatchesRegex(dom.parentNode(node), regex, checkAncestors);
 }
 
+export type MaskTextSelector = {
+  maskAll: boolean;
+  selector: string | null;
+};
+
+export function splitMaskAllSelector(
+  maskTextSelector: string | null,
+): MaskTextSelector {
+  if (!maskTextSelector) return { maskAll: false, selector: null };
+  let maskAll = false;
+  const kept: string[] = [];
+  for (const part of splitSelectorList(maskTextSelector)) {
+    if (part.trim() === '*') maskAll = true;
+    else kept.push(part);
+  }
+  return {
+    maskAll,
+    selector: maskAll ? kept.join(',') || null : maskTextSelector,
+  };
+}
+
+let warnedMaskDecisionThrew = false;
+
+/**
+ * Two shapes are accepted here, and both are coerced at runtime rather than
+ * being trusted from the type signature:
+ *
+ * - `maskTextSelector` may arrive as a raw selector string (the pre-2.0
+ *   shape) instead of the `{maskAll, selector}` pair from
+ *   `splitMaskAllSelector`, and is split on the spot.
+ * - The whole call may use the pre-2.0 *positional* signature
+ *   `(node, maskTextClass, maskTextSelector, checkAncestors)`, which puts a
+ *   boolean where `unmaskTextSelector` now sits. A boolean in that slot is
+ *   detected and shifted back into `checkAncestors`, so the ancestor walk an
+ *   unmigrated caller asked for still happens. Left uncoerced this failed
+ *   *open*: `checkAncestors` landed as `undefined`, the walk stopped at the
+ *   node itself, and a `.rr-mask` ancestor no longer masked.
+ */
 export function needMaskingText(
   node: Node,
   maskTextClass: string | RegExp,
-  maskTextSelector: string | null,
-  checkAncestors: boolean,
+  maskTextSelector: MaskTextSelector | string | null,
+  unmaskTextSelector: string | boolean | null,
+  checkAncestors?: boolean,
+  inheritedNeedsMask = false,
 ): boolean {
-  let el: Element;
-  if (isElement(node)) {
-    el = node;
-    if (!dom.childNodes(el).length) {
-      // optimisation: we can avoid any of the below checks on leaf elements
-      // as masking is applied to child text nodes only
-      return false;
-    }
-  } else if (dom.parentElement(node) === null) {
-    // should warn? maybe a text node isn't attached to a parent node yet?
-    return false;
-  } else {
-    el = dom.parentElement(node)!;
+  if (typeof unmaskTextSelector === 'boolean') {
+    // legacy 4-arg call: the boolean is `checkAncestors`.
+    checkAncestors = unmaskTextSelector;
+    unmaskTextSelector = null;
+    inheritedNeedsMask = false;
+  } else if (checkAncestors === undefined) {
+    // an omitted `checkAncestors` walks, the wider (fail-closed) reading.
+    checkAncestors = true;
   }
   try {
-    if (typeof maskTextClass === 'string') {
-      if (checkAncestors) {
-        if (el.closest(`.${maskTextClass}`)) return true;
-      } else {
-        if (el.classList.contains(maskTextClass)) return true;
+    const { maskAll, selector } =
+      typeof maskTextSelector === 'string' || !maskTextSelector
+        ? splitMaskAllSelector(maskTextSelector ?? null)
+        : maskTextSelector;
+    if ((maskAll || inheritedNeedsMask) && !unmaskTextSelector) return true;
+    let el: Element;
+    if (isElement(node)) {
+      el = node;
+      if (!dom.childNodes(el).length) {
+        return inheritedNeedsMask;
       }
+    } else if (dom.parentElement(node) === null) {
+      return inheritedNeedsMask || maskAll;
     } else {
-      if (classMatchesRegex(el, maskTextClass, checkAncestors)) return true;
+      el = dom.parentElement(node)!;
     }
-    if (maskTextSelector) {
-      if (checkAncestors) {
-        if (el.closest(maskTextSelector)) return true;
-      } else {
-        if (el.matches(maskTextSelector)) return true;
-      }
+    let current: Element | null = el;
+    while (current) {
+      if (
+        classMatches(current, maskTextClass) ||
+        (selector && current.matches(selector))
+      )
+        return true;
+      if (unmaskTextSelector && current.matches(unmaskTextSelector))
+        return false;
+      if (!checkAncestors) break;
+      current = dom.parentElement(current);
     }
+    return maskAll || inheritedNeedsMask;
   } catch (e) {
-    //
+    if (!warnedMaskDecisionThrew) {
+      warnedMaskDecisionThrew = true;
+      console.warn(
+        `privacy mask decision threw; failing closed to masking — check custom selectors: ${
+          e instanceof Error ? e.message : String(e)
+        }`,
+      );
+    }
+    return true;
   }
-  return false;
 }
 
 // https://stackoverflow.com/a/36155560
@@ -529,18 +593,11 @@ function serializeTextNode(
   },
 ): serializedNode {
   const { needsMask, maskTextFn, rootId, cssCaptured, privacy } = options;
-  // The parent node may not be a html element which has a tagName attribute.
-  // Named form controls can also shadow `tagName` (e.g. <input name="tagName">).
-  // So just let it be undefined which is ok in this use case.
-  const parent = dom.parentNode(n);
-  const parentTagName =
-    parent && typeof (parent as HTMLElement).tagName === 'string'
-      ? (parent as HTMLElement).tagName.toUpperCase()
-      : undefined;
+  const parent = dom.parentElement(n);
+  const parentTagName = dom.untaintedTagName(parent);
   let textContent: string | null = '';
-  const isStyle = parentTagName === 'STYLE' ? true : undefined;
-  const isScript = parentTagName === 'SCRIPT' ? true : undefined;
-  if (isScript) {
+  const isStyle = parentTagName === 'STYLE';
+  if (parentTagName === 'SCRIPT') {
     textContent = 'SCRIPT_PLACEHOLDER';
   } else if (!cssCaptured) {
     textContent = dom.textContent(n);
@@ -552,20 +609,16 @@ function serializeTextNode(
       textContent = absolutifyURLs(textContent, getHref(options.doc));
     }
   }
-  if (!isScript && textContent) {
-    if (privacy) {
-      textContent = maskTextWithPrivacy(
-        textContent,
-        dom.parentElement(n),
-        privacy,
-        needsMask,
-        maskTextFn,
-      );
-    } else if (!isStyle && needsMask) {
-      textContent = maskTextFn
-        ? maskTextFn(textContent, dom.parentElement(n))
-        : textContent.replace(/[\S]/g, '*');
-    }
+  if (textContent) {
+    textContent = resolveTextValue({
+      value: textContent,
+      parent,
+      parentTagName,
+      needsMask,
+      maskTextFn,
+      privacy,
+      exemptScript: true,
+    });
   }
 
   return {
@@ -621,10 +674,11 @@ function serializeElementNode(
   const tagName = getValidTagName(n);
   let attributes: attributes = {};
   const generatedAttributeNames = new Set<string>();
+  // late `<img>` load-listener writes still go through `finalizeAttribute`.
   let serializationComplete = false;
-  const protectLateAttribute = (name: string, value: string) =>
+  const finalizeLateAttribute = (name: string, value: string) =>
     serializationComplete
-      ? protectSerializedAttribute({
+      ? finalizeAttribute({
           element: n,
           name,
           value,
@@ -638,16 +692,12 @@ function serializeElementNode(
   for (let i = 0; i < len; i++) {
     const attr = n.attributes[i];
     if (!ignoreAttribute(tagName, attr.name, attr.value)) {
-      const transformed = transformAttribute(
+      attributes[attr.name] = transformAttribute(
         doc,
         tagName,
         toLowerCase(attr.name),
         attr.value,
       );
-      const protectedValue = privacy
-        ? maskAttributeWithPrivacy(n, attr.name, transformed, privacy)
-        : transformed;
-      if (protectedValue !== null) attributes[attr.name] = protectedValue;
     }
   }
   // remote css
@@ -689,34 +739,32 @@ function serializeElementNode(
       value
     ) {
       const type = getInputType(n);
-      if (privacy) {
-        const legacyMask = Boolean(
-          maskInputOptions[tagName as keyof MaskInputOptions] ||
-            (type && maskInputOptions[type as keyof MaskInputOptions]),
-        );
-        attributes.value = maskInputWithPrivacy(
-          value,
-          n,
-          privacy,
-          legacyMask,
-          maskInputFn,
-        );
-      } else {
-        attributes.value = maskInputValue({
-          element: n,
-          type,
-          tagName,
-          value,
-          maskInputOptions,
-          maskInputFn,
-        });
-      }
+      attributes.value = maskInput({
+        element: n,
+        type,
+        tagName,
+        value,
+        maskInputOptions,
+        maskInputFn,
+        privacy,
+      });
     } else if (checked) {
       attributes.checked = checked;
     }
   }
   if (tagName === 'option') {
-    if ((n as HTMLOptionElement).selected && !maskInputOptions['select']) {
+    // The `selected` flag discloses the parent <select>'s value just as
+    // surely as the value attribute does, so it is governed by the <select>'s
+    // own masking decision -- policy included. Reading `maskInputOptions`
+    // alone let a balanced/strict policy record the chosen option verbatim.
+    const selectionMasked = shouldMaskInput({
+      element: n,
+      tagName: 'select',
+      type: null,
+      maskInputOptions,
+      privacy,
+    });
+    if ((n as HTMLOptionElement).selected && !selectionMasked) {
       attributes.selected = true;
     } else {
       // ignore the html attribute (which corresponds to DOM (n as HTMLOptionElement).defaultSelected)
@@ -739,8 +787,7 @@ function serializeElementNode(
   if (
     tagName === 'canvas' &&
     recordCanvas &&
-    !canvasMaskingConfigured?.() &&
-    privacy?.policy.preset !== 'strict'
+    shouldCapturePixels(privacy, canvasMaskingConfigured)
   ) {
     if ((n as ICanvas).__context === '2d') {
       // only record this on 2d canvas
@@ -773,11 +820,7 @@ function serializeElementNode(
     }
   }
   // save image offline
-  if (
-    tagName === 'img' &&
-    inlineImages &&
-    privacy?.policy.preset !== 'strict'
-  ) {
+  if (tagName === 'img' && inlineImages && shouldCapturePixels(privacy)) {
     if (!canvasService) {
       canvasService = doc.createElement('canvas');
       canvasCtx = canvasService.getContext('2d');
@@ -792,7 +835,7 @@ function serializeElementNode(
         canvasService!.width = image.naturalWidth;
         canvasService!.height = image.naturalHeight;
         canvasCtx!.drawImage(image, 0, 0);
-        attributes.rr_dataURL = protectLateAttribute(
+        attributes.rr_dataURL = finalizeLateAttribute(
           'rr_dataURL',
           canvasService!.toDataURL(dataURLOptions.type, dataURLOptions.quality),
         );
@@ -811,7 +854,7 @@ function serializeElementNode(
       }
       if (image.crossOrigin === 'anonymous') {
         priorCrossOrigin
-          ? (attributes.crossOrigin = protectLateAttribute(
+          ? (attributes.crossOrigin = finalizeLateAttribute(
               'crossOrigin',
               priorCrossOrigin,
             ))
@@ -871,22 +914,13 @@ function serializeElementNode(
     delete attributes.src; // prevent auto loading
   }
 
-  // Apply runtime attribute controls to the final representation, after
-  // synthesized form/layout values. The portable policy remains the last
-  // authority inside protectSerializedAttribute.
-  for (const [name, value] of Object.entries(attributes)) {
-    if (typeof value === 'string' || value === null) {
-      attributes[name] = protectSerializedAttribute({
-        element: n,
-        name,
-        value,
-        privacy,
-        maskAllElementAttributes,
-        maskAttributeFn,
-        isGenerated: generatedAttributeNames.has(name),
-      });
-    }
-  }
+  finalizeAttributes(attributes, {
+    element: n,
+    privacy,
+    maskAllElementAttributes,
+    maskAttributeFn,
+    generatedAttributes: generatedAttributeNames,
+  });
   serializationComplete = true;
 
   let isCustomElement: true | undefined;
@@ -1043,7 +1077,18 @@ export function serializeNodeWithId(
     blockClass: string | RegExp;
     blockSelector: string | null;
     maskTextClass: string | RegExp;
-    maskTextSelector: string | null;
+    /** The pre-split pair from `splitMaskAllSelector`; a raw string is still accepted, coerced by `needMaskingText`. */
+    maskTextSelector: MaskTextSelector | string | null;
+    /** Resolved against *this* document by the unmask presence probe. */
+    unmaskTextSelector: string | null;
+    /**
+     * The same selector before the probe resolved it away. Carried so the two
+     * deferred re-serializations below (a nested iframe document, a late
+     * stylesheet) can re-probe against their own document: a target that
+     * exists only inside an iframe is absent from the parent and would
+     * otherwise be resolved to `null` for the whole tree.
+     */
+    unresolvedUnmaskTextSelector?: string | null;
     skipChild: boolean;
     inlineStylesheet: boolean;
     newlyAddedElement?: boolean;
@@ -1073,6 +1118,8 @@ export function serializeNodeWithId(
     stylesheetLoadTimeout?: number;
     cssCaptured?: boolean;
     privacy?: CompiledPrivacyPolicy;
+    /** `needMaskingText` results memoised for one `snapshot()` call; not passed to the two deferred re-serializations below. */
+    maskDecisionCache?: Map<Node, boolean>;
   },
 ): serializedNodeWithId | null {
   const {
@@ -1082,6 +1129,8 @@ export function serializeNodeWithId(
     blockSelector,
     maskTextClass,
     maskTextSelector,
+    unmaskTextSelector,
+    unresolvedUnmaskTextSelector = unmaskTextSelector,
     skipChild = false,
     inlineStylesheet = true,
     maskInputOptions = {},
@@ -1103,19 +1152,29 @@ export function serializeNodeWithId(
     newlyAddedElement = false,
     cssCaptured = false,
     privacy,
+    maskDecisionCache,
   } = options;
   let { needsMask } = options;
   let { preserveWhiteSpace = true } = options;
 
-  if (!needsMask) {
-    // perf: if needsMask = true, children won't also need to check
-    const checkAncestors = needsMask === undefined; // if false, we've already checked ancestors
-    needsMask = needMaskingText(
-      n as Element,
-      maskTextClass,
-      maskTextSelector,
-      checkAncestors,
-    );
+  if (!needsMask || unmaskTextSelector) {
+    const checkAncestors =
+      needsMask === undefined || Boolean(unmaskTextSelector);
+    const walkStart = isElement(n) ? n : dom.parentElement(n) || n;
+    const cached = maskDecisionCache?.get(walkStart);
+    if (cached !== undefined) {
+      needsMask = cached;
+    } else {
+      needsMask = needMaskingText(
+        n as Element,
+        maskTextClass,
+        maskTextSelector,
+        unmaskTextSelector,
+        checkAncestors,
+        needsMask === true,
+      );
+      maskDecisionCache?.set(walkStart, needsMask);
+    }
   }
 
   const _serializedNode = serializeNode(n, {
@@ -1201,6 +1260,8 @@ export function serializeNodeWithId(
       needsMask,
       maskTextClass,
       maskTextSelector,
+      unmaskTextSelector,
+      unresolvedUnmaskTextSelector,
       skipChild,
       inlineStylesheet,
       maskInputOptions,
@@ -1222,6 +1283,7 @@ export function serializeNodeWithId(
       keepIframeSrcFn,
       cssCaptured: false,
       privacy,
+      maskDecisionCache,
     };
 
     if (
@@ -1281,6 +1343,14 @@ export function serializeNodeWithId(
             needsMask,
             maskTextClass,
             maskTextSelector,
+            // The nested document runs its own presence probe: an unmask
+            // target may exist only in here, where the parent's resolved
+            // value (probed against the parent document) says `null`.
+            unmaskTextSelector: resolveUnmaskTextSelector(
+              iframeDoc,
+              unresolvedUnmaskTextSelector,
+            ),
+            unresolvedUnmaskTextSelector,
             skipChild: false,
             inlineStylesheet,
             maskInputOptions,
@@ -1337,6 +1407,13 @@ export function serializeNodeWithId(
             needsMask,
             maskTextClass,
             maskTextSelector,
+            // Deferred to stylesheet load, so re-probe: the document may have
+            // grown an unmask target since the original pass resolved.
+            unmaskTextSelector: resolveUnmaskTextSelector(
+              doc,
+              unresolvedUnmaskTextSelector,
+            ),
+            unresolvedUnmaskTextSelector,
             skipChild: false,
             inlineStylesheet,
             maskInputOptions,
@@ -1382,6 +1459,7 @@ function snapshot(
     blockSelector?: string | null;
     maskTextClass?: string | RegExp;
     maskTextSelector?: string | null;
+    unmaskTextSelector?: string | null;
     inlineStylesheet?: boolean;
     maskAllInputs?: boolean | MaskInputOptions;
     maskTextFn?: MaskTextFn;
@@ -1407,14 +1485,17 @@ function snapshot(
     stylesheetLoadTimeout?: number;
     keepIframeSrcFn?: KeepIframeSrcFn;
     privacyPolicy?: PrivacyPolicy;
+    /** @internal an already-compiled policy, merged with the selector options above; avoids re-compiling on every full snapshot. */
+    privacy?: CompiledPrivacyPolicy;
   },
 ): serializedNodeWithId | null {
   const {
     mirror = new Mirror(),
     blockClass = 'rr-block',
-    blockSelector: legacyBlockSelector = null,
+    blockSelector: manualBlockSelector = null,
     maskTextClass = 'rr-mask',
-    maskTextSelector = null,
+    maskTextSelector: manualMaskTextSelector = null,
+    unmaskTextSelector: manualUnmaskTextSelector = null,
     inlineStylesheet = true,
     inlineImages = false,
     recordCanvas = false,
@@ -1434,9 +1515,29 @@ function snapshot(
     stylesheetLoadTimeout,
     keepIframeSrcFn = () => false,
     privacyPolicy,
+    privacy: compiledPrivacy,
   } = options || {};
-  const privacy = compilePrivacyPolicy(privacyPolicy);
-  const blockSelector = mergeBlockSelectors(legacyBlockSelector, privacy);
+  const {
+    privacy,
+    blockSelector,
+    maskTextSelector,
+    unmaskTextSelector: mergedUnmaskTextSelector,
+  } = resolvePrivacyContext({
+    privacy: compiledPrivacy,
+    privacyPolicy,
+    blockSelector: manualBlockSelector,
+    maskTextSelector: manualMaskTextSelector,
+    unmaskTextSelector: manualUnmaskTextSelector,
+  });
+  // Resolved per document: the unresolved selector rides along beside it, so
+  // nested iframe documents re-probe for themselves rather than inheriting
+  // this document's "nothing matches" answer.
+  const unmaskTextSelector = resolveUnmaskTextSelector(
+    n,
+    mergedUnmaskTextSelector,
+  );
+  const splitMaskTextSelector = splitMaskAllSelector(maskTextSelector);
+  const maskDecisionCache = new Map<Node, boolean>();
   const maskInputOptions: MaskInputOptions =
     maskAllInputs === true
       ? {
@@ -1470,7 +1571,9 @@ function snapshot(
     blockClass,
     blockSelector,
     maskTextClass,
-    maskTextSelector,
+    maskTextSelector: splitMaskTextSelector,
+    unmaskTextSelector,
+    unresolvedUnmaskTextSelector: mergedUnmaskTextSelector,
     skipChild: false,
     inlineStylesheet,
     maskInputOptions,
@@ -1492,6 +1595,7 @@ function snapshot(
     keepIframeSrcFn,
     newlyAddedElement: false,
     privacy,
+    maskDecisionCache,
   });
 }
 

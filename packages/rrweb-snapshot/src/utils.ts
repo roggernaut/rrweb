@@ -11,6 +11,7 @@
  *   modules while keeping this module as a compatibility shim for external users
  */
 import type {
+  CompiledPrivacyPolicy,
   idNodeMap,
   MaskInputFn,
   MaskInputOptions,
@@ -28,6 +29,7 @@ import type {
   elementNode,
 } from '@rrweb/types';
 import dom from '@rrweb/utils';
+import { stars } from './privacy';
 
 export function isElement(n: Node): n is Element {
   return n.nodeType === n.ELEMENT_NODE;
@@ -259,6 +261,7 @@ export function createMirror(): Mirror {
   return new Mirror();
 }
 
+/** @deprecated use `maskInput`; this is a shim over it, so an always-protected input is now masked here too. */
 export function maskInputValue({
   element,
   maskInputOptions,
@@ -274,20 +277,15 @@ export function maskInputValue({
   value: string | null;
   maskInputFn?: MaskInputFn;
 }): string {
-  let text = value || '';
-  const actualType = type && toLowerCase(type);
-
-  if (
-    maskInputOptions[tagName.toLowerCase() as keyof MaskInputOptions] ||
-    (actualType && maskInputOptions[actualType as keyof MaskInputOptions])
-  ) {
-    if (maskInputFn) {
-      text = maskInputFn(text, element);
-    } else {
-      text = '*'.repeat(text.length);
-    }
-  }
-  return text;
+  return maskInput({
+    element,
+    maskInputOptions,
+    tagName,
+    type,
+    value: value || '',
+    maskInputFn,
+    privacy: undefined,
+  });
 }
 
 export function toLowerCase<T extends string>(str: T): Lowercase<T> {
@@ -368,6 +366,17 @@ export function isNodeMetaEqual(a: serializedNode, b: serializedNode): boolean {
  * where passwords should be masked.
  */
 export function getInputType(element: HTMLElement): Lowercase<string> | null {
+  try {
+    return readInputType(element);
+  } catch {
+    // A proxied or cross-realm element can throw on property access; the
+    // masking paths treat an unreadable type as protected (see `isProtectedInput`).
+    return null;
+  }
+}
+
+/** `getInputType` without the guard, for callers that fail closed on a throw. */
+function readInputType(element: HTMLElement): Lowercase<string> | null {
   // when omitting the type of input element(e.g. <input />), the type is treated as text
   const type = (element as HTMLInputElement).type;
 
@@ -377,6 +386,145 @@ export function getInputType(element: HTMLElement): Lowercase<string> | null {
     ? // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
       toLowerCase(type)
     : null;
+}
+
+const AUTOCOMPLETE_SEPARATOR = /\s+/;
+
+const PROTECTED_AUTOCOMPLETE = new Set([
+  'cc-csc',
+  'cc-exp',
+  'cc-exp-month',
+  'cc-exp-year',
+  'cc-name',
+  'cc-number',
+  'current-password',
+  'new-password',
+  'one-time-code',
+]);
+
+function hasProtectedAutocomplete(element: HTMLElement): boolean {
+  // The attribute first: the IDL getter exposes the *parsed* autofill value,
+  // which is '' (not nullish) when the token order is invalid, so reading it
+  // first would hide a `cc-number` the markup plainly declares.
+  const autocomplete =
+    element.getAttribute('autocomplete') ||
+    (element as HTMLInputElement).autocomplete;
+  if (!autocomplete || typeof autocomplete !== 'string') return false;
+  const lower = autocomplete.toLowerCase();
+  if (PROTECTED_AUTOCOMPLETE.has(lower)) return true;
+  if (!AUTOCOMPLETE_SEPARATOR.test(lower)) return false;
+  return lower
+    .split(AUTOCOMPLETE_SEPARATOR)
+    .some((token) => PROTECTED_AUTOCOMPLETE.has(token));
+}
+
+/** Inputs always masked regardless of `maskInputOptions` or privacy preset. */
+export function isProtectedInput(element: HTMLElement): boolean {
+  if (dom.untaintedTagName(element) !== 'INPUT') return false;
+  try {
+    const type = readInputType(element);
+    if (type === 'password' || type === 'hidden') {
+      return true;
+    }
+    return hasProtectedAutocomplete(element);
+  } catch {
+    // An element whose type or autocomplete cannot be read is protected.
+    return true;
+  }
+}
+
+/**
+ * `isProtectedInput` minus the `INPUT` tag requirement, for paths that decide
+ * whether an element's `value` is a credential rather than an ordinary
+ * attribute. A component library's `<ion-input type="password">` discloses a
+ * password through its own `type` property exactly as a native input does.
+ *
+ * Deliberately narrower than `isProtectedInput`: only `password` and the
+ * protected autocomplete tokens match. `hidden` is excluded, and so is every
+ * other `.type` string, so `<li type="disc">`, `<ol type="1">`, `<meter>` and
+ * `<progress>` are not swept in -- that over-masking is what keeping this
+ * `password`-specific avoids.
+ */
+export function isProtectedTypeLike(element: HTMLElement): boolean {
+  try {
+    if (readInputType(element) === 'password') return true;
+    return hasProtectedAutocomplete(element);
+  } catch {
+    return true;
+  }
+}
+
+export function maskInput({
+  element,
+  tagName,
+  type,
+  value,
+  maskInputOptions,
+  maskInputFn,
+  privacy,
+}: {
+  element: HTMLElement;
+  tagName: string;
+  type: string | null;
+  value: string;
+  maskInputOptions: MaskInputOptions;
+  maskInputFn?: MaskInputFn;
+  privacy: CompiledPrivacyPolicy | undefined;
+}): string {
+  if (isProtectedInput(element)) return stars(value);
+
+  const presetWantsMask = !!privacy && privacy.maskAllInputs;
+  if (
+    !presetWantsMask &&
+    !manualWantsInputMask(tagName, type, maskInputOptions)
+  )
+    return value;
+
+  if (!maskInputFn) return stars(value);
+  // A callback that throws or returns a non-string fails closed to the raw
+  // value's length, the same contract `finalizeAttribute` gives `maskAttributeFn`.
+  let masked: unknown;
+  try {
+    masked = maskInputFn(value, element);
+  } catch {
+    return stars(value);
+  }
+  if (typeof masked !== 'string') return stars(value);
+  return presetWantsMask ? stars(masked) : masked;
+}
+
+/** The predicate `maskInput` computes; also used where a value discloses a form value without passing through `maskInput` itself (e.g. `<option selected>`). */
+export function shouldMaskInput({
+  element,
+  tagName,
+  type,
+  maskInputOptions,
+  privacy,
+}: {
+  element: HTMLElement;
+  tagName: string;
+  type: string | null;
+  maskInputOptions: MaskInputOptions;
+  privacy: CompiledPrivacyPolicy | undefined;
+}): boolean {
+  return (
+    (!!privacy && privacy.maskAllInputs) ||
+    manualWantsInputMask(tagName, type, maskInputOptions) ||
+    isProtectedInput(element)
+  );
+}
+
+/** Whether the pre-v2 `maskInputOptions` bag opts this tag or input type in. */
+export function manualWantsInputMask(
+  tagName: string,
+  type: string | null,
+  maskInputOptions: MaskInputOptions,
+): boolean {
+  const actualType = type && toLowerCase(type);
+  return Boolean(
+    maskInputOptions[tagName.toLowerCase() as keyof MaskInputOptions] ||
+      (actualType && maskInputOptions[actualType as keyof MaskInputOptions]),
+  );
 }
 
 /**

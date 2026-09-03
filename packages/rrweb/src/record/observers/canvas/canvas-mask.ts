@@ -7,10 +7,7 @@ export type FrameMaskResult =
   | typeof SKIP_FRAME
   | undefined;
 
-/**
- * Compute and scale application-provided regions before any canvas pixels
- * cross into the encoding worker. Any ambiguous result fails closed.
- */
+/** Computes and scales application-provided regions before any canvas pixels cross into the encoding worker. */
 export function computeFrameMaskRegions(
   masking: CanvasMasking | undefined,
   canvas: HTMLCanvasElement,
@@ -39,7 +36,6 @@ export function computeFrameMaskRegions(
   return regions
     .filter((region) => region.width > 0 && region.height > 0)
     .map((region) => {
-      // Round outward so fractional scaling never leaves a sliver exposed.
       const left = Math.floor(region.x * scaleX);
       const top = Math.floor(region.y * scaleY);
       return {
@@ -49,6 +45,59 @@ export function computeFrameMaskRegions(
         height: Math.ceil((region.y + region.height) * scaleY) - top,
       };
     });
+}
+
+/**
+ * The content box in layout CSS pixels. `clientWidth`/`clientHeight` are used
+ * rather than `getBoundingClientRect()`: the rect is post-transform, so a
+ * canvas under `transform: scale(k)` would scale regions by 1/k and leave part
+ * of the secret visible. Client dimensions are the padding box, so only the
+ * padding is subtracted.
+ */
+export function getCanvasContentBoxSize(
+  canvas: HTMLCanvasElement,
+): { width: number; height: number } | null {
+  let rect: { width: number; height: number };
+  try {
+    rect = { width: canvas.clientWidth, height: canvas.clientHeight };
+  } catch {
+    return null;
+  }
+  if (!rect || !Number.isFinite(rect.width) || !Number.isFinite(rect.height))
+    return null;
+
+  let style: CSSStyleDeclaration;
+  try {
+    style = getComputedStyle(canvas);
+  } catch {
+    return null;
+  }
+  if (!style) return null;
+
+  const px = (value: string): number => {
+    const parsed = parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  const width = rect.width - px(style.paddingLeft) - px(style.paddingRight);
+  const height = rect.height - px(style.paddingTop) - px(style.paddingBottom);
+
+  if (!(width > 0) || !(height > 0)) return null;
+
+  return { width, height };
+}
+
+export function resolveFrameDisplaySize(
+  masking: CanvasMasking | undefined,
+  canvas: HTMLCanvasElement,
+): { width: number; height: number } | typeof SKIP_FRAME {
+  if (!isCanvasMaskingConfigured(masking)) {
+    return {
+      width: canvas.clientWidth || canvas.width,
+      height: canvas.clientHeight || canvas.height,
+    };
+  }
+  return getCanvasContentBoxSize(canvas) ?? SKIP_FRAME;
 }
 
 export function isCanvasMaskingConfigured(
@@ -75,4 +124,24 @@ function isValidRegion(region: unknown): region is CanvasMaskRegion {
     width >= 0 &&
     height >= 0
   );
+}
+
+/**
+ * A canvas masking provider, merely by being supplied, forces numeric FPS
+ * sampling: only that capture path can redact pixels. The decision keys on
+ * presence, not on `isConfigured()`, because the capture mode is fixed at
+ * `record()` while `isConfigured()` is re-read every frame; a provider that
+ * answered false at setup and true later would otherwise leave the
+ * mutation-mode command stream running with no masking path at all.
+ */
+export function resolveCanvasSampling(
+  requestedSampling: number | 'all' | undefined,
+  canvasMasking: CanvasMasking | undefined,
+): number | 'all' | undefined {
+  if (!canvasMasking) return requestedSampling;
+  if (typeof requestedSampling === 'number') return requestedSampling;
+  console.warn(
+    '[rrweb] canvasMasking requires FPS canvas capture; forcing sampling.canvas = 4',
+  );
+  return 4;
 }

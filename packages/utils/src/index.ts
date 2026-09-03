@@ -247,6 +247,15 @@ export function querySelectorAll(
   return getUntaintedAccessor('Element', n, 'querySelectorAll')(selectors);
 }
 
+/** Reads `tagName` through the untainted accessor, defeating shadowing by a same-named form control (e.g. `<form><input name="tagName">`). */
+export function untaintedTagName(element: Element | null | undefined): string {
+  if (!element) return '';
+  const tagName: unknown = element.tagName;
+  if (typeof tagName === 'string') return tagName.toUpperCase();
+  if (!(element instanceof Element)) return '';
+  return getUntaintedAccessor('Element', element, 'tagName').toUpperCase();
+}
+
 export function mutationObserverCtor(): [
   (typeof MutationObserver)['prototype']['constructor'],
   () => void,
@@ -325,6 +334,7 @@ export default {
   shadowRoot,
   querySelector,
   querySelectorAll,
+  untaintedTagName,
   nowTimestamp,
   mutationObserverCtor,
   patch,

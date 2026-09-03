@@ -18,7 +18,11 @@ import initCanvasContextObserver from './canvas';
 import initCanvasWebGLMutationObserver from './webgl';
 import ImageBitmapDataURLWorker from '../../workers/image-bitmap-data-url-worker?worker&inline';
 import type { ImageBitmapDataURLRequestWorker } from '../../workers/image-bitmap-data-url-worker';
-import { computeFrameMaskRegions, SKIP_FRAME } from './canvas-mask';
+import {
+  computeFrameMaskRegions,
+  resolveFrameDisplaySize,
+  SKIP_FRAME,
+} from './canvas-mask';
 
 export type RafStamps = { latestId: number; invokeId: number | null };
 
@@ -38,10 +42,23 @@ export class CanvasManager {
   private locked = false;
   private resetFrameDedup?: () => void;
 
+  /** Shadow roots FPS canvas discovery searches directly, kept in sync by the shadow-DOM manager. */
+  private trackedShadowRoots = new Set<ShadowRoot>();
+
   public reset() {
     this.pendingCanvasMutations.clear();
     this.resetObservers && this.resetObservers();
     this.resetFrameDedup = undefined;
+  }
+
+  /** Called by the shadow-DOM manager when it starts observing a shadow root. */
+  public addShadowRoot(shadowRoot: ShadowRoot) {
+    this.trackedShadowRoots.add(shadowRoot);
+  }
+
+  /** Called by the shadow-DOM manager when it stops observing a shadow root. */
+  public removeShadowRoot(shadowRoot: ShadowRoot) {
+    this.trackedShadowRoots.delete(shadowRoot);
   }
 
   /** Start a new canvas frame epoch after a DOM full snapshot. */
@@ -190,21 +207,19 @@ export class CanvasManager {
     let lastSnapshotTime = 0;
     const getCanvas = (): HTMLCanvasElement[] => {
       const matchedCanvas: HTMLCanvasElement[] = [];
-      const search = (root: ParentNode) => {
+      const collect = (root: ParentNode) => {
         try {
           root.querySelectorAll('canvas').forEach((canvas) => {
             if (!isBlocked(canvas, blockClass, blockSelector, true)) {
               matchedCanvas.push(canvas);
             }
           });
-          root.querySelectorAll('*').forEach((element) => {
-            if (element.shadowRoot) search(element.shadowRoot);
-          });
         } catch {
           // A broken custom DOM implementation must not cancel future frames.
         }
       };
-      search(win.document);
+      collect(win.document);
+      this.trackedShadowRoots.forEach((root) => collect(root));
       return matchedCanvas;
     };
 
@@ -257,15 +272,21 @@ export class CanvasManager {
                 context.clear(context.COLOR_BUFFER_BIT);
               }
             }
-            const displayWidth = canvas.clientWidth || canvas.width;
-            const displayHeight = canvas.clientHeight || canvas.height;
+            const displaySize = resolveFrameDisplaySize(
+              options.canvasMasking,
+              canvas,
+            );
+            if (displaySize === SKIP_FRAME) {
+              snapshotInProgressMap.set(id, false);
+              return;
+            }
             const maskRegions = computeFrameMaskRegions(
               options.canvasMasking,
               canvas,
               canvas.width,
               canvas.height,
-              displayWidth,
-              displayHeight,
+              displaySize.width,
+              displaySize.height,
             );
             if (maskRegions === SKIP_FRAME) {
               snapshotInProgressMap.set(id, false);

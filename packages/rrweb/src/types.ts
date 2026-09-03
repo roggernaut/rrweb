@@ -55,6 +55,8 @@ export type recordOptions<T> = {
   ignoreSelector?: string;
   maskTextClass?: maskTextClass;
   maskTextSelector?: string;
+  /** A CSS selector whose matched elements are never text- or attribute-masked; merged with any `privacyPolicy` unmask/allow selectors. Input values are unaffected -- `maskInput` never reads it. */
+  unmaskTextSelector?: string | null;
   maskAllInputs?: boolean;
   maskInputOptions?: MaskInputOptions;
   maskInputFn?: MaskInputFn;
@@ -65,7 +67,7 @@ export type recordOptions<T> = {
   maskAttributeFn?: MaskAttributeFn;
   /**
    * Opt-in, versioned privacy policy. Existing masking options continue to
-   * provide the legacy baseline and are compiled alongside this policy.
+   * provide the manual baseline and are compiled alongside this policy.
    */
   privacyPolicy?: PrivacyPolicy;
   slimDOMOptions?: SlimDOMOptions | 'all' | true;

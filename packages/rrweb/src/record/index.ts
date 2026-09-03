@@ -4,8 +4,9 @@ import {
   type MaskInputOptions,
   createMirror,
   compilePrivacyPolicy,
-  mergeBlockSelectors,
-  sanitizeUrl,
+  type CompiledPrivacyPolicy,
+  resolvePrivacyContext,
+  sanitizeMetaUrl,
 } from 'rrweb-snapshot';
 import { initObservers, mutationBuffers } from './observer';
 import {
@@ -30,12 +31,16 @@ import {
   type scrollCallback,
   type canvasMutationParam,
   type adoptedStyleSheetParam,
+  type SamplingStrategy,
 } from '@rrweb/types';
 import type { CrossOriginIframeMessageEventContent } from '../types';
 import { IframeManager } from './iframe-manager';
 import { ShadowDomManager } from './shadow-dom-manager';
 import { CanvasManager } from './observers/canvas/canvas-manager';
-import { isCanvasMaskingConfigured } from './observers/canvas/canvas-mask';
+import {
+  isCanvasMaskingConfigured,
+  resolveCanvasSampling,
+} from './observers/canvas/canvas-mask';
 import { StylesheetManager } from './stylesheet-manager';
 import ProcessedNodeManager from './processed-node-manager';
 import {
@@ -50,6 +55,8 @@ let wrappedEmit!: (e: eventWithoutTime, isCheckout?: boolean) => void;
 let takeFullSnapshot!: (isCheckout?: boolean) => void;
 let canvasManager!: CanvasManager;
 let recording = false;
+
+let warnedStrictDisablesCanvas = false;
 
 // Multiple tools (i.e. MooTools, Prototype.js) override Array.from and drop support for the 2nd parameter
 // Try to pull a clean implementation from a newly created iframe
@@ -74,11 +81,12 @@ function record<T = eventWithTime>(
     checkoutEveryNms,
     checkoutEveryNth,
     blockClass = 'rr-block',
-    blockSelector: legacyBlockSelector = null,
+    blockSelector: manualBlockSelector = null,
     ignoreClass = 'rr-ignore',
     ignoreSelector = null,
     maskTextClass = 'rr-mask',
-    maskTextSelector = null,
+    maskTextSelector: manualMaskTextSelector = null,
+    unmaskTextSelector: manualUnmaskTextSelector = null,
     inlineStylesheet = true,
     maskAllInputs,
     maskInputOptions: _maskInputOptions,
@@ -89,7 +97,7 @@ function record<T = eventWithTime>(
     maskAttributeFn,
     hooks,
     packFn,
-    sampling = {},
+    sampling: requestedSampling = {},
     dataURLOptions = {},
     canvasMasking,
     mousemoveWait,
@@ -116,16 +124,46 @@ function record<T = eventWithTime>(
         : policy,
     privacyPolicy,
   );
-  const privacy = compilePrivacyPolicy(portablePrivacyPolicy);
-  const blockSelector = mergeBlockSelectors(legacyBlockSelector, privacy);
-  // Strict remains fail-closed for the whole canvas. Region providers are
-  // available to balanced/custom/legacy policies, where the application owns
-  // the completeness of those regions.
-  const recordCanvas =
-    requestedRecordCanvas && privacy?.policy.preset !== 'strict';
+  let compiledPrivacy: CompiledPrivacyPolicy;
+  try {
+    compiledPrivacy = compilePrivacyPolicy(portablePrivacyPolicy);
+  } catch (error) {
+    if (portablePrivacyPolicy !== privacyPolicy) {
+      console.error(
+        '[rrweb] plugin-transformed privacy policy failed to compile; using the user policy',
+        error,
+      );
+      compiledPrivacy = compilePrivacyPolicy(privacyPolicy);
+    } else {
+      throw error;
+    }
+  }
+  const { privacy, blockSelector, maskTextSelector } = resolvePrivacyContext({
+    privacy: compiledPrivacy,
+    blockSelector: manualBlockSelector,
+    maskTextSelector: manualMaskTextSelector,
+    unmaskTextSelector: manualUnmaskTextSelector,
+  });
+  // Strict stays fail-closed for the whole canvas; region providers apply
+  // only to balanced/minimal, where the application owns region completeness.
+  const recordCanvas = requestedRecordCanvas && !privacy.blockMedia;
+  if (
+    requestedRecordCanvas &&
+    privacy.blockMedia &&
+    !warnedStrictDisablesCanvas
+  ) {
+    warnedStrictDisablesCanvas = true;
+    console.warn(
+      "privacyPolicy preset 'strict' disables canvas recording; recordCanvas ignored",
+    );
+  }
   const canvasMaskingConfigured = canvasMasking
     ? () => isCanvasMaskingConfigured(canvasMasking)
     : undefined;
+  const sampling: SamplingStrategy = {
+    ...requestedSampling,
+    canvas: resolveCanvasSampling(requestedSampling.canvas, canvasMasking),
+  };
 
   registerErrorHandler(errorHandler);
 
@@ -298,7 +336,6 @@ function record<T = eventWithTime>(
   const stylesheetManager = new StylesheetManager({
     mutationCb: wrappedMutationEmit,
     adoptedStyleSheetCb: wrappedAdoptedStyleSheetEmit,
-    privacy,
   });
 
   const iframeManager = new IframeManager({
@@ -374,7 +411,12 @@ function record<T = eventWithTime>(
       {
         type: EventType.Meta,
         data: {
-          href: sanitizeUrl(window.location.href, privacy),
+          // Meta's `href` is a required string; '' is the inert fallback for
+          // an unparseable URL, which `sanitizeMetaUrl` otherwise drops
+          // (null). `sanitizeMetaUrl` masks only blocked-list params, even
+          // under `strict` -- see its doc comment for why the Meta event's
+          // own URL is scoped differently than a DOM URL attribute.
+          href: sanitizeMetaUrl(window.location.href, privacy) ?? '',
           width: getWindowWidth(),
           height: getWindowHeight(),
         },
@@ -405,7 +447,7 @@ function record<T = eventWithTime>(
       recordCanvas,
       canvasMaskingConfigured,
       inlineImages,
-      privacyPolicy: portablePrivacyPolicy,
+      privacy,
       onSerialize: (n) => {
         if (isSerializedIframe(n, mirror)) {
           iframeManager.addIframe(n as HTMLIFrameElement);

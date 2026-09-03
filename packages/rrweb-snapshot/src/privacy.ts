@@ -1,52 +1,224 @@
 import type {
+  CompiledDetector,
   CompiledPrivacyPolicy,
-  PrivacyAction,
+  MaskAttributeFn,
+  MaskTextFn,
   PrivacyDetectorOptions,
   PrivacyPolicy,
-  SensitiveDataKind,
-  MaskAttributeFn,
+  VendorCompatId,
 } from './types';
-import dom from '@rrweb/utils';
+import { parentElement, untaintedTagName } from '@rrweb/utils';
 
-const ACTION_PRIORITY: Record<PrivacyAction, number> = {
-  allow: 0,
-  mask: 1,
-  exclude: 2,
+const NATIVE_MASK_CLASSES = '.rr-mask';
+const NATIVE_UNMASK_CLASSES = '.rr-unmask';
+const NATIVE_BLOCK_CLASSES = '.rr-block';
+
+// Other tools' conventions, merged only under `vendorCompat` — `true` for
+// every vendor here, or an array naming just the vendors to honor. Every
+// token was verified against the vendor's official docs or open-source SDK;
+// the source for each is in guide.md's "Vendor class recognition" table.
+// The mapping rule: each token maps to the closest treatment our verbs
+// express (mask, block, ignoreEvents), never a less protective one.
+// `ignoreEvents` tokens suppress input events from the annotated element
+// only, exactly as the vendor's own recorder does — they never imply
+// masking, unlike `data-privacy="ignore"`, which is mask plus silence. No
+// vendor's unmask/allow token is ever merged, under any form of the
+// setting: `vendorCompat` may only reduce what is recorded, never reveal,
+// and `.rr-unmask` stays native-only.
+/** @internal exported for the registry invariant tests; not part of the privacy API. */
+export const VENDOR_COMPAT: Record<
+  VendorCompatId,
+  { mask: string[]; block: string[]; ignoreEvents?: string[] }
+> = {
+  mixpanel: { mask: ['.mp-mask'], block: ['.mp-block'] },
+  fullstory: {
+    // the -without-consent variants are masked until their consent API reveals
+    mask: ['.fs-mask', '.fs-mask-without-consent'],
+    block: ['.fs-exclude', '.fs-exclude-without-consent'],
+  },
+  amplitude: { mask: ['.amp-mask'], block: ['.amp-block'] },
+  posthog: {
+    // posthog-js lazy-loaded-session-recorder.ts: ph-mask -> maskTextClass,
+    // ph-no-capture -> blockClass, ph-ignore-input -> ignoreClass
+    mask: ['.ph-mask'],
+    block: ['.ph-no-capture'],
+    ignoreEvents: ['.ph-ignore-input'],
+  },
+  sentry: {
+    // sentry-javascript replay-internal/src/util/getPrivacyOptions.ts
+    mask: ['.sentry-mask', '[data-sentry-mask]'],
+    block: ['.sentry-block', '[data-sentry-block]'],
+    ignoreEvents: ['.sentry-ignore', '[data-sentry-ignore]'],
+  },
+  datadog: {
+    // browser-sdk browser-rum-core/src/domain/privacy.ts: mask-user-input
+    // masks form values (and form-element text such as <option> labels)
+    // only there; mapped to text mask here because form values are already
+    // masked globally wherever compat applies (`maskAllInputs`), and
+    // dropping the token would record the form-element text it protects
+    mask: [
+      '.dd-privacy-mask',
+      '[data-dd-privacy="mask"]',
+      '.dd-privacy-mask-user-input',
+      '[data-dd-privacy="mask-user-input"]',
+    ],
+    block: ['.dd-privacy-hidden', '[data-dd-privacy="hidden"]'],
+  },
+  newrelic: {
+    // newrelic-browser-agent src/common/config/init.js: nr-mask/[data-nr-mask]
+    // -> maskText, nr-block/[data-nr-block] -> block, nr-ignore -> ignoreClass
+    // (class only; no attribute form ships)
+    mask: ['.nr-mask', '[data-nr-mask]'],
+    block: ['.nr-block', '[data-nr-block]'],
+    ignoreEvents: ['.nr-ignore'],
+  },
+  // Highlight / LaunchDarkly: highlight-run client/index.tsx passes
+  // blockClass 'highlight-block' and ignoreClass 'highlight-ignore' to its
+  // rrweb fork, whose default maskTextClass is 'highlight-mask'
+  highlight: {
+    mask: ['.highlight-mask'],
+    block: ['.highlight-block'],
+    ignoreEvents: ['.highlight-ignore'],
+  },
+  // [data-private] blocks under any value: placeholder, delete, lipsum
+  logrocket: { mask: [], block: ['[data-private]', '._lr-hide'] },
+  // Text is masked in place there, but images/videos are placeholdered too
+  // (help.hotjar.com "How to Suppress Text, Images, Videos and User Input");
+  // our mask verb leaves image sources readable, so block stands. The class
+  // form is also documented.
+  hotjar: { mask: [], block: ['[data-hj-suppress]', '.data-hj-suppress'] },
+  // Microsoft Clarity
+  clarity: { mask: ['[data-clarity-mask]'], block: [] },
+  smartlook: {
+    // the data-recording-* legacy attributes survive only in archived docs
+    // (smartlook.github.io "Sensitive data protection", via web.archive.org):
+    // data-recording-sensitive masked text AND ignored input values/events
+    // there, so it joins ignoreEvents alongside mask
+    mask: ['[data-sl="mask"]', '[data-recording-sensitive]'],
+    block: ['[data-sl="exclude"]', '[data-recording-disable]'],
+    ignoreEvents: ['[data-recording-sensitive]'],
+  },
+  openreplay: {
+    // -masked/-htmlmasked are deprecated aliases, still honored
+    mask: ['[data-openreplay-obscured]', '[data-openreplay-masked]'],
+    block: ['[data-openreplay-hidden]', '[data-openreplay-htmlmasked]'],
+  },
+  contentsquare: {
+    // encrypted capture there, masked here; blocked content is removed there
+    mask: ['[data-cs-encrypt]'],
+    block: ['[data-cs-mask]'],
+  },
+  heap: {
+    // help.heap.io "What privacy settings does Session replay inherit":
+    // both redact attributes redact the entire element in replay, so block.
+    // [heap-ignore] suppresses autocapture events only and is absent from
+    // the replay-inheritance list, so events-only. Tokens are attributes:
+    // the SDK selects `[heap-ignore]`, not a class.
+    mask: [],
+    block: ['[data-heap-redact-text]', '[data-heap-redact-attributes]'],
+    ignoreEvents: ['[heap-ignore]'],
+  },
+  mouseflow: {
+    // help.mouseflow.com "Excluding, masking and replacing content via
+    // code": mf-masked is "not recorded at all" and data-mf-replace swaps
+    // the subtree for its placeholder value, so both block; only
+    // data-mf-replace-inner keeps the structure (inner text replaced)
+    mask: ['[data-mf-replace-inner]'],
+    block: ['.mf-excluded', '.mf-masked', '[data-mf-replace]'],
+  },
+  // text scrambled, images blanked; .losensitive is an alias
+  luckyorange: { mask: [], block: ['.lo-sensitive', '.losensitive'] },
+  inspectlet: {
+    mask: ['.inspectlet-sensitive', '.inspectletIgnore'],
+    block: [],
+  },
+  dynatrace: { mask: ['[data-dtrum-mask]'], block: [] },
+  userback: {
+    // support.userback.io "Session replay": userback-block ignores the
+    // element and its children entirely; userback-ignore keeps the element
+    // rendered and ignores its user input, so events-only
+    mask: [],
+    block: ['.userback-block'],
+    ignoreEvents: ['.userback-ignore'],
+  },
+  zipy: { mask: [], block: ['.zipy-block'] },
+  quantummetric: {
+    // observed-only: docs are login-gated, tokens read from the shipped
+    // engine. Encrypted capture there, masked here; qm-block is a
+    // customer-config convention, qm-freeze-exclude the DOM-capture exclude
+    mask: ['[data-qm-encrypt]'],
+    block: ['[data-qm-block]', '[data-qm-freeze-exclude]'],
+  },
+  // observed-only: read from the shipped SDK; the official docs are
+  // customer-gated with no public or archived copy to verify against
+  glassbox: { mask: ['.cls_mask'], block: [] },
+  sessionstack: { mask: ['.sessionstack-sensitive'], block: [] },
+  sessionrewind: {
+    // sessionrewind.notion.site "Privacy settings": the documented verb is
+    // "exclude"/"redact" for arbitrary elements, replay rendering
+    // unspecified — so the stricter verb
+    mask: [],
+    block: ['[data-sr-redact]'],
+  },
 };
 
-const DATA_PRIVACY_RULES: CompiledPrivacyPolicy['rules'] = [
-  {
-    action: 'allow',
-    selector: '[data-privacy="allow"]',
-  },
-  {
-    action: 'mask',
-    selector: '[data-privacy="mask"]',
-  },
-  {
-    action: 'exclude',
-    selector: '[data-privacy="exclude"]',
-  },
-];
+const VENDOR_IDS = Object.keys(VENDOR_COMPAT) as VendorCompatId[];
 
-const PRIVACY_PRESETS = new Set(['strict', 'balanced', 'custom', 'legacy']);
-const MASK_STYLES = new Set([
-  'replacement',
-  'solid',
-  'blur',
-  'pixelate',
-  'shuffle',
+/** The vendors a `vendorCompat` setting names; an unknown id is dropped with a warning, mirroring invalid-selector handling. */
+function resolveVendorCompat(
+  vendorCompat: PrivacyPolicy['vendorCompat'],
+): VendorCompatId[] {
+  if (vendorCompat === true) return VENDOR_IDS;
+  if (!Array.isArray(vendorCompat)) return [];
+  const known: VendorCompatId[] = [];
+  const unknown: string[] = [];
+  for (const id of vendorCompat) {
+    if (Object.prototype.hasOwnProperty.call(VENDOR_COMPAT, id)) {
+      known.push(id);
+    } else {
+      unknown.push(String(id));
+    }
+  }
+  if (unknown.length)
+    console.warn(
+      `[rrweb privacy] dropping unknown vendorCompat id: ${unknown.join(', ')}`,
+    );
+  return known;
+}
+
+function vendorCompatSelector(
+  vendors: VendorCompatId[],
+  action: 'mask' | 'block' | 'ignoreEvents',
+): string | null {
+  const tokens: string[] = [];
+  for (const id of vendors) tokens.push(...(VENDOR_COMPAT[id][action] ?? []));
+  return tokens.join(',') || null;
+}
+
+// `data-privacy` fails closed: the mask token is the bare attribute minus the
+// two values that mean something else, so an unrecognized value masks.
+const DATA_PRIVACY = '[data-privacy]';
+const DATA_PRIVACY_MASK =
+  '[data-privacy]:not([data-privacy="unmask"]):not([data-privacy="block"])';
+const DATA_PRIVACY_UNMASK = '[data-privacy="unmask"]';
+const DATA_PRIVACY_BLOCK = '[data-privacy="block"]';
+const DATA_PRIVACY_IGNORE = '[data-privacy="ignore"]';
+
+const PRIVACY_PRESETS = new Set(['strict', 'balanced', 'minimal']);
+const MASKED_ATTRIBUTE_DEFAULTS = ['title', 'placeholder', 'aria-label'];
+
+const CSS_ATTRIBUTES = new Set(['style', '_csstext']);
+
+const RENDERING_METADATA_ATTRIBUTES = new Set([
+  'rr_width',
+  'rr_height',
+  'rr_scrollleft',
+  'rr_scrolltop',
+  'rr_mediastate',
+  'rr_open_mode',
 ]);
 
-const SENSITIVE_ATTRIBUTES = new Set([
-  'alt',
-  'aria-description',
-  'aria-label',
-  'placeholder',
-  'style',
-  'title',
-  '_csstext',
-]);
+const OPERATIONAL_ATTRIBUTES = new Set(['data-privacy', 'data-rr-is-password']);
 
 const URL_ATTRIBUTES = new Set([
   'action',
@@ -55,66 +227,43 @@ const URL_ATTRIBUTES = new Set([
   'formaction',
   'href',
   'poster',
+  'rr_src',
   'src',
   'xlink:href',
 ]);
 
+/** Attributes that point at media bytes; dropped entirely under `strict`. */
 const MEDIA_SOURCE_ATTRIBUTES = new Set([
   'background',
   'data',
   'poster',
+  'rr_src',
   'src',
   'srcset',
 ]);
 
-export const DEFAULT_PRIVACY_DETECTORS: Required<
-  Omit<PrivacyDetectorOptions, 'custom'>
-> = {
-  email: true,
-  phone: true,
-  paymentCard: true,
-  ssn: true,
-  ipAddress: true,
-};
+const MEDIA_TAGS = new Set([
+  'AUDIO',
+  'EMBED',
+  'IFRAME',
+  'IMG',
+  'OBJECT',
+  'SOURCE',
+  'VIDEO',
+]);
 
-/**
- * Opt into Highlight-style heuristic PII detectors (email, phone, Luhn card,
- * SSN-like, IPv4). These are not implied by `balanced` or `strict`; load them
- * through this helper or `@rrweb/rrweb-plugin-privacy-detectors`.
- */
-export function applyPrivacyDetectors(
-  policy: PrivacyPolicy | undefined,
-  options?: Partial<typeof DEFAULT_PRIVACY_DETECTORS>,
-): PrivacyPolicy {
-  const base: PrivacyPolicy = policy || { version: 1, preset: 'balanced' };
-  return {
-    ...base,
-    detectors: {
-      ...DEFAULT_PRIVACY_DETECTORS,
-      ...options,
-      ...base.detectors,
-    },
-  };
-}
+const MEDIA_PLACEHOLDER_ATTRIBUTES = new Map([
+  ['IMG', new Set(['src', 'srcset', 'poster'])],
+  ['VIDEO', new Set(['poster'])],
+]);
 
-const DETECTOR_SCAN_CHUNK_SIZE = 8_192;
-const CUSTOM_DETECTOR_SCAN_CHUNK_SIZE = 512;
-const MAX_DETECTOR_MATCHES = 1_000;
-const MAX_CUSTOM_PATTERN_LENGTH = 256;
-const MAX_CUSTOM_MATCH_LENGTH = 1_024;
-const MAX_CUSTOM_QUANTIFIERS = 12;
-const DEFAULT_CUSTOM_MATCH_LENGTH = 256;
+const PLAIN_PIXEL_DIMENSION = /^\d{1,5}$/;
 
-const PROTECTED_AUTOCOMPLETE = new Set([
-  'cc-csc',
-  'cc-exp',
-  'cc-exp-month',
-  'cc-exp-year',
-  'cc-name',
-  'cc-number',
-  'current-password',
-  'new-password',
-  'one-time-code',
+export const FORM_VALUE_TAGS = new Set([
+  'INPUT',
+  'OPTION',
+  'SELECT',
+  'TEXTAREA',
 ]);
 
 const DEFAULT_BLOCKED_QUERY_PARAMETERS = [
@@ -128,523 +277,452 @@ const DEFAULT_BLOCKED_QUERY_PARAMETERS = [
   'token',
 ];
 
-const FORM_VALUE_TAGS = new Set(['INPUT', 'OPTION', 'SELECT', 'TEXTAREA']);
+const CARD_CANDIDATE = /(?:^|[^0-9-])((?:\d[ -]?){12,18}\d)(?:$|[^0-9-])/;
+const SSN_PATTERN = /\b(?!000|666|9\d{2})\d{3}-?(?!00)\d{2}-?(?!0000)\d{4}\b/;
+const EMAIL_PATTERN =
+  /[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[a-zA-Z0-9-]{1,63}(?:\.[a-zA-Z0-9-]{1,63})+/;
+const PHONE_PATTERN = /(?:^|\s)\+?\d{0,3}[\s.-]?\(?\d[\d ().-]{5,13}\d(?:$|\s)/;
+const IPV4_PATTERN = /\b(?:\d{1,3}\.){3}\d{1,3}\b/;
+const MAX_SCAN_LENGTH = 10_000;
 
-const MEDIA_TAGS = new Set([
-  'AUDIO',
-  'EMBED',
-  'IFRAME',
-  'IMG',
-  'OBJECT',
-  'SOURCE',
-  'VIDEO',
-]);
-
-const SAFE_GENERATED_ATTRIBUTES = new Set([
-  'rr_width',
-  'rr_height',
-  'rr_left',
-  'rr_top',
-  'rr_position',
-  'rr_transform',
-  'rr_display',
-  'rr_scrollleft',
-  'rr_scrolltop',
-  'rr_mediastate',
-  'rr_open_mode',
-]);
-
-export type SensitiveMatch = {
-  start: number;
-  end: number;
-  kind: SensitiveDataKind;
-  detector: string;
+export const DEFAULT_PRIVACY_DETECTORS: Required<PrivacyDetectorOptions> = {
+  email: true,
+  phone: true,
+  paymentCard: true,
+  ssn: true,
+  ipAddress: true,
 };
 
-export function compilePrivacyPolicy(
+/** Opts into heuristic PII text detectors; see guide.md "Heuristic PII detectors". */
+export function applyPrivacyDetectors(
   policy: PrivacyPolicy | undefined,
-): CompiledPrivacyPolicy {
-  const effectivePolicy: PrivacyPolicy = policy || {
-    version: 1,
-    preset: 'legacy',
+  options?: PrivacyDetectorOptions,
+): PrivacyPolicy {
+  const base: PrivacyPolicy = policy || { version: 1, preset: 'minimal' };
+  return {
+    ...base,
+    detectors: {
+      ...DEFAULT_PRIVACY_DETECTORS,
+      ...options,
+      ...base.detectors,
+    },
   };
-  if (effectivePolicy.version !== 1) {
-    throw new Error(
-      `Unsupported Privacy at Capture policy version: ${String(
-        effectivePolicy.version,
-      )}`,
-    );
-  }
-  if (!PRIVACY_PRESETS.has(effectivePolicy.preset)) {
-    throw new Error(
-      `Unsupported privacy preset: ${String(effectivePolicy.preset)}`,
-    );
-  }
+}
 
-  const policyRules = (effectivePolicy.rules || []).map((rule) => {
-    if (!rule.target || rule.target.type !== 'selector') {
-      throw new Error(
-        `Unsupported privacy target type: ${String(rule.target?.type)}`,
-      );
-    }
-    if (!rule.target.selector)
-      throw new Error('Privacy rule selector cannot be empty');
-    if (!(rule.action in ACTION_PRIORITY)) {
-      throw new Error(`Unsupported privacy action: ${String(rule.action)}`);
-    }
-    if (rule.style && !MASK_STYLES.has(rule.style)) {
-      throw new Error(`Unsupported privacy mask style: ${String(rule.style)}`);
-    }
-    return {
-      action: rule.action,
-      style: rule.style,
-      classification: rule.classification,
-      selector: rule.target.selector,
-      attributes: rule.target.attributes
-        ? new Set(
-            rule.target.attributes.map((attribute) => attribute.toLowerCase()),
-          )
-        : undefined,
-    };
-  });
-  const rules = [...DATA_PRIVACY_RULES, ...policyRules];
-
-  const detectorOptions = {
-    ...effectivePolicy.detectors,
-  };
-  const detectors: CompiledPrivacyPolicy['detectors'] = [];
-
-  if (detectorOptions.email) {
-    detectors.push({
-      name: 'email',
-      regex:
-        /[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[a-zA-Z0-9-]{1,63}(?:\.[a-zA-Z0-9-]{1,63})+/g,
-      classification: 'contact',
-      minimumLength: 6,
-      maximumMatchLength: 320,
-      scanChunkSize: DETECTOR_SCAN_CHUNK_SIZE,
-      validate: (candidate) => candidate.length <= 254,
-    });
-  }
-  if (detectorOptions.phone) {
+export function buildDetectors(
+  options: PrivacyDetectorOptions | undefined,
+): CompiledDetector[] {
+  const opts = options || {};
+  const detectors: CompiledDetector[] = [];
+  if (opts.email)
+    detectors.push({ name: 'email', test: (v) => EMAIL_PATTERN.test(v) });
+  if (opts.phone)
     detectors.push({
       name: 'phone',
-      regex: /(?:\+?\d[\d ().-]{7,29}\d)/g,
-      classification: 'contact',
-      minimumLength: 10,
-      maximumMatchLength: 32,
-      scanChunkSize: DETECTOR_SCAN_CHUNK_SIZE,
-      validate: (candidate) => {
-        const length = candidate.replace(/\D/g, '').length;
-        return length >= 10 && length <= 15;
+      test: (v) => {
+        const m = PHONE_PATTERN.exec(v);
+        if (!m) return false;
+        const digits = m[0].replace(/\D/g, '');
+        return digits.length >= 10 && digits.length <= 15;
       },
     });
-  }
-  if (detectorOptions.paymentCard) {
+  if (opts.paymentCard)
     detectors.push({
       name: 'payment-card',
-      regex: /(?:\d[ -]?){12,18}\d/g,
-      classification: 'payment',
-      minimumLength: 13,
-      maximumMatchLength: 37,
-      scanChunkSize: DETECTOR_SCAN_CHUNK_SIZE,
-      validate: passesLuhn,
+      test: (v) => {
+        const m = CARD_CANDIDATE.exec(v);
+        return !!m && passesLuhn(m[1]);
+      },
     });
-  }
-  if (detectorOptions.ssn) {
-    detectors.push({
-      name: 'ssn',
-      regex: /\b\d{3}-?\d{2}-?\d{4}\b/g,
-      classification: 'identity',
-      minimumLength: 9,
-      maximumMatchLength: 11,
-      scanChunkSize: DETECTOR_SCAN_CHUNK_SIZE,
-    });
-  }
-  if (detectorOptions.ipAddress) {
+  if (opts.ssn)
+    detectors.push({ name: 'ssn', test: (v) => SSN_PATTERN.test(v) });
+  if (opts.ipAddress)
     detectors.push({
       name: 'ip-address',
-      regex: /\b(?:\d{1,3}\.){3}\d{1,3}\b/g,
-      classification: 'location',
-      minimumLength: 7,
-      maximumMatchLength: 15,
-      scanChunkSize: DETECTOR_SCAN_CHUNK_SIZE,
-      validate: (candidate) =>
-        candidate.split('.').every((part) => Number(part) <= 255),
+      test: (v) => {
+        const m = IPV4_PATTERN.exec(v);
+        return !!m && m[0].split('.').every((p) => Number(p) <= 255);
+      },
     });
-  }
-  for (const detector of detectorOptions.custom || []) {
-    const minimumLength = detector.minimumLength ?? 1;
-    const maximumMatchLength =
-      detector.maximumMatchLength ?? DEFAULT_CUSTOM_MATCH_LENGTH;
-    validateCustomDetector(
-      detector.name,
-      detector.pattern,
-      detector.flags,
-      minimumLength,
-      maximumMatchLength,
-    );
-    detectors.push({
-      name: detector.name,
-      regex: new RegExp(detector.pattern, ensureGlobalFlag(detector.flags)),
-      classification: detector.classification || 'custom',
-      minimumLength,
-      maximumMatchLength,
-      scanChunkSize: CUSTOM_DETECTOR_SCAN_CHUNK_SIZE,
-    });
-  }
-
-  return {
-    policy: effectivePolicy,
-    rules,
-    detectors,
-    minimumDetectorLength:
-      detectors.length > 0
-        ? Math.min(...detectors.map((detector) => detector.minimumLength))
-        : Number.POSITIVE_INFINITY,
-    blockSelector:
-      rules
-        .filter((rule) => rule.action === 'exclude' && !rule.attributes)
-        .map((rule) => rule.selector)
-        .join(',') || null,
-  };
+  return detectors;
 }
 
-export function mergeBlockSelectors(
-  legacySelector: string | null,
+/** Runs the compiled detectors over one text node or `characterData` mutation value. */
+export function detectSensitiveValue(
+  value: string,
+  privacy: CompiledPrivacyPolicy,
+): boolean {
+  if (!privacy.detectors.length || !value) return false;
+  if (value.length > MAX_SCAN_LENGTH) return true;
+  const { detectors } = privacy;
+  for (let index = 0; index < detectors.length; index += 1) {
+    if (detectors[index].test(value)) return true;
+  }
+  return false;
+}
+
+/** Occludes non-whitespace to stars, preserving layout; contrast `stars`, which occludes to length. */
+function starText(value: string): string {
+  return value.replace(/[\S]/g, '*');
+}
+
+/** The single decision point for text content, on both the snapshot and the mutation path. */
+export function resolveTextValue({
+  value,
+  parent,
+  parentTagName,
+  needsMask,
+  maskTextFn,
+  privacy,
+  exemptScript,
+}: {
+  value: string;
+  /** Source of the STYLE/SCRIPT exemptions and the element passed to `maskTextFn`. */
+  parent: HTMLElement | null;
+  /** `untaintedTagName(parent)`, if the caller already computed it (hot path). */
+  parentTagName?: string;
+  needsMask: boolean;
+  maskTextFn: MaskTextFn | undefined;
+  privacy: CompiledPrivacyPolicy | undefined;
+  exemptScript: boolean;
+}): string {
+  if (!value) return value;
+  const tagName = parentTagName ?? untaintedTagName(parent);
+  if (tagName === 'STYLE') return value;
+  const isScript = tagName === 'SCRIPT';
+  if (needsMask) {
+    if (isScript && exemptScript) return value;
+    if (!maskTextFn) return starText(value);
+    // A callback that throws or returns a non-string fails closed to stars.
+    let masked: unknown;
+    try {
+      masked = maskTextFn(value, parent);
+    } catch {
+      return starText(value);
+    }
+    return typeof masked === 'string' ? masked : starText(value);
+  }
+  if (isScript) return value;
+  if (privacy && detectSensitiveValue(value, privacy)) return starText(value);
+  return value;
+}
+
+/** Whether `toDataURL` may run: not under `blockMedia`, and not alongside a configured canvas masking provider. */
+export function shouldCapturePixels(
   privacy: CompiledPrivacyPolicy | undefined,
+  canvasMaskingConfigured?: () => boolean,
+): boolean {
+  return !privacy?.blockMedia && !canvasMaskingConfigured?.();
+}
+
+export function validateSelector(selector: string): boolean {
+  // No document to ask (SSR, a worker, a non-DOM test harness): assume valid
+  // rather than dropping every selector the policy declared. `matches()` is
+  // wrapped in a catch at capture time that masks (text, attributes) or
+  // blocks (block selectors), which stays the fail-closed backstop for
+  // anything actually malformed.
+  if (typeof document === 'undefined') return true;
+  try {
+    document.createDocumentFragment().querySelector(selector);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function matchesInDocumentOrOpenShadowRoots(
+  root: Document | ShadowRoot,
+  selector: string,
+): boolean {
+  if (root.querySelector(selector)) return true;
+  const all = root.querySelectorAll('*');
+  for (let index = 0; index < all.length; index += 1) {
+    const sr = (all[index] as HTMLElement).shadowRoot;
+    if (sr && matchesInDocumentOrOpenShadowRoots(sr, selector)) return true;
+  }
+  return false;
+}
+
+/** EXPERIMENTAL: resolves `unmaskTextSelector` to `null` when nothing in `doc` currently matches it; call once per flush, not per node. */
+export function resolveUnmaskTextSelector(
+  doc: Document,
+  unmaskTextSelector: string | null,
 ): string | null {
-  return (
-    [legacySelector, privacy?.blockSelector].filter(Boolean).join(',') || null
-  );
+  if (!unmaskTextSelector) return null;
+  try {
+    return matchesInDocumentOrOpenShadowRoots(doc, unmaskTextSelector)
+      ? unmaskTextSelector
+      : null;
+  } catch {
+    return unmaskTextSelector;
+  }
 }
 
-export function getPrivacyAction(
-  element: Element | null,
-  privacy: CompiledPrivacyPolicy | undefined,
-  attribute?: string,
-  requireExplicitAttribute = false,
-): PrivacyAction | undefined {
-  if (!element || !privacy) return undefined;
-
-  let best:
-    | { action: PrivacyAction; distance: number; priority: number }
-    | undefined;
-  let current: Element | null = element;
-  let distance = 0;
-
-  while (current) {
-    for (const rule of privacy.rules) {
-      if (requireExplicitAttribute && !rule.attributes) continue;
-      if (
-        attribute &&
-        rule.attributes &&
-        !rule.attributes.has(attribute.toLowerCase())
-      ) {
+/** @internal exported for direct unit testing; not part of the privacy API. */
+export function splitSelectorList(selector: string): string[] {
+  // A quote or opener that never closes is demoted to plain text and the
+  // scan restarts, so one malformed fragment cannot swallow the separators
+  // after it; a stray closer is simply ignored. Each restart demotes one more
+  // index, so the loop is bounded by the selector's length.
+  const demoted = new Set<number>();
+  for (;;) {
+    const parts: string[] = [];
+    const openers: number[] = [];
+    let quote: string | null = null;
+    let quoteAt = -1;
+    let start = 0;
+    for (let index = 0; index < selector.length; index += 1) {
+      const char = selector[index];
+      if (char === '\\') {
+        index += 1;
         continue;
       }
-      if (!attribute && rule.attributes) continue;
-
-      let matches = false;
-      try {
-        matches = current.matches(rule.selector);
-      } catch {
+      if (quote) {
+        if (char === quote) quote = null;
         continue;
       }
-      if (!matches) continue;
-
-      const priority = ACTION_PRIORITY[rule.action];
-      if (
-        !best ||
-        distance < best.distance ||
-        (distance === best.distance && priority > best.priority)
-      ) {
-        best = { action: rule.action, distance, priority };
+      if (demoted.has(index)) continue;
+      if (char === '"' || char === "'") {
+        quote = char;
+        quoteAt = index;
+      } else if (char === '(' || char === '[') openers.push(index);
+      else if (char === ')' || char === ']') openers.pop();
+      else if (char === ',' && openers.length === 0) {
+        parts.push(selector.slice(start, index));
+        start = index + 1;
       }
     }
-    current = parentElementAcrossShadowRoot(current);
-    distance += 1;
+    if (quote) {
+      demoted.add(quoteAt);
+      continue;
+    }
+    if (openers.length) {
+      demoted.add(openers[openers.length - 1]);
+      continue;
+    }
+    parts.push(selector.slice(start));
+    return parts;
   }
-
-  return best?.action;
 }
 
-export function maskTextWithPrivacy(
-  value: string,
-  element: HTMLElement | null,
-  privacy: CompiledPrivacyPolicy | undefined,
-  legacyMask: boolean,
-  legacyMaskFn?: (text: string, element: HTMLElement | null) => string,
-): string {
-  if (!privacy) {
-    return legacyMask ? applyLegacyMask(value, element, legacyMaskFn) : value;
-  }
-
-  if (nativeElementTagName(element) === 'SCRIPT') {
-    return 'SCRIPT_PLACEHOLDER';
-  }
-
-  const action = getPrivacyAction(element, privacy);
-  if (privacy.policy.preset === 'legacy' && !action) {
-    return legacyMask ? applyLegacyMask(value, element, legacyMaskFn) : value;
-  }
-  if (action === 'allow') return value;
-  if (action === 'exclude') return '';
-  if (action === 'mask' || privacy.policy.preset === 'strict') {
-    return replacePreservingShape(value);
-  }
-  if (legacyMask) return applyLegacyMask(value, element, legacyMaskFn);
-  if (privacy.detectors.length > 0) {
-    return maskSensitiveRanges(value, detectSensitiveText(value, privacy));
-  }
-  return value;
-}
-
-export function shouldMaskInputWithPrivacy(
-  element: HTMLElement,
-  privacy: CompiledPrivacyPolicy | undefined,
-  legacyMask: boolean,
-): boolean {
-  if (!privacy) return legacyMask;
-
-  const action = getPrivacyAction(element, privacy);
-  if (privacy.policy.preset === 'legacy' && !action) return legacyMask;
-  if (isProtectedInput(element)) return true;
-  if (action === 'mask') return true;
-  if (action === 'exclude') return true;
-  if (action === 'allow') return false;
-  if (privacy.policy.preset === 'strict') return true;
-  if (privacy.policy.preset === 'balanced') return true;
-  return legacyMask;
-}
-
-export function maskInputWithPrivacy(
-  value: string,
-  element: HTMLElement,
-  privacy: CompiledPrivacyPolicy | undefined,
-  legacyMask: boolean,
-  legacyMaskFn?: (text: string, element: HTMLElement) => string,
-): string {
-  if (!shouldMaskInputWithPrivacy(element, privacy, legacyMask)) return value;
-  const action = getPrivacyAction(element, privacy);
-  if (!privacy || (privacy.policy.preset === 'legacy' && !action)) {
-    return legacyMaskFn
-      ? legacyMaskFn(value, element)
-      : '*'.repeat(value.length);
-  }
-  return replacePreservingShape(value);
-}
-
-export function maskAttributeWithPrivacy(
-  element: HTMLElement,
-  name: string,
-  value: string | null,
-  privacy: CompiledPrivacyPolicy | undefined,
+function joinSelectors(
+  selectors: Array<string | null | undefined>,
 ): string | null {
-  if (!value || !privacy) return value;
+  const kept = new Set<string>();
+  for (const s of selectors) {
+    if (!s) continue;
+    const fragments = splitSelectorList(s);
+    if (validateSelector(s)) {
+      for (const part of fragments) {
+        const trimmed = part.trim();
+        if (trimmed) kept.add(trimmed);
+      }
+      continue;
+    }
+    // One malformed fragment used to take the whole comma-separated list with
+    // it, silently un-masking everything the surviving fragments covered.
+    // Re-validate fragment by fragment and keep the ones that stand alone.
+    const dropped: string[] = [];
+    for (const part of fragments) {
+      const trimmed = part.trim();
+      if (!trimmed) continue;
+      if (validateSelector(trimmed)) kept.add(trimmed);
+      else dropped.push(trimmed);
+    }
+    if (dropped.length)
+      console.warn(
+        `[rrweb privacy] dropping invalid selector: ${dropped.join(', ')}`,
+      );
+  }
+  return [...kept].join(',') || null;
+}
 
-  const normalizedName = name.toLowerCase();
-  const standardSensitiveAttribute =
-    normalizedName === 'value' ||
-    SENSITIVE_ATTRIBUTES.has(normalizedName) ||
-    URL_ATTRIBUTES.has(normalizedName);
-  const action = getPrivacyAction(
-    element,
-    privacy,
-    normalizedName,
-    !standardSensitiveAttribute,
-  );
-  if (privacy.policy.preset === 'legacy' && !action) return value;
-  if (normalizedName === 'value' && isProtectedInput(element)) {
-    return replacePreservingShape(value);
-  }
-  if (action === 'allow') return value;
-  if (action === 'exclude') return null;
-  if (action === 'mask') return replacePreservingShape(value);
-  if (
-    privacy.policy.preset === 'strict' &&
-    normalizedName === 'value' &&
-    FORM_VALUE_TAGS.has(nativeElementTagName(element))
-  ) {
-    return replacePreservingShape(value);
+export function compilePrivacyPolicy(
+  policy?: PrivacyPolicy,
+): CompiledPrivacyPolicy {
+  const effective: PrivacyPolicy = policy || { version: 1, preset: 'minimal' };
+  if (effective.version !== 1)
+    throw new Error(
+      `Unsupported Privacy at Capture policy version: ${String(
+        effective.version,
+      )}`,
+    );
+  if (!PRIVACY_PRESETS.has(effective.preset))
+    throw new Error(`Unsupported privacy preset: ${String(effective.preset)}`);
+  const preset = effective.preset;
+  const managed = preset !== 'minimal';
+  const compatVendors = resolveVendorCompat(effective.vendorCompat);
+  if (compatVendors.length && !managed)
+    console.warn(
+      '[rrweb privacy] vendorCompat has no effect under the minimal preset; use balanced or strict, or add the classes as mask/block rules.',
+    );
+  const detectors = buildDetectors(effective.detectors);
+  const maskAllInputs = managed || detectors.length > 0;
+  const maskedAttributes = new Set(managed ? MASKED_ATTRIBUTE_DEFAULTS : []);
+  const blockMedia = preset === 'strict';
+  const sanitizeUrls = managed;
+
+  const bySelector = {
+    mask: [] as string[],
+    unmask: [] as string[],
+    block: [] as string[],
+  };
+  for (const rule of effective.rules || []) {
+    if (
+      !rule.target ||
+      rule.target.type !== 'selector' ||
+      !rule.target.selector
+    )
+      throw new Error('Privacy rules require a non-empty selector target');
+    if (!Object.prototype.hasOwnProperty.call(bySelector, rule.action))
+      throw new Error(`Unsupported privacy action: ${String(rule.action)}`);
+    bySelector[rule.action].push(rule.target.selector);
   }
 
-  if (
-    privacy.policy.preset === 'strict' &&
-    MEDIA_TAGS.has(nativeElementTagName(element)) &&
-    MEDIA_SOURCE_ATTRIBUTES.has(normalizedName)
-  ) {
-    return null;
-  }
-  if (URL_ATTRIBUTES.has(normalizedName)) {
-    return sanitizeUrl(value, privacy);
-  }
-  if (SENSITIVE_ATTRIBUTES.has(normalizedName)) {
-    return privacy.policy.preset === 'strict'
-      ? replacePreservingShape(value)
-      : maskSensitiveRanges(value, detectSensitiveText(value, privacy));
-  }
-  return value;
+  // Under `minimal` the rules compile to their bare selectors and nothing
+  // else: `data-privacy` and the native `rr-*` class conventions are
+  // managed-preset features, and a `mask`/`block` rule does not switch them
+  // on. (`.rr-mask`/`.rr-block` still reach `minimal` recordings through the
+  // separate `maskTextClass`/`blockClass` options.)
+  return {
+    preset,
+    maskTextSelector: managed
+      ? preset === 'strict'
+        ? '*'
+        : joinSelectors([
+            DATA_PRIVACY_MASK,
+            NATIVE_MASK_CLASSES,
+            vendorCompatSelector(compatVendors, 'mask'),
+            ...bySelector.mask,
+          ])
+      : joinSelectors(bySelector.mask),
+    unmaskTextSelector: joinSelectors(
+      managed
+        ? [DATA_PRIVACY_UNMASK, NATIVE_UNMASK_CLASSES, ...bySelector.unmask]
+        : bySelector.unmask,
+    ),
+    blockSelector: joinSelectors(
+      managed
+        ? [
+            DATA_PRIVACY_BLOCK,
+            NATIVE_BLOCK_CLASSES,
+            vendorCompatSelector(compatVendors, 'block'),
+            ...bySelector.block,
+          ]
+        : bySelector.block,
+    ),
+    ignoreSelector: managed ? DATA_PRIVACY_IGNORE : null,
+    ignoreEventsSelector: managed
+      ? joinSelectors([vendorCompatSelector(compatVendors, 'ignoreEvents')])
+      : null,
+    maskAllInputs,
+    maskedAttributes,
+    attributePolicyInert:
+      !blockMedia && !sanitizeUrls && maskedAttributes.size === 0,
+    blockMedia,
+    sanitizeUrls,
+    blockedQueryParameters: new Set(
+      [
+        ...DEFAULT_BLOCKED_QUERY_PARAMETERS,
+        ...(effective.url?.blockedQueryParameters || []),
+      ].map((n) => n.toLowerCase()),
+    ),
+    allowedQueryParameters: effective.url?.allowedQueryParameters
+      ? new Set(
+          effective.url.allowedQueryParameters.map((n) => n.toLowerCase()),
+        )
+      : null,
+    removeHash: effective.url?.removeHash !== false,
+    detectors,
+  };
 }
 
 /**
- * Apply runtime attribute escape hatches without allowing them to undo the
- * portable policy. The coarse mode wins over the callback, and the policy is
- * always the final authority.
+ * Whether input events from `element`'s subtree are suppressed entirely: the
+ * nearest `data-privacy` annotation, ancestor-or-self, is `ignore`. A nearer
+ * annotation of any other value overrides, per the severity ladder
+ * `unmask, mask, ignore, block`. Any throw fails closed to suppression.
  */
-export function protectSerializedAttribute({
-  element,
-  name,
-  value,
-  privacy,
-  maskAllElementAttributes = false,
-  maskAttributeFn,
-  isGenerated = false,
-}: {
-  element: Element;
-  name: string;
-  value: string | null;
-  privacy: CompiledPrivacyPolicy | undefined;
-  maskAllElementAttributes?: boolean;
-  maskAttributeFn?: MaskAttributeFn;
-  isGenerated?: boolean;
-}): string | null {
-  if (!value) return value;
-
-  let protectedValue = value;
-  if (maskAllElementAttributes) {
-    protectedValue =
-      isGenerated && SAFE_GENERATED_ATTRIBUTES.has(name.toLowerCase())
-        ? value
-        : '*'.repeat(value.length);
-  } else if (maskAttributeFn) {
-    try {
-      protectedValue = maskAttributeFn(name, value, element);
-    } catch {
-      // A masking callback is part of the privacy boundary; failure must not
-      // silently publish the original value.
-      protectedValue = '*'.repeat(value.length);
-    }
-  }
-
-  return maskAttributeWithPrivacy(
-    element as HTMLElement,
-    name,
-    protectedValue,
-    privacy,
-  );
-}
-
-export function sanitizeUrl(
-  value: string,
+export function isEventIgnored(
+  element: Element,
   privacy: CompiledPrivacyPolicy | undefined,
-): string {
-  if (!privacy || privacy.policy.preset === 'legacy') return value;
+): boolean {
+  if (!privacy) return false;
+  // A vendorCompat ignore token silences events from the annotated element
+  // itself, exactly as the vendor's own input observer does; it carries no
+  // masking and takes no part in the data-privacy severity ladder below.
+  if (privacy.ignoreEventsSelector) {
+    try {
+      if (element.matches(privacy.ignoreEventsSelector)) return true;
+    } catch {
+      return true;
+    }
+  }
+  if (!privacy.ignoreSelector) return false;
   try {
-    const url = new URL(value, 'https://rrweb.invalid');
-    const allowed = privacy.policy.url?.allowedQueryParameters?.map((name) =>
-      name.toLowerCase(),
-    );
-    const blocked = new Set(
-      [
-        ...DEFAULT_BLOCKED_QUERY_PARAMETERS,
-        ...(privacy.policy.url?.blockedQueryParameters || []),
-      ].map((name) => name.toLowerCase()),
-    );
-
-    for (const [name, parameterValue] of url.searchParams) {
-      if (
-        (privacy.policy.preset === 'strict' && !allowed) ||
-        (allowed && !allowed.includes(name.toLowerCase())) ||
-        blocked.has(name.toLowerCase()) ||
-        detectSensitiveText(parameterValue, privacy).length > 0
-      ) {
-        url.searchParams.set(name, '*');
-      }
-    }
-    url.pathname = maskSensitiveRanges(
-      url.pathname,
-      detectSensitiveText(url.pathname, privacy),
-    );
-    if (privacy.policy.url?.removeHash !== false) url.hash = '';
-
-    if (url.origin === 'https://rrweb.invalid') {
-      return `${url.pathname}${url.search}${url.hash}`;
-    }
-    return url.toString();
+    const annotated = element.closest(DATA_PRIVACY);
+    return annotated !== null && annotated.matches(privacy.ignoreSelector);
   } catch {
-    return maskSensitiveRanges(value, detectSensitiveText(value, privacy));
+    return true;
   }
 }
 
-export function detectSensitiveText(
-  value: string,
-  privacy: CompiledPrivacyPolicy,
-): SensitiveMatch[] {
-  if (
-    privacy.detectors.length === 0 ||
-    value.length < privacy.minimumDetectorLength
-  ) {
-    return [];
-  }
+/** Validates and merges a `record()`-level selector with the compiled policy's; invalid fragments are dropped with a warning. */
+export function mergeSelectors(
+  manualSelector: string | null | undefined,
+  compiledSelector: string | null | undefined,
+): string | null {
+  return joinSelectors([manualSelector, compiledSelector]);
+}
 
-  const matches: SensitiveMatch[] = [];
-  for (const detector of privacy.detectors) {
-    if (value.length < detector.minimumLength) continue;
+/** The privacy state one recording pass (or one `snapshot()` call) runs on. */
+export type PrivacyContext = {
+  privacy: CompiledPrivacyPolicy;
+  blockSelector: string | null;
+  maskTextSelector: string | null;
+  unmaskTextSelector: string | null;
+};
 
-    for (
-      let offset = 0;
-      offset < value.length;
-      offset += detector.scanChunkSize
-    ) {
-      const primaryEnd = Math.min(
-        offset + detector.scanChunkSize,
-        value.length,
-      );
-      const scanEnd = Math.min(
-        primaryEnd + detector.maximumMatchLength - 1,
-        value.length,
-      );
-      const chunk = value.slice(offset, scanEnd);
-      detector.regex.lastIndex = 0;
-      let match: RegExpExecArray | null;
-      while ((match = detector.regex.exec(chunk))) {
-        const start = offset + match.index;
-        if (start >= primaryEnd) break;
-        if (match[0].length > detector.maximumMatchLength) {
-          matches.push({
-            start: 0,
-            end: value.length,
-            kind: detector.classification,
-            detector: `${detector.name}:oversize`,
-          });
-          return mergeMatches(matches);
-        }
-        if (!detector.validate || detector.validate(match[0])) {
-          matches.push({
-            start,
-            end: start + match[0].length,
-            kind: detector.classification,
-            detector: detector.name,
-          });
-          if (matches.length >= MAX_DETECTOR_MATCHES) {
-            // Detection is a privacy boundary. If a hostile value produces an
-            // unreasonable number of matches, mask the complete value because
-            // later detectors have not necessarily scanned its prefix.
-            matches.push({
-              start: 0,
-              end: value.length,
-              kind: detector.classification,
-              detector: `${detector.name}:overflow`,
-            });
-            return mergeMatches(matches);
-          }
-        }
-        if (match[0].length === 0) detector.regex.lastIndex += 1;
-      }
-    }
-  }
-  return mergeMatches(matches);
+/** The one privacy prologue: compile the policy, merge every `record()`-level selector with its compiled counterpart, and write the merged unmask selector back onto the policy. */
+export function resolvePrivacyContext({
+  privacy: compiled,
+  privacyPolicy,
+  blockSelector = null,
+  maskTextSelector = null,
+  unmaskTextSelector = null,
+}: {
+  privacy?: CompiledPrivacyPolicy;
+  privacyPolicy?: PrivacyPolicy;
+  blockSelector?: string | null;
+  maskTextSelector?: string | null;
+  unmaskTextSelector?: string | null;
+}): PrivacyContext {
+  const base = compiled || compilePrivacyPolicy(privacyPolicy);
+  const mergedMaskTextSelector = mergeSelectors(
+    maskTextSelector,
+    base.maskTextSelector,
+  );
+  const mergedUnmaskTextSelector = mergeSelectors(
+    unmaskTextSelector,
+    base.unmaskTextSelector,
+  );
+  // Both merged selectors are written back so `finalizeAttribute`, which
+  // reads the policy, resolves mask/unmask ties with the same lists text does.
+  const unchanged =
+    mergedMaskTextSelector === base.maskTextSelector &&
+    mergedUnmaskTextSelector === base.unmaskTextSelector;
+  return {
+    privacy: unchanged
+      ? base
+      : {
+          ...base,
+          maskTextSelector: mergedMaskTextSelector,
+          unmaskTextSelector: mergedUnmaskTextSelector,
+        },
+    blockSelector: mergeSelectors(blockSelector, base.blockSelector),
+    maskTextSelector: mergedMaskTextSelector,
+    unmaskTextSelector: mergedUnmaskTextSelector,
+  };
 }
 
 export function passesLuhn(candidate: string): boolean {
@@ -665,272 +743,299 @@ export function passesLuhn(candidate: string): boolean {
   return sum % 10 === 0;
 }
 
-export function replacePreservingShape(value: string): string {
-  return value.replace(/[\p{L}\p{N}]/gu, (character) =>
-    /\p{N}/u.test(character) ? '0' : 'x',
-  );
+let maskAttributeConflictWarned = false;
+
+/** Occludes a value to its length; contrast `starText`, which preserves whitespace/layout. */
+export function stars(value: string): string {
+  return '*'.repeat(value.length);
 }
 
-function isProtectedInput(element: HTMLElement): boolean {
-  if (nativeElementTagName(element) !== 'INPUT') return false;
-  const input = element as HTMLInputElement;
-  if (
-    input.type === 'password' ||
-    input.type === 'hidden' ||
-    input.hasAttribute('data-rr-is-password')
-  ) {
-    return true;
-  }
-  return input.autocomplete
-    .toLowerCase()
-    .split(/\s+/)
-    .some((token) => PROTECTED_AUTOCOMPLETE.has(token));
+/** The mask selector without the `'*'` mask-everything fallback, which is a default rather than a marker and so never takes part in a tie. */
+function concreteMaskSelector(privacy: CompiledPrivacyPolicy): string | null {
+  const selector = privacy.maskTextSelector;
+  if (!selector) return null;
+  if (selector.indexOf('*') === -1) return selector;
+  const kept = splitSelectorList(selector)
+    .map((part) => part.trim())
+    .filter((part) => part && part !== '*');
+  return kept.join(',') || null;
 }
 
-function validateCustomDetector(
-  name: string,
-  pattern: string,
-  flags: string | undefined,
-  minimumLength: number,
-  maximumMatchLength: number,
-): void {
-  const label = name || '<unnamed>';
-  if (!name.trim()) throw new Error('Custom detector name cannot be empty');
-  if (!pattern || pattern.length > MAX_CUSTOM_PATTERN_LENGTH) {
-    throw new Error(
-      `Custom detector "${label}" pattern must be 1-${MAX_CUSTOM_PATTERN_LENGTH} characters`,
-    );
-  }
-  if (
-    !Number.isInteger(minimumLength) ||
-    minimumLength < 1 ||
-    minimumLength > MAX_CUSTOM_MATCH_LENGTH
-  ) {
-    throw new Error(
-      `Custom detector "${label}" minimumLength must be an integer from 1-${MAX_CUSTOM_MATCH_LENGTH}`,
-    );
-  }
-  if (
-    !Number.isInteger(maximumMatchLength) ||
-    maximumMatchLength < 1 ||
-    maximumMatchLength > MAX_CUSTOM_MATCH_LENGTH
-  ) {
-    throw new Error(
-      `Custom detector "${label}" maximumMatchLength must be an integer from 1-${MAX_CUSTOM_MATCH_LENGTH}`,
-    );
-  }
-  if (minimumLength > maximumMatchLength) {
-    throw new Error(
-      `Custom detector "${label}" minimumLength cannot exceed maximumMatchLength`,
-    );
-  }
-  if (
-    flags &&
-    (!/^[dgimsuv]*$/.test(flags) || new Set(flags).size !== flags.length)
-  ) {
-    throw new Error(`Custom detector "${label}" has unsupported regex flags`);
-  }
-  if (
-    /\\[1-9]/.test(pattern) ||
-    /\\k</.test(pattern) ||
-    hasLookaroundOrNamedGroup(pattern)
-  ) {
-    throw new Error(
-      `Custom detector "${label}" cannot use lookaround, named groups, or backreferences`,
-    );
-  }
-  const scan = scanCustomPattern(pattern);
-  if (scan.nestedRepetition) {
-    throw new Error(
-      `Custom detector "${label}" contains ambiguous nested repetition`,
-    );
-  }
-  if (scan.quantifiers > MAX_CUSTOM_QUANTIFIERS) {
-    throw new Error(`Custom detector "${label}" contains too many quantifiers`);
-  }
-
-  let regex: RegExp;
+/**
+ * Attributes resolve like text: the nearest annotated ancestor decides, and
+ * on the same element mask beats unmask. Any throw keeps the attribute masked.
+ */
+function isUnmasked(
+  element: Element,
+  privacy: CompiledPrivacyPolicy,
+  memo?: UnmaskMemo,
+): boolean {
+  if (!privacy.unmaskTextSelector) return false;
+  if (memo && memo.element === element) return memo.answer;
+  let answer = false;
   try {
-    regex = new RegExp(pattern, ensureGlobalFlag(flags));
-  } catch {
-    throw new Error(`Custom detector "${label}" contains an invalid regex`);
-  }
-  regex.lastIndex = 0;
-  if (regex.test('')) {
-    throw new Error(`Custom detector "${label}" cannot match empty text`);
-  }
-}
-
-function quantifierLength(pattern: string, index: number): number {
-  const character = pattern[index];
-  if (character === '*' || character === '+' || character === '?') {
-    return pattern[index + 1] === '?' ? 2 : 1;
-  }
-  if (character === '{') {
-    const match = pattern.slice(index).match(/^\{\d+(?:,\d*)?\}/);
-    if (!match) return 0;
-    return match[0].length + (pattern[index + match[0].length] === '?' ? 1 : 0);
-  }
-  return 0;
-}
-
-function hasLookaroundOrNamedGroup(pattern: string): boolean {
-  let inCharacterClass = false;
-  let escaped = false;
-
-  for (let index = 0; index < pattern.length; index += 1) {
-    const character = pattern[index];
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-    if (character === '\\') {
-      escaped = true;
-      continue;
-    }
-    if (character === '[') {
-      inCharacterClass = true;
-      continue;
-    }
-    if (character === ']' && inCharacterClass) {
-      inCharacterClass = false;
-      continue;
-    }
-    if (inCharacterClass || character !== '(') continue;
-    if (pattern[index + 1] !== '?') continue;
-    if (pattern[index + 2] === ':') continue;
-    return true;
-  }
-  return false;
-}
-
-function scanCustomPattern(pattern: string): {
-  nestedRepetition: boolean;
-  quantifiers: number;
-} {
-  const groups: Array<{ repeated: boolean; alternation: boolean }> = [];
-  let inCharacterClass = false;
-  let escaped = false;
-  let quantifiers = 0;
-
-  for (let index = 0; index < pattern.length; index += 1) {
-    const character = pattern[index];
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-    if (character === '\\') {
-      escaped = true;
-      continue;
-    }
-    if (character === '[') {
-      inCharacterClass = true;
-      continue;
-    }
-    if (character === ']' && inCharacterClass) {
-      inCharacterClass = false;
-      continue;
-    }
-    if (inCharacterClass) continue;
-
-    if (character === '(') {
-      groups.push({ repeated: false, alternation: false });
-      if (pattern[index + 1] === '?' && pattern[index + 2] === ':') {
-        index += 2;
+    const mask = concreteMaskSelector(privacy);
+    let current: Element | null = element;
+    while (current) {
+      if (mask && current.matches(mask)) break;
+      if (current.matches(privacy.unmaskTextSelector)) {
+        answer = true;
+        break;
       }
-      continue;
+      current = parentElement(current);
     }
-    if (character === '|') {
-      const group = groups[groups.length - 1];
-      if (group) group.alternation = true;
-      continue;
-    }
-
-    const length = quantifierLength(pattern, index);
-    if (length > 0) {
-      quantifiers += 1;
-      const group = groups[groups.length - 1];
-      if (group) group.repeated = true;
-      index += length - 1;
-      continue;
-    }
-
-    if (character !== ')') continue;
-
-    const group = groups.pop();
-    if (!group) continue;
-    const outerLength = quantifierLength(pattern, index + 1);
-    if (outerLength > 0 && (group.repeated || group.alternation)) {
-      return { nestedRepetition: true, quantifiers };
-    }
-    const parent = groups[groups.length - 1];
-    if (parent && (group.repeated || outerLength > 0)) {
-      parent.repeated = true;
-    }
-  }
-
-  return { nestedRepetition: false, quantifiers };
-}
-
-function applyLegacyMask(
-  value: string,
-  element: HTMLElement | null,
-  maskFn?: (text: string, element: HTMLElement | null) => string,
-): string {
-  return maskFn ? maskFn(value, element) : value.replace(/[\S]/g, '*');
-}
-
-function maskSensitiveRanges(value: string, matches: SensitiveMatch[]): string {
-  if (!matches.length) return value;
-  let result = '';
-  let cursor = 0;
-  for (const match of matches) {
-    result += value.slice(cursor, match.start);
-    result += replacePreservingShape(value.slice(match.start, match.end));
-    cursor = match.end;
-  }
-  return result + value.slice(cursor);
-}
-
-function mergeMatches(matches: SensitiveMatch[]): SensitiveMatch[] {
-  const sorted = matches.sort((a, b) => a.start - b.start || b.end - a.end);
-  const result: SensitiveMatch[] = [];
-  for (const match of sorted) {
-    const previous = result[result.length - 1];
-    if (previous && match.start <= previous.end) {
-      previous.end = Math.max(previous.end, match.end);
-      continue;
-    }
-    result.push({ ...match });
-  }
-  return result;
-}
-
-function ensureGlobalFlag(flags = ''): string {
-  return flags.includes('g') ? flags : `${flags}g`;
-}
-
-function nativeElementTagName(element: Element | null | undefined): string {
-  if (!element) return '';
-  const tagName = element.tagName;
-  if (typeof tagName === 'string') return tagName.toUpperCase();
-  // HTMLFormElement (and similar) expose named controls as own properties,
-  // so `<input name="tagName">` shadows the prototype getter.
-  try {
-    const native: unknown = Object.getOwnPropertyDescriptor(
-      Element.prototype,
-      'tagName',
-    )?.get?.call(element);
-    return typeof native === 'string' ? native.toUpperCase() : '';
   } catch {
-    return '';
+    answer = false;
+  }
+  if (memo) {
+    memo.element = element;
+    memo.answer = answer;
+  }
+  return answer;
+}
+
+/** One element's `isUnmasked` answer, reused across its whole attribute sweep. */
+type UnmaskMemo = { element: Element | null; answer: boolean };
+
+// Everything a srcset parser reads as a delimiter is escaped too, so the
+// placeholder is a valid candidate URL there and not just in `src`.
+const URI_UNSAFE = /[<>#" ,]/g;
+const URI_ESCAPES: Record<string, string> = {
+  '<': '%3C',
+  '>': '%3E',
+  '#': '%23',
+  '"': '%22',
+  ' ': '%20',
+  ',': '%2C',
+};
+const placeholderCache = new Map<string, string>();
+
+function placeholderImage(width: string, height: string): string {
+  const key = `${width}x${height}`;
+  const cached = placeholderCache.get(key);
+  if (cached !== undefined) return cached;
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">` +
+    `<rect width="${width}" height="${height}" fill="#ddd"/></svg>`;
+  const encoded = `data:image/svg+xml;utf8,${svg.replace(
+    URI_UNSAFE,
+    (char) => URI_ESCAPES[char],
+  )}`;
+  if (placeholderCache.size < 100) placeholderCache.set(key, encoded);
+  return encoded;
+}
+
+/** Size attributes first; for an `<img>` the intrinsic size is the fallback. Never a layout measurement. */
+function declaredDimensions(element: Element): [string, string] | null {
+  try {
+    const width = element.getAttribute('width');
+    const height = element.getAttribute('height');
+    if (
+      width !== null &&
+      height !== null &&
+      PLAIN_PIXEL_DIMENSION.test(width) &&
+      PLAIN_PIXEL_DIMENSION.test(height)
+    )
+      return [width, height];
+    const { naturalWidth, naturalHeight } = element as HTMLImageElement;
+    if (
+      Number.isInteger(naturalWidth) &&
+      Number.isInteger(naturalHeight) &&
+      naturalWidth > 0 &&
+      naturalHeight > 0
+    )
+      return [String(naturalWidth), String(naturalHeight)];
+    return null;
+  } catch {
+    return null;
   }
 }
 
-function parentElementAcrossShadowRoot(element: Element): Element | null {
-  const parent = dom.parentElement(element);
-  if (parent) return parent;
-  const root = dom.getRootNode(element);
-  if (!root || !('host' in root) || !('mode' in root)) return null;
-  return dom.host(root as ShadowRoot);
+function blockedMediaValue(
+  element: Element,
+  tagName: string,
+  normalizedName: string,
+): string | null {
+  const placeholderNames = MEDIA_PLACEHOLDER_ATTRIBUTES.get(tagName);
+  if (!placeholderNames || !placeholderNames.has(normalizedName)) return null;
+  const dimensions = declaredDimensions(element);
+  if (!dimensions) return null;
+  return placeholderImage(dimensions[0], dimensions[1]);
+}
+
+/** The single decision point for every attribute rrweb records, called once per attribute at the end of serialization. */
+export function finalizeAttribute({
+  element,
+  name,
+  value,
+  privacy,
+  maskAllElementAttributes = false,
+  maskAttributeFn,
+  isGenerated = false,
+  unmaskMemo,
+}: {
+  element: Element;
+  name: string;
+  value: string | null;
+  privacy: CompiledPrivacyPolicy | undefined;
+  maskAllElementAttributes?: boolean;
+  maskAttributeFn?: MaskAttributeFn;
+  isGenerated?: boolean;
+  /** @internal see `UnmaskMemo`; supplied by `finalizeAttributes` */
+  unmaskMemo?: UnmaskMemo;
+}): string | null {
+  if (
+    !maskAllElementAttributes &&
+    !maskAttributeFn &&
+    (!privacy || privacy.attributePolicyInert)
+  )
+    return value;
+  if (value === null || value === '') return value;
+
+  const normalizedName = name.toLowerCase();
+  if (isGenerated && RENDERING_METADATA_ATTRIBUTES.has(normalizedName))
+    return value;
+  if (OPERATIONAL_ATTRIBUTES.has(normalizedName)) return value;
+  if (CSS_ATTRIBUTES.has(normalizedName)) return value;
+
+  if (maskAllElementAttributes) {
+    if (maskAttributeFn && !maskAttributeConflictWarned) {
+      maskAttributeConflictWarned = true;
+      console.warn(
+        '[rrweb privacy] maskAllElementAttributes is set; maskAttributeFn is ignored.',
+      );
+    }
+    return stars(value);
+  }
+
+  let current = value;
+  if (maskAttributeFn) {
+    try {
+      const masked = maskAttributeFn(name, value, element);
+      current = typeof masked === 'string' ? masked : stars(value);
+    } catch {
+      return stars(value);
+    }
+  }
+
+  if (!privacy) return current;
+
+  if (privacy.blockMedia && MEDIA_SOURCE_ATTRIBUTES.has(normalizedName)) {
+    const tagName = untaintedTagName(element);
+    if (MEDIA_TAGS.has(tagName))
+      return blockedMediaValue(element, tagName, normalizedName);
+  }
+  if (URL_ATTRIBUTES.has(normalizedName)) return sanitizeUrl(current, privacy);
+  if (privacy.maskedAttributes.has(normalizedName)) {
+    return isUnmasked(element, privacy, unmaskMemo) ? current : stars(current);
+  }
+  if (
+    normalizedName === 'value' &&
+    privacy.preset === 'strict' &&
+    FORM_VALUE_TAGS.has(untaintedTagName(element))
+  ) {
+    return stars(current);
+  }
+  return current;
+}
+
+/** Runs every attribute through `finalizeAttribute` once, in place, after serialization. */
+export function finalizeAttributes(
+  attributes: Record<string, unknown>,
+  {
+    element,
+    privacy,
+    maskAllElementAttributes,
+    maskAttributeFn,
+    generatedAttributes,
+  }: {
+    element: Element;
+    privacy: CompiledPrivacyPolicy | undefined;
+    maskAllElementAttributes?: boolean;
+    maskAttributeFn?: MaskAttributeFn;
+    /** names this serializer wrote itself; see `finalizeAttribute`'s step 1 */
+    generatedAttributes?: Set<string>;
+  },
+): void {
+  const unmaskMemo: UnmaskMemo = { element: null, answer: false };
+  for (const name in attributes) {
+    const value = attributes[name];
+    if (typeof value !== 'string' && value !== null) continue;
+    attributes[name] = finalizeAttribute({
+      element,
+      name,
+      value,
+      privacy,
+      maskAllElementAttributes,
+      maskAttributeFn,
+      isGenerated: generatedAttributes?.has(name),
+      unmaskMemo,
+    });
+  }
+}
+
+/**
+ * EXPERIMENTAL: no session-replay vendor sanitizes URLs in the recorded DOM;
+ * see the changeset.
+ *
+ * `paramsMode` is an internal knob, not part of the public policy surface:
+ * `'preset'` (the default) is `strict`'s normal mask-every-param-unless-
+ * allowlisted behavior; `'blocklist'` forces the `balanced` treatment
+ * (mask only `blockedQueryParameters`/non-`allowedQueryParameters`) even
+ * under `strict`. `sanitizeMetaUrl` is the one caller that needs it -- see
+ * its doc comment. This keeps the preset special-case inside the URL layer
+ * instead of leaking a `strict`-vs-Meta branch into core.
+ */
+export function sanitizeUrl(
+  value: string,
+  privacy: CompiledPrivacyPolicy | undefined,
+  { paramsMode = 'preset' }: { paramsMode?: 'preset' | 'blocklist' } = {},
+): string | null {
+  if (!value) return value;
+  if (!privacy || !privacy.sanitizeUrls) return value;
+  try {
+    const url = new URL(value, 'https://rrweb.invalid');
+    url.username = '';
+    url.password = '';
+    const maskAllParams =
+      paramsMode === 'preset' &&
+      privacy.preset === 'strict' &&
+      !privacy.allowedQueryParameters;
+    for (const [name] of url.searchParams) {
+      const lower = name.toLowerCase();
+      if (
+        maskAllParams ||
+        (privacy.allowedQueryParameters &&
+          !privacy.allowedQueryParameters.has(lower)) ||
+        privacy.blockedQueryParameters.has(lower)
+      ) {
+        url.searchParams.set(name, '*');
+      }
+    }
+    if (privacy.removeHash) url.hash = '';
+    if (url.origin === 'https://rrweb.invalid')
+      return `${url.pathname}${url.search}${url.hash}`;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * EXPERIMENTAL, open design question for upstream: sanitizes the Meta
+ * event's `window.location.href` with blocked-list-only parameter masking
+ * (the `balanced` treatment), even under `strict`, where every other URL in
+ * the recorded DOM masks every param unless explicitly allowlisted. The
+ * Meta event's URL is the recording's own address bar, not markup the page
+ * author wrote -- treating it identically to an arbitrary `<a href>` would
+ * make `strict` unusable for reconstructing which page a session happened
+ * on, since almost every app puts routing state in its own URL. Whether
+ * that asymmetry is the right default, versus a dedicated option, is not
+ * settled; see the changeset.
+ */
+export function sanitizeMetaUrl(
+  value: string,
+  privacy: CompiledPrivacyPolicy | undefined,
+): string | null {
+  return sanitizeUrl(value, privacy, { paramsMode: 'blocklist' });
 }
