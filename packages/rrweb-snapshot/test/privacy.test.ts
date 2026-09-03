@@ -395,32 +395,30 @@ describe('vendorCompat', () => {
     '[data-sl="mask"]', // Smartlook
     '[data-openreplay-obscured]', // OpenReplay
     '[data-openreplay-masked]', // OpenReplay (deprecated alias, still honored)
-    '[data-heap-redact-text]', // Heap
-    '[data-heap-redact-attributes]', // Heap
     '[data-cs-encrypt]', // Contentsquare (encrypted capture; masked here)
-    '.mf-masked', // Mouseflow
-    '[data-mf-replace]', // Mouseflow
-    '[data-mf-replace-inner]', // Mouseflow
+    '[data-mf-replace-inner]', // Mouseflow (inner text replaced, structure kept)
     '.inspectlet-sensitive', // Inspectlet
     '.inspectletIgnore', // Inspectlet
     '[data-dtrum-mask]', // Dynatrace
     '[data-qm-encrypt]', // Quantum Metric (encrypted capture there; masked here)
-    '.cls_mask', // Glassbox (input value mask)
+    '.cls_mask', // Glassbox (observed-only; docs are customer-gated)
     '.sessionstack-sensitive', // SessionStack
-    '[data-sr-redact]', // Session Rewind
-    '[data-recording-sensitive]', // Smartlook legacy (still honored by the bundle)
+    '[data-recording-sensitive]', // Smartlook legacy (masked there; also events-ignored)
   ];
   const extendedBlock = [
     '.highlight-block', // Highlight / LaunchDarkly
     '[data-private]', // LogRocket (any value)
     '._lr-hide', // LogRocket (legacy)
-    '[data-hj-suppress]', // Hotjar (attribute form)
+    '[data-hj-suppress]', // Hotjar (attribute form; images placeholdered there)
     '.data-hj-suppress', // Hotjar (class form, also documented)
     '[data-sl="exclude"]', // Smartlook
     '[data-openreplay-hidden]', // OpenReplay
     '[data-openreplay-htmlmasked]', // OpenReplay (deprecated alias)
     '[data-cs-mask]', // Contentsquare (content removed from collection)
-    '[heap-ignore]', // Heap (attribute form)
+    '[data-heap-redact-text]', // Heap (whole element redacted in their replay)
+    '[data-heap-redact-attributes]', // Heap (whole element redacted in their replay)
+    '.mf-masked', // Mouseflow ("not recorded at all" there)
+    '[data-mf-replace]', // Mouseflow (subtree swapped for placeholder value)
     '.mf-excluded', // Mouseflow
     '.lo-sensitive', // Lucky Orange (text scrambled, images blanked)
     '.losensitive', // Lucky Orange (alias)
@@ -428,7 +426,8 @@ describe('vendorCompat', () => {
     '.zipy-block', // Zipy
     '[data-qm-block]', // Quantum Metric (customer-config convention)
     '[data-qm-freeze-exclude]', // Quantum Metric (DOM-capture exclude)
-    '[data-recording-disable]', // Smartlook legacy (still honored by the bundle)
+    '[data-recording-disable]', // Smartlook legacy
+    '[data-sr-redact]', // Session Rewind ("exclude"; rendering unspecified there)
   ];
   // Reveal tokens are never merged anywhere; ignore-like tokens listed here
   // are the ones with no verified events-only semantics, so they stay
@@ -446,7 +445,6 @@ describe('vendorCompat', () => {
     '.lo-not-sensitive',
     '.lonotsensitive',
     '[data-dtrum-allow]',
-    '.userback-ignore',
     '.mf-listen',
     '[data-qm-allow]',
     '[data-recording-ignore]',
@@ -490,7 +488,15 @@ describe('vendorCompat', () => {
       '.ph-ignore-input',
       '.nr-ignore',
       '.highlight-ignore',
+      '[heap-ignore]', // autocapture-event suppression only there
+      '.userback-ignore', // element rendered, its user input ignored there
+      '[data-recording-sensitive]', // Smartlook legacy: masked AND events-ignored
     ];
+    // Every ignore token except Smartlook's legacy dual-slot one, which is
+    // deliberately in the mask list too (it masked text there as well).
+    const eventsOnlyTokens = ignoreTokens.filter(
+      (token) => token !== '[data-recording-sensitive]',
+    );
 
     it('compiles the vendor ignore tokens into ignoreEventsSelector', () => {
       for (const token of ignoreTokens)
@@ -505,12 +511,17 @@ describe('vendorCompat', () => {
       ).toBeNull();
     });
 
-    it('never leaks an ignore token into mask, block, or unmask', () => {
-      for (const token of ignoreTokens) {
+    it('never leaks an events-only token into mask, block, or unmask', () => {
+      for (const token of eventsOnlyTokens) {
         expect(on.maskTextSelector ?? '').not.toContain(token);
         expect(on.blockSelector ?? '').not.toContain(token);
         expect(on.unmaskTextSelector ?? '').not.toContain(token);
       }
+      // The dual-slot exception is mask + ignore, never unmask or block.
+      expect(on.maskTextSelector).toContain('[data-recording-sensitive]');
+      expect(on.unmaskTextSelector ?? '').not.toContain(
+        '[data-recording-sensitive]',
+      );
     });
 
     it('an array compiles only the named vendors ignore tokens', () => {

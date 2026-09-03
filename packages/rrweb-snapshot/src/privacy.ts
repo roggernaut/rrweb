@@ -80,14 +80,21 @@ export const VENDOR_COMPAT: Record<
   },
   // [data-private] blocks under any value: placeholder, delete, lipsum
   logrocket: { mask: [], block: ['[data-private]', '._lr-hide'] },
-  // text and images placeholdered; the class form is also documented
+  // Text is masked in place there, but images/videos are placeholdered too
+  // (help.hotjar.com "How to Suppress Text, Images, Videos and User Input");
+  // our mask verb leaves image sources readable, so block stands. The class
+  // form is also documented.
   hotjar: { mask: [], block: ['[data-hj-suppress]', '.data-hj-suppress'] },
   // Microsoft Clarity
   clarity: { mask: ['[data-clarity-mask]'], block: [] },
   smartlook: {
-    // the data-recording-* legacy attributes are still honored by the bundle
+    // the data-recording-* legacy attributes survive only in archived docs
+    // (smartlook.github.io "Sensitive data protection", via web.archive.org):
+    // data-recording-sensitive masked text AND ignored input values/events
+    // there, so it joins ignoreEvents alongside mask
     mask: ['[data-sl="mask"]', '[data-recording-sensitive]'],
     block: ['[data-sl="exclude"]', '[data-recording-disable]'],
+    ignoreEvents: ['[data-recording-sensitive]'],
   },
   openreplay: {
     // -masked/-htmlmasked are deprecated aliases, still honored
@@ -100,14 +107,22 @@ export const VENDOR_COMPAT: Record<
     block: ['[data-cs-mask]'],
   },
   heap: {
-    // redact-attributes covers attribute values there; text here. The block
-    // token is the attribute: the SDK selector is `[heap-ignore]`.
-    mask: ['[data-heap-redact-text]', '[data-heap-redact-attributes]'],
-    block: ['[heap-ignore]'],
+    // help.heap.io "What privacy settings does Session replay inherit":
+    // both redact attributes redact the entire element in replay, so block.
+    // [heap-ignore] suppresses autocapture events only and is absent from
+    // the replay-inheritance list, so events-only. Tokens are attributes:
+    // the SDK selects `[heap-ignore]`, not a class.
+    mask: [],
+    block: ['[data-heap-redact-text]', '[data-heap-redact-attributes]'],
+    ignoreEvents: ['[heap-ignore]'],
   },
   mouseflow: {
-    mask: ['.mf-masked', '[data-mf-replace]', '[data-mf-replace-inner]'],
-    block: ['.mf-excluded'],
+    // help.mouseflow.com "Excluding, masking and replacing content via
+    // code": mf-masked is "not recorded at all" and data-mf-replace swaps
+    // the subtree for its placeholder value, so both block; only
+    // data-mf-replace-inner keeps the structure (inner text replaced)
+    mask: ['[data-mf-replace-inner]'],
+    block: ['.mf-excluded', '.mf-masked', '[data-mf-replace]'],
   },
   // text scrambled, images blanked; .losensitive is an alias
   luckyorange: { mask: [], block: ['.lo-sensitive', '.losensitive'] },
@@ -116,18 +131,33 @@ export const VENDOR_COMPAT: Record<
     block: [],
   },
   dynatrace: { mask: ['[data-dtrum-mask]'], block: [] },
-  userback: { mask: [], block: ['.userback-block'] },
+  userback: {
+    // support.userback.io "Session replay": userback-block ignores the
+    // element and its children entirely; userback-ignore keeps the element
+    // rendered and ignores its user input, so events-only
+    mask: [],
+    block: ['.userback-block'],
+    ignoreEvents: ['.userback-ignore'],
+  },
   zipy: { mask: [], block: ['.zipy-block'] },
   quantummetric: {
-    // encrypted capture there, masked here; qm-block is a customer-config
-    // convention, qm-freeze-exclude the DOM-capture exclude
+    // observed-only: docs are login-gated, tokens read from the shipped
+    // engine. Encrypted capture there, masked here; qm-block is a
+    // customer-config convention, qm-freeze-exclude the DOM-capture exclude
     mask: ['[data-qm-encrypt]'],
     block: ['[data-qm-block]', '[data-qm-freeze-exclude]'],
   },
-  // input value mask
+  // observed-only: read from the shipped SDK; the official docs are
+  // customer-gated with no public or archived copy to verify against
   glassbox: { mask: ['.cls_mask'], block: [] },
   sessionstack: { mask: ['.sessionstack-sensitive'], block: [] },
-  sessionrewind: { mask: ['[data-sr-redact]'], block: [] },
+  sessionrewind: {
+    // sessionrewind.notion.site "Privacy settings": the documented verb is
+    // "exclude"/"redact" for arbitrary elements, replay rendering
+    // unspecified — so the stricter verb
+    mask: [],
+    block: ['[data-sr-redact]'],
+  },
 };
 
 const VENDOR_IDS = Object.keys(VENDOR_COMPAT) as VendorCompatId[];
