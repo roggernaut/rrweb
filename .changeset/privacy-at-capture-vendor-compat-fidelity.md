@@ -19,3 +19,9 @@
 - Datadog `mask-user-input` stays mapped to text mask: form values are already
   masked globally wherever compat applies, and dropping the token would record
   the form-element text (e.g. `<option>` labels) it protects there.
+- Docs-tier remaps from verified vendor documentation: Heap's redact
+  attributes and Session Rewind's `[data-sr-redact]` move to block,
+  `[heap-ignore]` and `.userback-ignore` move to events-only ignore,
+  Mouseflow's `.mf-masked`/`[data-mf-replace]` move to block (they remove the
+  subtree there), and Smartlook's legacy `[data-recording-sensitive]` becomes
+  mask + events-ignore.
