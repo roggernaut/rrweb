@@ -311,6 +311,81 @@ export interface ICrossOriginIframeMirror {
   reset(iframe?: HTMLIFrameElement): void;
 }
 
+/** A versioned, portable Privacy at Capture policy; mirrors `rrweb-snapshot`'s internal `PrivacyPolicy`, the source of truth. */
+export type PrivacyPolicy = {
+  version: 1;
+  preset: PrivacyPreset;
+  rules?: PrivacyRule[];
+  /** Opt in to recognizing other session-replay tools' privacy classes/attributes; off by default. `true` recognizes every verified vendor; an array recognizes only the named ones. */
+  vendorCompat?: boolean | VendorCompatId[];
+};
+
+/** A vendor whose mask/block conventions `vendorCompat` can recognize; see guide.md's "Vendor class recognition" table. */
+export type VendorCompatId =
+  | 'mixpanel'
+  | 'fullstory'
+  | 'amplitude'
+  | 'posthog'
+  | 'sentry'
+  | 'datadog'
+  | 'newrelic'
+  | 'highlight'
+  | 'logrocket'
+  | 'hotjar'
+  | 'clarity'
+  | 'smartlook'
+  | 'openreplay'
+  | 'contentsquare'
+  | 'heap'
+  | 'mouseflow'
+  | 'luckyorange'
+  | 'inspectlet'
+  | 'dynatrace'
+  | 'userback'
+  | 'zipy'
+  | 'quantummetric'
+  | 'glassbox'
+  | 'sessionstack'
+  | 'sessionrewind';
+
+export type PrivacyPreset = 'strict' | 'balanced' | 'minimal';
+
+export type PrivacyAction = 'mask' | 'block' | 'unmask';
+
+export type PrivacyRule = {
+  target: PrivacyTarget;
+  action: PrivacyAction;
+};
+
+export type PrivacyTarget = {
+  type: 'selector';
+  /** A CSS selector. Rules also apply to descendants of the matched node. */
+  selector: string;
+};
+
+/** Runtime form of a compiled policy, shared by snapshot and incremental observers. */
+export type CompiledPrivacyPolicy = {
+  preset: PrivacyPreset;
+  /** 'mask' rules + the fail-closed [data-privacy] token + .rr-mask (+ compat classes, + '*' under strict) */
+  maskTextSelector: string | null;
+  /** 'unmask' rules + [data-privacy="unmask"] + .rr-unmask (native-only; vendorCompat never adds unmask tokens) */
+  unmaskTextSelector: string | null;
+  /** 'block' rules + [data-privacy="block"] + .rr-block (+ compat classes) */
+  blockSelector: string | null;
+  /** [data-privacy="ignore"] under balanced/strict: content is masked through the fail-closed mask token, and input events from the subtree are suppressed */
+  ignoreSelector: string | null;
+  /** vendorCompat input-ignore tokens: input events from a matching element are suppressed, and nothing else changes — no masking implied, unlike `data-privacy="ignore"`. Matched on the element itself, mirroring the vendors' own input observers. */
+  ignoreEventsSelector: string | null;
+  /** true under balanced/strict */
+  maskAllInputs: boolean;
+  /** ['title','placeholder','aria-label'] under balanced/strict, else empty */
+  maskedAttributes: Set<string>;
+  /** true when the policy has nothing to say about attributes; lets `finalizeAttribute` return its input untouched. */
+  attributePolicyInert: boolean;
+  /** true under strict; the `strict` preset alias every media gate reads */
+  blockMedia: boolean;
+};
+
 export type RecordPlugin<TOptions = unknown> = {
   name: string;
   observer?: (
@@ -589,13 +664,44 @@ export type canvasManagerMutationCallback = (
   p: canvasMutationWithType,
 ) => void;
 
-export type ImageBitmapDataURLWorkerParams = {
-  id: number;
-  bitmap: ImageBitmap;
+/**
+ * A rectangle to obscure in a captured canvas frame. Coordinates are CSS
+ * pixels relative to the canvas element, not backing-store pixels.
+ */
+export type CanvasMaskRegion = {
+  x: number;
+  y: number;
   width: number;
   height: number;
-  dataURLOptions: DataURLOptions;
 };
+
+/** Runtime canvas adapter for applications whose sensitive pixels are not DOM nodes. */
+export type CanvasMasking = {
+  /** Rectangles to paint black, `[]` to capture unchanged, or `null`/`undefined` to skip an unanswerable frame rather than capture it unmasked. */
+  maskRegions: (
+    canvas: HTMLCanvasElement,
+  ) => CanvasMaskRegion[] | null | undefined;
+  /**
+   * Optional dynamic switch, re-read on every frame and snapshot; omitting it means supplying `canvasMasking` alone counts as configured, and a throw counts as configured too (fail closed).
+   *
+   * Supplying `canvasMasking` at all fixes the FPS capture path at `record()`; this switch only decides, per frame, whether that path masks or captures unchanged. It may change over the session.
+   */
+  isConfigured?: () => boolean;
+};
+
+export type ImageBitmapDataURLWorkerParams =
+  | {
+      id: number;
+      bitmap: ImageBitmap;
+      width: number;
+      height: number;
+      dataURLOptions: DataURLOptions;
+      /** Capture-resolution rectangles. An empty array still marks a provider-owned frame. */
+      maskRegions?: CanvasMaskRegion[];
+    }
+  | {
+      resetFrameDedup: true;
+    };
 
 export type ImageBitmapDataURLWorkerResponse =
   | {

@@ -4,6 +4,9 @@ import type {
   SlimDOMOptions,
   MaskInputFn,
   MaskTextFn,
+  MaskAttributeFn,
+  PrivacyPolicy,
+  CompiledPrivacyPolicy,
 } from 'rrweb-snapshot';
 import type { IframeManager } from './record/iframe-manager';
 import type { ShadowDomManager } from './record/shadow-dom-manager';
@@ -12,6 +15,7 @@ import type { RRNode } from 'rrdom';
 import type { CanvasManager } from './record/observers/canvas/canvas-manager';
 import type { StylesheetManager } from './record/stylesheet-manager';
 import type {
+  CanvasMasking,
   DataURLOptions,
   addedNodeMutation,
   blockClass,
@@ -51,10 +55,21 @@ export type recordOptions<T> = {
   ignoreSelector?: string;
   maskTextClass?: maskTextClass;
   maskTextSelector?: string;
+  /** A CSS selector whose matched elements are never text- or attribute-masked; merged with any `privacyPolicy` unmask/allow selectors. Input values are unaffected -- `maskInput` never reads it. */
+  unmaskTextSelector?: string | null;
   maskAllInputs?: boolean;
   maskInputOptions?: MaskInputOptions;
   maskInputFn?: MaskInputFn;
   maskTextFn?: MaskTextFn;
+  /** Mask every source string attribute. Takes precedence over `maskAttributeFn`. */
+  maskAllElementAttributes?: boolean;
+  /** Transform final serialized string attributes before policy enforcement. */
+  maskAttributeFn?: MaskAttributeFn;
+  /**
+   * Opt-in, versioned privacy policy. Existing masking options continue to
+   * provide the manual baseline and are compiled alongside this policy.
+   */
+  privacyPolicy?: PrivacyPolicy;
   slimDOMOptions?: SlimDOMOptions | 'all' | true;
   ignoreCSSAttributes?: Set<string>;
   /**
@@ -66,6 +81,11 @@ export type recordOptions<T> = {
   packFn?: PackFn;
   sampling?: SamplingStrategy;
   dataURLOptions?: DataURLOptions;
+  /**
+   * Capture-time masking for canvas applications. Only applies to FPS canvas
+   * capture (`sampling.canvas` is a number).
+   */
+  canvasMasking?: CanvasMasking;
   recordDOM?: boolean;
   recordCanvas?: boolean;
   recordCrossOriginIframes?: boolean;
@@ -102,6 +122,9 @@ export type observerParam = {
   maskInputOptions: MaskInputOptions;
   maskInputFn?: MaskInputFn;
   maskTextFn?: MaskTextFn;
+  maskAllElementAttributes: boolean;
+  maskAttributeFn?: MaskAttributeFn;
+  privacy?: CompiledPrivacyPolicy;
   keepIframeSrcFn: KeepIframeSrcFn;
   inlineStylesheet: boolean;
   styleSheetRuleCb: styleSheetRuleCallback;
@@ -112,6 +135,7 @@ export type observerParam = {
   sampling: SamplingStrategy;
   recordDOM: boolean;
   recordCanvas: boolean;
+  canvasMaskingConfigured?: () => boolean;
   inlineImages: boolean;
   userTriggeredOnInput: boolean;
   collectFonts: boolean;
@@ -146,9 +170,13 @@ export type MutationBufferParam = Pick<
   | 'inlineStylesheet'
   | 'maskInputOptions'
   | 'maskTextFn'
+  | 'maskAllElementAttributes'
+  | 'maskAttributeFn'
+  | 'privacy'
   | 'maskInputFn'
   | 'keepIframeSrcFn'
   | 'recordCanvas'
+  | 'canvasMaskingConfigured'
   | 'inlineImages'
   | 'slimDOMOptions'
   | 'dataURLOptions'

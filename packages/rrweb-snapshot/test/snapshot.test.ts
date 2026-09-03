@@ -18,7 +18,7 @@ const serializeNode = (node: Node): serializedNodeWithId | null => {
     blockClass: 'blockblock',
     blockSelector: null,
     maskTextClass: 'maskmask',
-    maskTextSelector: null,
+    maskTextSelector: { maskAll: false, selector: null },
     skipChild: false,
     inlineStylesheet: true,
     maskTextFn: undefined,

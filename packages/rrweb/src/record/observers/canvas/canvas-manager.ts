@@ -8,6 +8,7 @@ import type {
   IWindow,
   listenerHandler,
   CanvasArg,
+  CanvasMasking,
   DataURLOptions,
 } from '@rrweb/types';
 import { isBlocked } from '../../../utils';
@@ -17,6 +18,11 @@ import initCanvasContextObserver from './canvas';
 import initCanvasWebGLMutationObserver from './webgl';
 import ImageBitmapDataURLWorker from '../../workers/image-bitmap-data-url-worker?worker&inline';
 import type { ImageBitmapDataURLRequestWorker } from '../../workers/image-bitmap-data-url-worker';
+import {
+  computeFrameMaskRegions,
+  resolveFrameDisplaySize,
+  SKIP_FRAME,
+} from './canvas-mask';
 
 export type RafStamps = { latestId: number; invokeId: number | null };
 
@@ -34,10 +40,30 @@ export class CanvasManager {
   private resetObservers?: listenerHandler;
   private frozen = false;
   private locked = false;
+  private resetFrameDedup?: () => void;
+
+  /** Shadow roots FPS canvas discovery searches directly, kept in sync by the shadow-DOM manager. */
+  private trackedShadowRoots = new Set<ShadowRoot>();
 
   public reset() {
     this.pendingCanvasMutations.clear();
     this.resetObservers && this.resetObservers();
+    this.resetFrameDedup = undefined;
+  }
+
+  /** Called by the shadow-DOM manager when it starts observing a shadow root. */
+  public addShadowRoot(shadowRoot: ShadowRoot) {
+    this.trackedShadowRoots.add(shadowRoot);
+  }
+
+  /** Called by the shadow-DOM manager when it stops observing a shadow root. */
+  public removeShadowRoot(shadowRoot: ShadowRoot) {
+    this.trackedShadowRoots.delete(shadowRoot);
+  }
+
+  /** Start a new canvas frame epoch after a DOM full snapshot. */
+  public onFullSnapshot() {
+    this.resetFrameDedup?.();
   }
 
   public freeze() {
@@ -65,6 +91,7 @@ export class CanvasManager {
     mirror: Mirror;
     sampling?: 'all' | number;
     dataURLOptions: DataURLOptions;
+    canvasMasking?: CanvasMasking;
   }) {
     const {
       sampling = 'all',
@@ -73,6 +100,7 @@ export class CanvasManager {
       blockSelector,
       recordCanvas,
       dataURLOptions,
+      canvasMasking,
     } = options;
     this.mutationCb = options.mutationCb;
     this.mirror = options.mirror;
@@ -82,6 +110,7 @@ export class CanvasManager {
     if (recordCanvas && typeof sampling === 'number')
       this.initCanvasFPSObserver(sampling, win, blockClass, blockSelector, {
         dataURLOptions,
+        canvasMasking,
       });
   }
 
@@ -109,8 +138,11 @@ export class CanvasManager {
     blockSelector: string | null,
     options: {
       dataURLOptions: DataURLOptions;
+      canvasMasking?: CanvasMasking;
     },
   ) {
+    if (!('OffscreenCanvas' in win)) return;
+
     const canvasContextReset = initCanvasContextObserver(
       win,
       blockClass,
@@ -118,8 +150,23 @@ export class CanvasManager {
       true,
     );
     const snapshotInProgressMap: Map<number, boolean> = new Map();
-    const worker =
-      new ImageBitmapDataURLWorker() as ImageBitmapDataURLRequestWorker;
+    let rafId: number;
+    let worker: ImageBitmapDataURLRequestWorker;
+    try {
+      worker =
+        new ImageBitmapDataURLWorker() as ImageBitmapDataURLRequestWorker;
+    } catch {
+      canvasContextReset();
+      return;
+    }
+    let workerErrored = false;
+    worker.onerror = () => {
+      workerErrored = true;
+      cancelAnimationFrame(rafId);
+      worker.terminate?.();
+      this.resetFrameDedup = undefined;
+    };
+    this.resetFrameDedup = () => worker.postMessage({ resetFrameDedup: true });
     worker.onmessage = (e) => {
       const { id } = e.data;
       snapshotInProgressMap.set(id, false);
@@ -158,19 +205,26 @@ export class CanvasManager {
 
     const timeBetweenSnapshots = 1000 / fps;
     let lastSnapshotTime = 0;
-    let rafId: number;
-
     const getCanvas = (): HTMLCanvasElement[] => {
       const matchedCanvas: HTMLCanvasElement[] = [];
-      win.document.querySelectorAll('canvas').forEach((canvas) => {
-        if (!isBlocked(canvas, blockClass, blockSelector, true)) {
-          matchedCanvas.push(canvas);
+      const collect = (root: ParentNode) => {
+        try {
+          root.querySelectorAll('canvas').forEach((canvas) => {
+            if (!isBlocked(canvas, blockClass, blockSelector, true)) {
+              matchedCanvas.push(canvas);
+            }
+          });
+        } catch {
+          // A broken custom DOM implementation must not cancel future frames.
         }
-      });
+      };
+      collect(win.document);
+      this.trackedShadowRoots.forEach((root) => collect(root));
       return matchedCanvas;
     };
 
     const takeCanvasSnapshots = (timestamp: DOMHighResTimeStamp) => {
+      if (workerErrored) return;
       if (
         lastSnapshotTime &&
         timestamp - lastSnapshotTime < timeBetweenSnapshots
@@ -192,39 +246,67 @@ export class CanvasManager {
           if (canvas.width === 0 || canvas.height === 0) return;
 
           snapshotInProgressMap.set(id, true);
-          if (['webgl', 'webgl2'].includes((canvas as ICanvas).__context)) {
-            // if the canvas hasn't been modified recently,
-            // its contents won't be in memory and `createImageBitmap`
-            // will return a transparent imageBitmap
+          try {
+            if (['webgl', 'webgl2'].includes((canvas as ICanvas).__context)) {
+              // if the canvas hasn't been modified recently,
+              // its contents won't be in memory and `createImageBitmap`
+              // will return a transparent imageBitmap
 
-            const context = canvas.getContext((canvas as ICanvas).__context) as
-              | WebGLRenderingContext
-              | WebGL2RenderingContext
-              | null;
-            if (
-              context?.getContextAttributes()?.preserveDrawingBuffer === false
-            ) {
-              // Hack to load canvas back into memory so `createImageBitmap` can grab it's contents.
-              // Context: https://twitter.com/Juice10/status/1499775271758704643
-              // Preferably we set `preserveDrawingBuffer` to true, but that's not always possible,
-              // especially when canvas is loaded before rrweb.
-              // This hack can wipe the background color of the canvas in the (unlikely) event that
-              // the canvas background was changed but clear was not called directly afterwards.
-              // Example of this hack having negative side effect: https://visgl.github.io/react-map-gl/examples/layers
-              context.clear(context.COLOR_BUFFER_BIT);
+              const context = canvas.getContext(
+                (canvas as ICanvas).__context,
+              ) as WebGLRenderingContext | WebGL2RenderingContext | null;
+              if (context?.isContextLost?.()) {
+                snapshotInProgressMap.set(id, false);
+                return;
+              }
+              if (
+                context?.getContextAttributes()?.preserveDrawingBuffer === false
+              ) {
+                // Hack to load canvas back into memory so `createImageBitmap` can grab it's contents.
+                // Context: https://twitter.com/Juice10/status/1499775271758704643
+                // Preferably we set `preserveDrawingBuffer` to true, but that's not always possible,
+                // especially when canvas is loaded before rrweb.
+                // This hack can wipe the background color of the canvas in the (unlikely) event that
+                // the canvas background was changed but clear was not called directly afterwards.
+                // Example of this hack having negative side effect: https://visgl.github.io/react-map-gl/examples/layers
+                context.clear(context.COLOR_BUFFER_BIT);
+              }
             }
+            const displaySize = resolveFrameDisplaySize(
+              options.canvasMasking,
+              canvas,
+            );
+            if (displaySize === SKIP_FRAME) {
+              snapshotInProgressMap.set(id, false);
+              return;
+            }
+            const maskRegions = computeFrameMaskRegions(
+              options.canvasMasking,
+              canvas,
+              canvas.width,
+              canvas.height,
+              displaySize.width,
+              displaySize.height,
+            );
+            if (maskRegions === SKIP_FRAME) {
+              snapshotInProgressMap.set(id, false);
+              return;
+            }
+            const bitmap = await createImageBitmap(canvas);
+            worker.postMessage(
+              {
+                id,
+                bitmap,
+                width: canvas.width,
+                height: canvas.height,
+                dataURLOptions: options.dataURLOptions,
+                maskRegions,
+              },
+              [bitmap],
+            );
+          } catch {
+            snapshotInProgressMap.set(id, false);
           }
-          const bitmap = await createImageBitmap(canvas);
-          worker.postMessage(
-            {
-              id,
-              bitmap,
-              width: canvas.width,
-              height: canvas.height,
-              dataURLOptions: options.dataURLOptions,
-            },
-            [bitmap],
-          );
         });
       rafId = requestAnimationFrame(takeCanvasSnapshots);
     };
@@ -234,6 +316,8 @@ export class CanvasManager {
     this.resetObservers = () => {
       canvasContextReset();
       cancelAnimationFrame(rafId);
+      worker.terminate?.();
+      this.resetFrameDedup = undefined;
     };
   }
 
@@ -303,9 +387,10 @@ export class CanvasManager {
     if (!valuesWithType || id === -1) return;
 
     const values = valuesWithType.map((value) => {
-      const { type, ...rest } = value;
+      const rest: Partial<canvasMutationWithType> = { ...value };
+      delete rest.type;
       return rest;
-    });
+    }) as canvasMutationCommand[];
     const { type } = valuesWithType[0];
 
     this.mutationCb({ id, type, commands: values });

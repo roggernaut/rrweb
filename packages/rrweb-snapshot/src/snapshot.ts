@@ -3,9 +3,12 @@ import type {
   SlimDOMOptions,
   MaskTextFn,
   MaskInputFn,
+  MaskAttributeFn,
   KeepIframeSrcFn,
   ICanvas,
   DialogAttributes,
+  CompiledPrivacyPolicy,
+  PrivacyPolicy,
 } from './types';
 import { NodeType } from '@rrweb/types';
 import type {
@@ -22,7 +25,8 @@ import {
   is2DCanvasBlank,
   isElement,
   isShadowRoot,
-  maskInputValue,
+  maskInput,
+  shouldMaskInput,
   isNativeShadowDom,
   stringifyStylesheet,
   getInputType,
@@ -31,6 +35,14 @@ import {
   absolutifyURLs,
   markCssSplits,
 } from './snapshot-utils';
+import {
+  finalizeAttribute,
+  finalizeAttributes,
+  resolvePrivacyContext,
+  resolveTextValue,
+  shouldCapturePixels,
+  splitSelectorList,
+} from './privacy';
 import dom from '@rrweb/utils';
 
 let _id = 1;
@@ -212,29 +224,41 @@ export function ignoreAttribute(
   return ['video', 'audio'].includes(tagName) && name === 'autoplay';
 }
 
+export function classMatches(el: Element, matcher: string | RegExp): boolean {
+  const { classList } = el;
+  if (typeof matcher === 'string') return classList.contains(matcher);
+  for (let index = classList.length; index--; ) {
+    if (matcher.test(classList[index])) return true;
+  }
+  return false;
+}
+
+let warnedBlockDecisionThrew = false;
+
 export function _isBlockedElement(
   element: HTMLElement,
   blockClass: string | RegExp,
   blockSelector: string | null,
 ): boolean {
   try {
-    if (typeof blockClass === 'string') {
-      if (element.classList.contains(blockClass)) {
-        return true;
-      }
-    } else {
-      for (let eIndex = element.classList.length; eIndex--; ) {
-        const className = element.classList[eIndex];
-        if (blockClass.test(className)) {
-          return true;
-        }
-      }
+    if (classMatches(element, blockClass)) {
+      return true;
     }
     if (blockSelector) {
       return element.matches(blockSelector);
     }
   } catch (e) {
-    //
+    // Fail closed: a block decision that cannot be made blocks, the same
+    // way a mask decision that throws masks.
+    if (!warnedBlockDecisionThrew) {
+      warnedBlockDecisionThrew = true;
+      console.warn(
+        `privacy block decision threw; failing closed to blocking — check custom selectors: ${
+          e instanceof Error ? e.message : String(e)
+        }`,
+      );
+    }
+    return true;
   }
 
   return false;
@@ -251,57 +275,107 @@ export function classMatchesRegex(
     return classMatchesRegex(dom.parentNode(node), regex, checkAncestors);
   }
 
-  for (let eIndex = (node as HTMLElement).classList.length; eIndex--; ) {
-    const className = (node as HTMLElement).classList[eIndex];
-    if (regex.test(className)) {
-      return true;
-    }
-  }
+  if (classMatches(node as HTMLElement, regex)) return true;
   if (!checkAncestors) return false;
   return classMatchesRegex(dom.parentNode(node), regex, checkAncestors);
 }
 
+export type MaskTextSelector = {
+  maskAll: boolean;
+  selector: string | null;
+};
+
+export function splitMaskAllSelector(
+  maskTextSelector: string | null,
+): MaskTextSelector {
+  if (!maskTextSelector) return { maskAll: false, selector: null };
+  let maskAll = false;
+  const kept: string[] = [];
+  for (const part of splitSelectorList(maskTextSelector)) {
+    if (part.trim() === '*') maskAll = true;
+    else kept.push(part);
+  }
+  return {
+    maskAll,
+    selector: maskAll ? kept.join(',') || null : maskTextSelector,
+  };
+}
+
+let warnedMaskDecisionThrew = false;
+
+/**
+ * Two shapes are accepted here, and both are coerced at runtime rather than
+ * being trusted from the type signature:
+ *
+ * - `maskTextSelector` may arrive as a raw selector string (the pre-2.0
+ *   shape) instead of the `{maskAll, selector}` pair from
+ *   `splitMaskAllSelector`, and is split on the spot.
+ * - The whole call may use the pre-2.0 *positional* signature
+ *   `(node, maskTextClass, maskTextSelector, checkAncestors)`, which puts a
+ *   boolean where `unmaskTextSelector` now sits. A boolean in that slot is
+ *   detected and shifted back into `checkAncestors`, so the ancestor walk an
+ *   unmigrated caller asked for still happens. Left uncoerced this failed
+ *   *open*: `checkAncestors` landed as `undefined`, the walk stopped at the
+ *   node itself, and a `.rr-mask` ancestor no longer masked.
+ */
 export function needMaskingText(
   node: Node,
   maskTextClass: string | RegExp,
-  maskTextSelector: string | null,
-  checkAncestors: boolean,
+  maskTextSelector: MaskTextSelector | string | null,
+  unmaskTextSelector: string | boolean | null,
+  checkAncestors?: boolean,
+  inheritedNeedsMask = false,
 ): boolean {
-  let el: Element;
-  if (isElement(node)) {
-    el = node;
-    if (!dom.childNodes(el).length) {
-      // optimisation: we can avoid any of the below checks on leaf elements
-      // as masking is applied to child text nodes only
-      return false;
-    }
-  } else if (dom.parentElement(node) === null) {
-    // should warn? maybe a text node isn't attached to a parent node yet?
-    return false;
-  } else {
-    el = dom.parentElement(node)!;
+  if (typeof unmaskTextSelector === 'boolean') {
+    // legacy 4-arg call: the boolean is `checkAncestors`.
+    checkAncestors = unmaskTextSelector;
+    unmaskTextSelector = null;
+    inheritedNeedsMask = false;
+  } else if (checkAncestors === undefined) {
+    // an omitted `checkAncestors` walks, the wider (fail-closed) reading.
+    checkAncestors = true;
   }
   try {
-    if (typeof maskTextClass === 'string') {
-      if (checkAncestors) {
-        if (el.closest(`.${maskTextClass}`)) return true;
-      } else {
-        if (el.classList.contains(maskTextClass)) return true;
+    const { maskAll, selector } =
+      typeof maskTextSelector === 'string' || !maskTextSelector
+        ? splitMaskAllSelector(maskTextSelector ?? null)
+        : maskTextSelector;
+    if ((maskAll || inheritedNeedsMask) && !unmaskTextSelector) return true;
+    let el: Element;
+    if (isElement(node)) {
+      el = node;
+      if (!dom.childNodes(el).length) {
+        return inheritedNeedsMask;
       }
+    } else if (dom.parentElement(node) === null) {
+      return inheritedNeedsMask || maskAll;
     } else {
-      if (classMatchesRegex(el, maskTextClass, checkAncestors)) return true;
+      el = dom.parentElement(node)!;
     }
-    if (maskTextSelector) {
-      if (checkAncestors) {
-        if (el.closest(maskTextSelector)) return true;
-      } else {
-        if (el.matches(maskTextSelector)) return true;
-      }
+    let current: Element | null = el;
+    while (current) {
+      if (
+        classMatches(current, maskTextClass) ||
+        (selector && current.matches(selector))
+      )
+        return true;
+      if (unmaskTextSelector && current.matches(unmaskTextSelector))
+        return false;
+      if (!checkAncestors) break;
+      current = dom.parentElement(current);
     }
+    return maskAll || inheritedNeedsMask;
   } catch (e) {
-    //
+    if (!warnedMaskDecisionThrew) {
+      warnedMaskDecisionThrew = true;
+      console.warn(
+        `privacy mask decision threw; failing closed to masking — check custom selectors: ${
+          e instanceof Error ? e.message : String(e)
+        }`,
+      );
+    }
+    return true;
   }
-  return false;
 }
 
 // https://stackoverflow.com/a/36155560
@@ -395,15 +469,19 @@ function serializeNode(
     maskInputOptions: MaskInputOptions;
     maskTextFn: MaskTextFn | undefined;
     maskInputFn: MaskInputFn | undefined;
+    maskAllElementAttributes: boolean;
+    maskAttributeFn: MaskAttributeFn | undefined;
     dataURLOptions?: DataURLOptions;
     inlineImages: boolean;
     recordCanvas: boolean;
+    canvasMaskingConfigured?: () => boolean;
     keepIframeSrcFn: KeepIframeSrcFn;
     /**
      * `newlyAddedElement: true` skips scrollTop and scrollLeft check
      */
     newlyAddedElement?: boolean;
     cssCaptured?: boolean;
+    privacy?: CompiledPrivacyPolicy;
   },
 ): serializedNode | false {
   const {
@@ -416,12 +494,16 @@ function serializeNode(
     maskInputOptions = {},
     maskTextFn,
     maskInputFn,
+    maskAllElementAttributes,
+    maskAttributeFn,
     dataURLOptions = {},
     inlineImages,
     recordCanvas,
+    canvasMaskingConfigured,
     keepIframeSrcFn,
     newlyAddedElement = false,
     cssCaptured = false,
+    privacy,
   } = options;
   // Only record root id when document object is not the base document
   const rootId = getRootId(doc, mirror);
@@ -455,12 +537,16 @@ function serializeNode(
         inlineStylesheet,
         maskInputOptions,
         maskInputFn,
+        maskAllElementAttributes,
+        maskAttributeFn,
         dataURLOptions,
         inlineImages,
         recordCanvas,
+        canvasMaskingConfigured,
         keepIframeSrcFn,
         newlyAddedElement,
         rootId,
+        privacy,
       });
     case n.TEXT_NODE:
       return serializeTextNode(n as Text, {
@@ -504,14 +590,11 @@ function serializeTextNode(
   },
 ): serializedNode {
   const { needsMask, maskTextFn, rootId, cssCaptured } = options;
-  // The parent node may not be a html element which has a tagName attribute.
-  // So just let it be undefined which is ok in this use case.
-  const parent = dom.parentNode(n);
-  const parentTagName = parent && (parent as HTMLElement).tagName;
+  const parent = dom.parentElement(n);
+  const parentTagName = dom.untaintedTagName(parent);
   let textContent: string | null = '';
-  const isStyle = parentTagName === 'STYLE' ? true : undefined;
-  const isScript = parentTagName === 'SCRIPT' ? true : undefined;
-  if (isScript) {
+  const isStyle = parentTagName === 'STYLE';
+  if (parentTagName === 'SCRIPT') {
     textContent = 'SCRIPT_PLACEHOLDER';
   } else if (!cssCaptured) {
     textContent = dom.textContent(n);
@@ -523,10 +606,15 @@ function serializeTextNode(
       textContent = absolutifyURLs(textContent, getHref(options.doc));
     }
   }
-  if (!isStyle && !isScript && textContent && needsMask) {
-    textContent = maskTextFn
-      ? maskTextFn(textContent, dom.parentElement(n))
-      : textContent.replace(/[\S]/g, '*');
+  if (textContent) {
+    textContent = resolveTextValue({
+      value: textContent,
+      parent,
+      parentTagName,
+      needsMask,
+      maskTextFn,
+      exemptScript: true,
+    });
   }
 
   return {
@@ -545,15 +633,19 @@ function serializeElementNode(
     inlineStylesheet: boolean;
     maskInputOptions: MaskInputOptions;
     maskInputFn: MaskInputFn | undefined;
+    maskAllElementAttributes: boolean;
+    maskAttributeFn: MaskAttributeFn | undefined;
     dataURLOptions?: DataURLOptions;
     inlineImages: boolean;
     recordCanvas: boolean;
+    canvasMaskingConfigured?: () => boolean;
     keepIframeSrcFn: KeepIframeSrcFn;
     /**
      * `newlyAddedElement: true` skips scrollTop and scrollLeft check
      */
     newlyAddedElement?: boolean;
     rootId: number | undefined;
+    privacy?: CompiledPrivacyPolicy;
   },
 ): serializedNode | false {
   const {
@@ -563,16 +655,35 @@ function serializeElementNode(
     inlineStylesheet,
     maskInputOptions = {},
     maskInputFn,
+    maskAllElementAttributes,
+    maskAttributeFn,
     dataURLOptions = {},
     inlineImages,
     recordCanvas,
+    canvasMaskingConfigured,
     keepIframeSrcFn,
     newlyAddedElement = false,
     rootId,
+    privacy,
   } = options;
   const needBlock = _isBlockedElement(n, blockClass, blockSelector);
   const tagName = getValidTagName(n);
   let attributes: attributes = {};
+  const generatedAttributeNames = new Set<string>();
+  // late `<img>` load-listener writes still go through `finalizeAttribute`.
+  let serializationComplete = false;
+  const finalizeLateAttribute = (name: string, value: string) =>
+    serializationComplete
+      ? finalizeAttribute({
+          element: n,
+          name,
+          value,
+          privacy,
+          maskAllElementAttributes,
+          maskAttributeFn,
+          isGenerated: generatedAttributeNames.has(name),
+        })
+      : value;
   const len = n.attributes.length;
   for (let i = 0; i < len; i++) {
     const attr = n.attributes[i];
@@ -623,20 +734,33 @@ function serializeElementNode(
       attributes.type !== 'button' &&
       value
     ) {
-      attributes.value = maskInputValue({
+      const type = getInputType(n);
+      attributes.value = maskInput({
         element: n,
-        type: getInputType(n),
+        type,
         tagName,
         value,
         maskInputOptions,
         maskInputFn,
+        privacy,
       });
     } else if (checked) {
       attributes.checked = checked;
     }
   }
   if (tagName === 'option') {
-    if ((n as HTMLOptionElement).selected && !maskInputOptions['select']) {
+    // The `selected` flag discloses the parent <select>'s value just as
+    // surely as the value attribute does, so it is governed by the <select>'s
+    // own masking decision -- policy included. Reading `maskInputOptions`
+    // alone let a balanced/strict policy record the chosen option verbatim.
+    const selectionMasked = shouldMaskInput({
+      element: n,
+      tagName: 'select',
+      type: null,
+      maskInputOptions,
+      privacy,
+    });
+    if ((n as HTMLOptionElement).selected && !selectionMasked) {
       attributes.selected = true;
     } else {
       // ignore the html attribute (which corresponds to DOM (n as HTMLOptionElement).defaultSelected)
@@ -652,10 +776,15 @@ function serializeElementNode(
     (attributes as DialogAttributes).rr_open_mode = n.matches('dialog:modal')
       ? 'modal'
       : 'non-modal';
+    generatedAttributeNames.add('rr_open_mode');
   }
 
   // canvas image data
-  if (tagName === 'canvas' && recordCanvas) {
+  if (
+    tagName === 'canvas' &&
+    recordCanvas &&
+    shouldCapturePixels(privacy, canvasMaskingConfigured)
+  ) {
     if ((n as ICanvas).__context === '2d') {
       // only record this on 2d canvas
       if (!is2DCanvasBlank(n as HTMLCanvasElement)) {
@@ -687,7 +816,7 @@ function serializeElementNode(
     }
   }
   // save image offline
-  if (tagName === 'img' && inlineImages) {
+  if (tagName === 'img' && inlineImages && shouldCapturePixels(privacy)) {
     if (!canvasService) {
       canvasService = doc.createElement('canvas');
       canvasCtx = canvasService.getContext('2d');
@@ -702,9 +831,9 @@ function serializeElementNode(
         canvasService!.width = image.naturalWidth;
         canvasService!.height = image.naturalHeight;
         canvasCtx!.drawImage(image, 0, 0);
-        attributes.rr_dataURL = canvasService!.toDataURL(
-          dataURLOptions.type,
-          dataURLOptions.quality,
+        attributes.rr_dataURL = finalizeLateAttribute(
+          'rr_dataURL',
+          canvasService!.toDataURL(dataURLOptions.type, dataURLOptions.quality),
         );
       } catch (err) {
         if (image.crossOrigin !== 'anonymous') {
@@ -721,7 +850,10 @@ function serializeElementNode(
       }
       if (image.crossOrigin === 'anonymous') {
         priorCrossOrigin
-          ? (attributes.crossOrigin = priorCrossOrigin)
+          ? (attributes.crossOrigin = finalizeLateAttribute(
+              'crossOrigin',
+              priorCrossOrigin,
+            ))
           : image.removeAttribute('crossorigin');
       }
     };
@@ -740,6 +872,7 @@ function serializeElementNode(
     mediaAttributes.rr_mediaMuted = (n as HTMLMediaElement).muted;
     mediaAttributes.rr_mediaLoop = (n as HTMLMediaElement).loop;
     mediaAttributes.rr_mediaVolume = (n as HTMLMediaElement).volume;
+    generatedAttributeNames.add('rr_mediaState');
   }
   // Scroll
   if (!newlyAddedElement) {
@@ -749,9 +882,11 @@ function serializeElementNode(
     // So we can safely skip the `scrollTop/Left` calls for newly added elements
     if (n.scrollLeft) {
       attributes.rr_scrollLeft = n.scrollLeft;
+      generatedAttributeNames.add('rr_scrollLeft');
     }
     if (n.scrollTop) {
       attributes.rr_scrollTop = n.scrollTop;
+      generatedAttributeNames.add('rr_scrollTop');
     }
   }
   // block element
@@ -762,6 +897,8 @@ function serializeElementNode(
       rr_width: `${width}px`,
       rr_height: `${height}px`,
     };
+    generatedAttributeNames.add('rr_width');
+    generatedAttributeNames.add('rr_height');
   }
   // iframe
   if (tagName === 'iframe' && !keepIframeSrcFn(attributes.src as string)) {
@@ -772,6 +909,15 @@ function serializeElementNode(
     }
     delete attributes.src; // prevent auto loading
   }
+
+  finalizeAttributes(attributes, {
+    element: n,
+    privacy,
+    maskAllElementAttributes,
+    maskAttributeFn,
+    generatedAttributes: generatedAttributeNames,
+  });
+  serializationComplete = true;
 
   let isCustomElement: true | undefined;
   try {
@@ -927,7 +1073,9 @@ export function serializeNodeWithId(
     blockClass: string | RegExp;
     blockSelector: string | null;
     maskTextClass: string | RegExp;
-    maskTextSelector: string | null;
+    /** The pre-split pair from `splitMaskAllSelector`; a raw string is still accepted, coerced by `needMaskingText`. */
+    maskTextSelector: MaskTextSelector | string | null;
+    unmaskTextSelector: string | null;
     skipChild: boolean;
     inlineStylesheet: boolean;
     newlyAddedElement?: boolean;
@@ -935,11 +1083,14 @@ export function serializeNodeWithId(
     needsMask?: boolean;
     maskTextFn: MaskTextFn | undefined;
     maskInputFn: MaskInputFn | undefined;
+    maskAllElementAttributes?: boolean;
+    maskAttributeFn?: MaskAttributeFn;
     slimDOMOptions: SlimDOMOptions;
     dataURLOptions?: DataURLOptions;
     keepIframeSrcFn?: KeepIframeSrcFn;
     inlineImages?: boolean;
     recordCanvas?: boolean;
+    canvasMaskingConfigured?: () => boolean;
     preserveWhiteSpace?: boolean;
     onSerialize?: (n: Node) => unknown;
     onIframeLoad?: (
@@ -953,6 +1104,7 @@ export function serializeNodeWithId(
     ) => unknown;
     stylesheetLoadTimeout?: number;
     cssCaptured?: boolean;
+    privacy?: CompiledPrivacyPolicy;
   },
 ): serializedNodeWithId | null {
   const {
@@ -962,15 +1114,19 @@ export function serializeNodeWithId(
     blockSelector,
     maskTextClass,
     maskTextSelector,
+    unmaskTextSelector,
     skipChild = false,
     inlineStylesheet = true,
     maskInputOptions = {},
     maskTextFn,
     maskInputFn,
+    maskAllElementAttributes = false,
+    maskAttributeFn,
     slimDOMOptions,
     dataURLOptions = {},
     inlineImages = false,
     recordCanvas = false,
+    canvasMaskingConfigured,
     onSerialize,
     onIframeLoad,
     iframeLoadTimeout = 5000,
@@ -979,18 +1135,21 @@ export function serializeNodeWithId(
     keepIframeSrcFn = () => false,
     newlyAddedElement = false,
     cssCaptured = false,
+    privacy,
   } = options;
   let { needsMask } = options;
   let { preserveWhiteSpace = true } = options;
 
-  if (!needsMask) {
-    // perf: if needsMask = true, children won't also need to check
-    const checkAncestors = needsMask === undefined; // if false, we've already checked ancestors
+  if (!needsMask || unmaskTextSelector) {
+    const checkAncestors =
+      needsMask === undefined || Boolean(unmaskTextSelector);
     needsMask = needMaskingText(
       n as Element,
       maskTextClass,
       maskTextSelector,
+      unmaskTextSelector,
       checkAncestors,
+      needsMask === true,
     );
   }
 
@@ -1004,12 +1163,16 @@ export function serializeNodeWithId(
     maskInputOptions,
     maskTextFn,
     maskInputFn,
+    maskAllElementAttributes,
+    maskAttributeFn,
     dataURLOptions,
     inlineImages,
     recordCanvas,
+    canvasMaskingConfigured,
     keepIframeSrcFn,
     newlyAddedElement,
     cssCaptured,
+    privacy,
   });
   if (!_serializedNode) {
     // TODO: dev only
@@ -1073,15 +1236,19 @@ export function serializeNodeWithId(
       needsMask,
       maskTextClass,
       maskTextSelector,
+      unmaskTextSelector,
       skipChild,
       inlineStylesheet,
       maskInputOptions,
       maskTextFn,
       maskInputFn,
+      maskAllElementAttributes,
+      maskAttributeFn,
       slimDOMOptions,
       dataURLOptions,
       inlineImages,
       recordCanvas,
+      canvasMaskingConfigured,
       preserveWhiteSpace,
       onSerialize,
       onIframeLoad,
@@ -1090,6 +1257,7 @@ export function serializeNodeWithId(
       stylesheetLoadTimeout,
       keepIframeSrcFn,
       cssCaptured: false,
+      privacy,
     };
 
     if (
@@ -1149,15 +1317,19 @@ export function serializeNodeWithId(
             needsMask,
             maskTextClass,
             maskTextSelector,
+            unmaskTextSelector,
             skipChild: false,
             inlineStylesheet,
             maskInputOptions,
             maskTextFn,
             maskInputFn,
+            maskAllElementAttributes,
+            maskAttributeFn,
             slimDOMOptions,
             dataURLOptions,
             inlineImages,
             recordCanvas,
+            canvasMaskingConfigured,
             preserveWhiteSpace,
             onSerialize,
             onIframeLoad,
@@ -1165,6 +1337,7 @@ export function serializeNodeWithId(
             onStylesheetLoad,
             stylesheetLoadTimeout,
             keepIframeSrcFn,
+            privacy,
           });
 
           if (serializedIframeNode) {
@@ -1201,15 +1374,19 @@ export function serializeNodeWithId(
             needsMask,
             maskTextClass,
             maskTextSelector,
+            unmaskTextSelector,
             skipChild: false,
             inlineStylesheet,
             maskInputOptions,
             maskTextFn,
             maskInputFn,
+            maskAllElementAttributes,
+            maskAttributeFn,
             slimDOMOptions,
             dataURLOptions,
             inlineImages,
             recordCanvas,
+            canvasMaskingConfigured,
             preserveWhiteSpace,
             onSerialize,
             onIframeLoad,
@@ -1217,6 +1394,7 @@ export function serializeNodeWithId(
             onStylesheetLoad,
             stylesheetLoadTimeout,
             keepIframeSrcFn,
+            privacy,
           });
 
           if (serializedLinkNode) {
@@ -1242,14 +1420,18 @@ function snapshot(
     blockSelector?: string | null;
     maskTextClass?: string | RegExp;
     maskTextSelector?: string | null;
+    unmaskTextSelector?: string | null;
     inlineStylesheet?: boolean;
     maskAllInputs?: boolean | MaskInputOptions;
     maskTextFn?: MaskTextFn;
     maskInputFn?: MaskInputFn;
+    maskAllElementAttributes?: boolean;
+    maskAttributeFn?: MaskAttributeFn;
     slimDOM?: 'all' | boolean | SlimDOMOptions;
     dataURLOptions?: DataURLOptions;
     inlineImages?: boolean;
     recordCanvas?: boolean;
+    canvasMaskingConfigured?: () => boolean;
     preserveWhiteSpace?: boolean;
     onSerialize?: (n: Node) => unknown;
     onIframeLoad?: (
@@ -1263,20 +1445,27 @@ function snapshot(
     ) => unknown;
     stylesheetLoadTimeout?: number;
     keepIframeSrcFn?: KeepIframeSrcFn;
+    privacyPolicy?: PrivacyPolicy;
+    /** @internal an already-compiled policy, merged with the selector options above; avoids re-compiling on every full snapshot. */
+    privacy?: CompiledPrivacyPolicy;
   },
 ): serializedNodeWithId | null {
   const {
     mirror = new Mirror(),
     blockClass = 'rr-block',
-    blockSelector = null,
+    blockSelector: manualBlockSelector = null,
     maskTextClass = 'rr-mask',
-    maskTextSelector = null,
+    maskTextSelector: manualMaskTextSelector = null,
+    unmaskTextSelector: manualUnmaskTextSelector = null,
     inlineStylesheet = true,
     inlineImages = false,
     recordCanvas = false,
+    canvasMaskingConfigured,
     maskAllInputs = false,
     maskTextFn,
     maskInputFn,
+    maskAllElementAttributes = false,
+    maskAttributeFn,
     slimDOM = false,
     dataURLOptions,
     preserveWhiteSpace,
@@ -1286,7 +1475,18 @@ function snapshot(
     onStylesheetLoad,
     stylesheetLoadTimeout,
     keepIframeSrcFn = () => false,
+    privacyPolicy,
+    privacy: compiledPrivacy,
   } = options || {};
+  const { privacy, blockSelector, maskTextSelector, unmaskTextSelector } =
+    resolvePrivacyContext({
+      privacy: compiledPrivacy,
+      privacyPolicy,
+      blockSelector: manualBlockSelector,
+      maskTextSelector: manualMaskTextSelector,
+      unmaskTextSelector: manualUnmaskTextSelector,
+    });
+  const splitMaskTextSelector = splitMaskAllSelector(maskTextSelector);
   const maskInputOptions: MaskInputOptions =
     maskAllInputs === true
       ? {
@@ -1320,16 +1520,20 @@ function snapshot(
     blockClass,
     blockSelector,
     maskTextClass,
-    maskTextSelector,
+    maskTextSelector: splitMaskTextSelector,
+    unmaskTextSelector,
     skipChild: false,
     inlineStylesheet,
     maskInputOptions,
     maskTextFn,
     maskInputFn,
+    maskAllElementAttributes,
+    maskAttributeFn,
     slimDOMOptions,
     dataURLOptions,
     inlineImages,
     recordCanvas,
+    canvasMaskingConfigured,
     preserveWhiteSpace,
     onSerialize,
     onIframeLoad,
@@ -1338,6 +1542,7 @@ function snapshot(
     stylesheetLoadTimeout,
     keepIframeSrcFn,
     newlyAddedElement: false,
+    privacy,
   });
 }
 

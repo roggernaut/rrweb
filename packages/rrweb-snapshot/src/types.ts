@@ -68,6 +68,22 @@ export type SlimDOMOptions = Partial<{
 
 export type MaskTextFn = (text: string, element: HTMLElement | null) => string;
 export type MaskInputFn = (text: string, element: HTMLElement) => string;
+export type MaskAttributeFn = (
+  name: string,
+  value: string,
+  element: Element,
+) => string;
+
+/** Declared in `@rrweb/types`, the source of truth; re-exported so this package's public surface is unchanged. */
+export type {
+  PrivacyPolicy,
+  PrivacyPreset,
+  PrivacyAction,
+  PrivacyRule,
+  PrivacyTarget,
+  VendorCompatId,
+  CompiledPrivacyPolicy,
+} from '@rrweb/types';
 
 export type KeepIframeSrcFn = (src: string) => boolean;
 

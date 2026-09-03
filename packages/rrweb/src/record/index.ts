@@ -3,6 +3,7 @@ import {
   slimDOMDefaults,
   type MaskInputOptions,
   createMirror,
+  resolvePrivacyContext,
 } from 'rrweb-snapshot';
 import { initObservers, mutationBuffers } from './observer';
 import {
@@ -27,11 +28,16 @@ import {
   type scrollCallback,
   type canvasMutationParam,
   type adoptedStyleSheetParam,
+  type SamplingStrategy,
 } from '@rrweb/types';
 import type { CrossOriginIframeMessageEventContent } from '../types';
 import { IframeManager } from './iframe-manager';
 import { ShadowDomManager } from './shadow-dom-manager';
 import { CanvasManager } from './observers/canvas/canvas-manager';
+import {
+  isCanvasMaskingConfigured,
+  resolveCanvasSampling,
+} from './observers/canvas/canvas-mask';
 import { StylesheetManager } from './stylesheet-manager';
 import ProcessedNodeManager from './processed-node-manager';
 import {
@@ -46,6 +52,8 @@ let wrappedEmit!: (e: eventWithoutTime, isCheckout?: boolean) => void;
 let takeFullSnapshot!: (isCheckout?: boolean) => void;
 let canvasManager!: CanvasManager;
 let recording = false;
+
+let warnedStrictDisablesCanvas = false;
 
 // Multiple tools (i.e. MooTools, Prototype.js) override Array.from and drop support for the 2nd parameter
 // Try to pull a clean implementation from a newly created iframe
@@ -70,24 +78,28 @@ function record<T = eventWithTime>(
     checkoutEveryNms,
     checkoutEveryNth,
     blockClass = 'rr-block',
-    blockSelector = null,
+    blockSelector: manualBlockSelector = null,
     ignoreClass = 'rr-ignore',
     ignoreSelector = null,
     maskTextClass = 'rr-mask',
-    maskTextSelector = null,
+    maskTextSelector: manualMaskTextSelector = null,
+    unmaskTextSelector: manualUnmaskTextSelector = null,
     inlineStylesheet = true,
     maskAllInputs,
     maskInputOptions: _maskInputOptions,
     slimDOMOptions: _slimDOMOptions,
     maskInputFn,
     maskTextFn,
+    maskAllElementAttributes = false,
+    maskAttributeFn,
     hooks,
     packFn,
-    sampling = {},
+    sampling: requestedSampling = {},
     dataURLOptions = {},
+    canvasMasking,
     mousemoveWait,
     recordDOM = true,
-    recordCanvas = false,
+    recordCanvas: requestedRecordCanvas = false,
     recordCrossOriginIframes = false,
     recordAfter = options.recordAfter === 'DOMContentLoaded'
       ? options.recordAfter
@@ -99,7 +111,35 @@ function record<T = eventWithTime>(
     keepIframeSrcFn = () => false,
     ignoreCSSAttributes = new Set([]),
     errorHandler,
+    privacyPolicy,
   } = options;
+
+  const { privacy, blockSelector, maskTextSelector } = resolvePrivacyContext({
+    privacyPolicy,
+    blockSelector: manualBlockSelector,
+    maskTextSelector: manualMaskTextSelector,
+    unmaskTextSelector: manualUnmaskTextSelector,
+  });
+  // Strict stays fail-closed for the whole canvas; region providers apply
+  // only to balanced/minimal, where the application owns region completeness.
+  const recordCanvas = requestedRecordCanvas && !privacy.blockMedia;
+  if (
+    requestedRecordCanvas &&
+    privacy.blockMedia &&
+    !warnedStrictDisablesCanvas
+  ) {
+    warnedStrictDisablesCanvas = true;
+    console.warn(
+      "privacyPolicy preset 'strict' disables canvas recording; recordCanvas ignored",
+    );
+  }
+  const canvasMaskingConfigured = canvasMasking
+    ? () => isCanvasMaskingConfigured(canvasMasking)
+    : undefined;
+  const sampling: SamplingStrategy = {
+    ...requestedSampling,
+    canvas: resolveCanvasSampling(requestedSampling.canvas, canvasMasking),
+  };
 
   registerErrorHandler(errorHandler);
 
@@ -306,6 +346,7 @@ function record<T = eventWithTime>(
     mirror,
     sampling: sampling.canvas,
     dataURLOptions,
+    canvasMasking,
   });
 
   const shadowDomManager = new ShadowDomManager({
@@ -321,7 +362,10 @@ function record<T = eventWithTime>(
       dataURLOptions,
       maskTextFn,
       maskInputFn,
+      maskAllElementAttributes,
+      maskAttributeFn,
       recordCanvas,
+      canvasMaskingConfigured,
       inlineImages,
       sampling,
       slimDOMOptions,
@@ -330,6 +374,7 @@ function record<T = eventWithTime>(
       canvasManager,
       keepIframeSrcFn,
       processedNodeManager,
+      privacy,
     },
     mirror,
   });
@@ -366,10 +411,14 @@ function record<T = eventWithTime>(
       maskAllInputs: maskInputOptions,
       maskTextFn,
       maskInputFn,
+      maskAllElementAttributes,
+      maskAttributeFn,
       slimDOM: slimDOMOptions,
       dataURLOptions,
       recordCanvas,
+      canvasMaskingConfigured,
       inlineImages,
+      privacy,
       onSerialize: (n) => {
         if (isSerializedIframe(n, mirror)) {
           iframeManager.addIframe(n as HTMLIFrameElement);
@@ -407,6 +456,7 @@ function record<T = eventWithTime>(
       isCheckout,
     );
     mutationBuffers.forEach((buf) => buf.unlock()); // generate & emit any mutations that happened during snapshotting, as can now apply against the newly built mirror
+    canvasManager.onFullSnapshot();
 
     // Some old browsers don't support adoptedStyleSheets.
     if (document.adoptedStyleSheets && document.adoptedStyleSheets.length > 0)
@@ -513,10 +563,13 @@ function record<T = eventWithTime>(
           maskTextClass,
           maskTextSelector,
           maskInputOptions,
+          maskAllElementAttributes,
+          maskAttributeFn,
           inlineStylesheet,
           sampling,
           recordDOM,
           recordCanvas,
+          canvasMaskingConfigured,
           inlineImages,
           userTriggeredOnInput,
           collectFonts,
@@ -534,6 +587,7 @@ function record<T = eventWithTime>(
           processedNodeManager,
           canvasManager,
           ignoreCSSAttributes,
+          privacy,
           plugins:
             plugins
               ?.filter((p) => p.observer)

@@ -28,6 +28,8 @@ export class ShadowDomManager {
   private bypassOptions: BypassOptions;
   private mirror: Mirror;
   private restoreHandlers: (() => void)[] = [];
+  /** Iterable (unlike the `shadowDoms` WeakSet), so the canvas manager can be told when observation stops. */
+  private canvasTrackedShadowRoots = new Set<ShadowRoot>();
 
   constructor(options: {
     mutationCb: mutationCallBack;
@@ -53,6 +55,8 @@ export class ShadowDomManager {
     if (!isNativeShadowDom(shadowRoot)) return;
     if (this.shadowDoms.has(shadowRoot)) return;
     this.shadowDoms.add(shadowRoot);
+    this.canvasTrackedShadowRoots.add(shadowRoot);
+    this.bypassOptions.canvasManager.addShadowRoot(shadowRoot);
     const [observer] = initMutationObserver(
       {
         ...this.bypassOptions,
@@ -153,5 +157,9 @@ export class ShadowDomManager {
     });
     this.restoreHandlers = [];
     this.shadowDoms = new WeakSet();
+    this.canvasTrackedShadowRoots.forEach((shadowRoot) => {
+      this.bypassOptions.canvasManager.removeShadowRoot(shadowRoot);
+    });
+    this.canvasTrackedShadowRoots = new Set();
   }
 }
