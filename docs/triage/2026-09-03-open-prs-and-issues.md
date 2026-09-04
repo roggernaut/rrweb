@@ -609,6 +609,74 @@ Consequences for upstream intake:
 
 ---
 
+## PostHog fork review (posthog-js 3765 / 3766, as of 2026-07-15)
+
+Read-only check of PostHog’s two trackers. 3766 is contribute-back (their
+divergences → us). 3765 is downstream pull-in (our open PRs → their
+vendored `packages/rrweb`). They last re-verified the fork grep on
+2026-07-11 and merged four adoption PRs on 2026-07-15. Nothing here was
+posted to rrweb-io.
+
+PostHog’s own rule: they do **line-by-line review, not blind cherry-pick**.
+“Already in our fork” means the patch is in production posthog-js, not
+that the git blob is identical.
+
+### Already in their fork — still open upstream — adopt on that review
+
+These are the ones we can treat as pre-reviewed. Promote to obviously
+adopt (rebase + CI) unless a row below says otherwise.
+
+| PR | Author | Our previous bucket | Why PostHog’s review is enough |
+| --- | --- | --- | --- |
+| 1712 | pauldambra | Obviously adopt (already APPROVED) | Their own two-line warn fix. Merge. |
+| 1802 | juliecheng | Obviously adopt | In their fork. Untainted `querySelector`. |
+| 1688 | juliecheng | Review individually | In their fork. Pair with Eoghan 1673; close Justin 1462. |
+| 1691 | juliecheng | Review individually | In their fork. Skip unchanged `setAttribute`. |
+| 1711 | JonaszJestem | Review individually | In their fork. Doctype insert. |
+| 1770 | heathdutton | Review individually | In their fork. Iframe cleanup in `getUntaintedPrototype`. |
+| 1769 | heathdutton | Obviously adopt | High-trust; they listed it as PostHog-adjacent. One line. |
+| 1771 | heathdutton | Obviously adopt | Same. Replay `autocomplete=off`. |
+| 1737 | QuentinLowe | Obviously adopt | On their planned batch-2 stability list. One-line guard. |
+| 1812 | juliecheng | Review individually | Next on their batch-2 list after the July ports. Native `Proxy`. |
+| 1697 | eoghanmurray | Review individually (maintainer) | **Shipped in posthog-js 4131** (2026-07-15). They hoisted the event-source list into a Set; take that or land Eoghan’s version and let them feed the Set back. |
+| 1633 | pauldambra | Review individually | Their own Angular untainted-prototype PR. Nudge/merge. |
+| 1814 | megboehlert | Review individually | Their own. Untainted add/removeEventListener. |
+
+### Shipped in posthog-js after a real review — not verbatim
+
+| PR | posthog-js PR | Verdict for us |
+| --- | --- | --- |
+| 1854 | 4128 (merged) | Already on upstream `main`. Ignore. They diverged (page-lifetime keepalive vs teardown). |
+| 1302 | 4130 (merged) | 7-line `addedSet` order fix. Still a **draft** here; we had folded it into Eoghan 1652. PostHog’s port is the one to land if we do not want to wait on 1652. |
+| 1873 | 4129 (merged) | **Do not rubber-stamp.** They found two bugs (shadow roots via `bypassOptions`; empty array silently disables all attribute recording). Privacy: `attributeFilter` can drop mutations masking depends on. Review individually; take their two fixes. |
+| 1697 | 4131 (merged) | See table above. Near-verbatim plus the Set hoist. |
+
+### In their fork — do not adopt from that fact
+
+| PR | Why not |
+| --- | --- |
+| 724 | We already reject (`__sn` / iframe id). Stale. |
+| 1413 | Superseded by 1428. |
+| 1462 | Superseded by 1673 + 1688. |
+| 1791 | They **solved it differently**. Not their code. |
+| 1825 / 1826 / 1806 | Closed unmerged upstream (2026-06-17). 1826 superseded by merged 1854. 1806’s backward-skip fix exists only on the closed branch; they may vendor that themselves. |
+
+### Their own open PRs — nudge, but not a free merge
+
+Need tests or are part of a cluster: 1635 (Chrome custom-element iframes),
+1641 (adopted styles), 1686 (`stringifyRule`), 1755 (iframe `pagehide` —
+they want this folded into a combined iframe-lifecycle PR with 1791).
+1469 (bitmap errors) was on 3765 adopt-high; confirm it is still open.
+
+### They explicitly declined (do not promote on their review)
+
+1694 (mutation throttle — they already have SDK `MutationThrottler`;
+upstream wraps the same `emit()` checkout uses). 1373 (`null` mask/block
+class — unreachable under their hard-coded classes). 1356 (zone.js
+`setTimeout` — CHANGES_REQUESTED, they have their own Zone path).
+
+---
+
 ## Suggested first merges (upstream `main`, no strategy meeting required)
 
 **Community**
@@ -616,14 +684,17 @@ Consequences for upstream intake:
 1. **1712** (already approved by Justin + Eoghan). Decide 1656 the same day.
 2. Approve+merge 1921, 1905, 1904, 1903, 1906 — all `REVIEW_REQUIRED`, no human review.
 3. 1771, 1769, 1737, 1802, 1856 — same: stuck on us, not the author.
-4. Stop. Hidden-input / placeholder masking (1745, 1912) need a changeset
+4. **PostHog-pre-reviewed (3765 already-in-fork):** 1688, 1691, 1711, 1770, 1812, 1633, 1814.
+5. Stop. Hidden-input / placeholder masking (1745, 1912) need a changeset
    and a decision against privacy-at-capture. Cross-origin allowlisting is
-   1800, not 1679. Invalid-media leftover 1798 should be closed.
+   1800, not 1679. Invalid-media leftover 1798 should be closed. Do not
+   rubber-stamp 1873 even though PostHog shipped it.
 
 **Maintainers, same day**
 
-- Eoghan: merge 1673; close 294/389/558/724/1477
+- Eoghan: merge 1673 and 1697 (PostHog already runs 1697); close 294/389/558/724/1477
 - Justin: merge 1891/1732; close 1239/1462
 - Yun: decide whether 1149 is split or closed
+- Optional: land the 7-line 1302 `addedSet` fix instead of waiting on 1652
 
 Then the team meeting (assets, heatmaps, Cloud/extension, closed shadow, 2.0).
