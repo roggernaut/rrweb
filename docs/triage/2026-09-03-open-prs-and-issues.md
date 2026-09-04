@@ -626,39 +626,39 @@ that the git blob is identical.
 These are the ones we can treat as pre-reviewed. Promote to obviously
 adopt (rebase + CI) unless a row below says otherwise.
 
-| PR | Author | Our previous bucket | Why PostHog’s review is enough |
-| --- | --- | --- | --- |
-| 1712 | pauldambra | Obviously adopt (already APPROVED) | Their own two-line warn fix. Merge. |
-| 1802 | juliecheng | Obviously adopt | In their fork. Untainted `querySelector`. |
-| 1688 | juliecheng | Review individually | In their fork. Pair with Eoghan 1673; close Justin 1462. |
-| 1691 | juliecheng | Review individually | In their fork. Skip unchanged `setAttribute`. |
-| 1711 | JonaszJestem | Review individually | In their fork. Doctype insert. |
-| 1770 | heathdutton | Review individually | In their fork. Iframe cleanup in `getUntaintedPrototype`. |
-| 1769 | heathdutton | Obviously adopt | High-trust; they listed it as PostHog-adjacent. One line. |
-| 1771 | heathdutton | Obviously adopt | Same. Replay `autocomplete=off`. |
-| 1737 | QuentinLowe | Obviously adopt | On their planned batch-2 stability list. One-line guard. |
-| 1812 | juliecheng | Review individually | Next on their batch-2 list after the July ports. Native `Proxy`. |
-| 1697 | eoghanmurray | Review individually (maintainer) | **Shipped in posthog-js 4131** (2026-07-15). They hoisted the event-source list into a Set; take that or land Eoghan’s version and let them feed the Set back. |
-| 1633 | pauldambra | Review individually | Their own Angular untainted-prototype PR. Nudge/merge. |
-| 1814 | megboehlert | Review individually | Their own. Untainted add/removeEventListener. |
+| PR   | Author       | Our previous bucket                | Why PostHog’s review is enough                                                                                                                                 |
+| ---- | ------------ | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1712 | pauldambra   | Obviously adopt (already APPROVED) | Their own two-line warn fix. Merge.                                                                                                                            |
+| 1802 | juliecheng   | Obviously adopt                    | In their fork. Untainted `querySelector`.                                                                                                                      |
+| 1688 | juliecheng   | Review individually                | In their fork. Pair with Eoghan 1673; close Justin 1462.                                                                                                       |
+| 1691 | juliecheng   | Review individually                | In their fork. Skip unchanged `setAttribute`.                                                                                                                  |
+| 1711 | JonaszJestem | Review individually                | In their fork. Doctype insert.                                                                                                                                 |
+| 1770 | heathdutton  | Review individually                | In their fork. Iframe cleanup in `getUntaintedPrototype`.                                                                                                      |
+| 1769 | heathdutton  | Obviously adopt                    | High-trust; they listed it as PostHog-adjacent. One line.                                                                                                      |
+| 1771 | heathdutton  | Obviously adopt                    | Same. Replay `autocomplete=off`.                                                                                                                               |
+| 1737 | QuentinLowe  | Obviously adopt                    | On their planned batch-2 stability list. One-line guard.                                                                                                       |
+| 1812 | juliecheng   | Review individually                | Next on their batch-2 list after the July ports. Native `Proxy`.                                                                                               |
+| 1697 | eoghanmurray | Review individually (maintainer)   | **Shipped in posthog-js 4131** (2026-07-15). They hoisted the event-source list into a Set; take that or land Eoghan’s version and let them feed the Set back. |
+| 1633 | pauldambra   | Review individually                | Their own Angular untainted-prototype PR. Nudge/merge.                                                                                                         |
+| 1814 | megboehlert  | Review individually                | Their own. Untainted add/removeEventListener.                                                                                                                  |
 
 ### Shipped in posthog-js after a real review — not verbatim
 
-| PR | posthog-js PR | Verdict for us |
-| --- | --- | --- |
-| 1854 | 4128 (merged) | Already on upstream `main`. Ignore. They diverged (page-lifetime keepalive vs teardown). |
-| 1302 | 4130 (merged) | 7-line `addedSet` order fix. Still a **draft** here; we had folded it into Eoghan 1652. PostHog’s port is the one to land if we do not want to wait on 1652. |
+| PR   | posthog-js PR | Verdict for us                                                                                                                                                                                                                                       |
+| ---- | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1854 | 4128 (merged) | Already on upstream `main`. Ignore. They diverged (page-lifetime keepalive vs teardown).                                                                                                                                                             |
+| 1302 | 4130 (merged) | 7-line `addedSet` order fix. Still a **draft** here; we had folded it into Eoghan 1652. PostHog’s port is the one to land if we do not want to wait on 1652.                                                                                         |
 | 1873 | 4129 (merged) | **Do not rubber-stamp.** They found two bugs (shadow roots via `bypassOptions`; empty array silently disables all attribute recording). Privacy: `attributeFilter` can drop mutations masking depends on. Review individually; take their two fixes. |
-| 1697 | 4131 (merged) | See table above. Near-verbatim plus the Set hoist. |
+| 1697 | 4131 (merged) | See table above. Near-verbatim plus the Set hoist.                                                                                                                                                                                                   |
 
 ### In their fork — do not adopt from that fact
 
-| PR | Why not |
-| --- | --- |
-| 724 | We already reject (`__sn` / iframe id). Stale. |
-| 1413 | Superseded by 1428. |
-| 1462 | Superseded by 1673 + 1688. |
-| 1791 | They **solved it differently**. Not their code. |
+| PR                 | Why not                                                                                                                                                            |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 724                | We already reject (`__sn` / iframe id). Stale.                                                                                                                     |
+| 1413               | Superseded by 1428.                                                                                                                                                |
+| 1462               | Superseded by 1673 + 1688.                                                                                                                                         |
+| 1791               | They **solved it differently**. Not their code.                                                                                                                    |
 | 1825 / 1826 / 1806 | Closed unmerged upstream (2026-06-17). 1826 superseded by merged 1854. 1806’s backward-skip fix exists only on the closed branch; they may vendor that themselves. |
 
 ### Their own open PRs — nudge, but not a free merge
