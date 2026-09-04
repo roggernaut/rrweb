@@ -52,11 +52,11 @@ when the patch cannot be evaluated until it is refreshed.
 Applied only where the flag is the point of the change, not where a file path
 happens to mention `canvas` or `plugin`.
 
-| Flag                    | Meaning                                                                                                                                                                                                                                     |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Impacts privacy**     | Changes what gets recorded, who can receive it, or how replay executes untrusted data. Can expand collection, punch through a previous isolation boundary, or change the masking contract.                                                  |
-| **Strengthens privacy** | Closes a leak, tightens masking/blocking, or reduces exfil / XSS surface.                                                                                                                                                                   |
-| **Commercial value**    | Helps session-replay products, rrweb Cloud, the Chrome extension, heatmaps, assets, scale, or enterprise compliance. Privacy work is commercially valuable when it is what vendors need to ship.                                            |
+| Flag                    | Meaning                                                                                                                                                                                                                                                                                  |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Impacts privacy**     | Changes what gets recorded, who can receive it, or how replay executes untrusted data. Can expand collection, punch through a previous isolation boundary, or change the masking contract.                                                                                               |
+| **Strengthens privacy** | Closes a leak, tightens masking/blocking, or reduces exfil / XSS surface.                                                                                                                                                                                                                |
+| **Commercial value**    | Helps session-replay products, rrweb Cloud, the Chrome extension, heatmaps, assets, scale, or enterprise compliance. Privacy work is commercially valuable when it is what vendors need to ship.                                                                                         |
 | **Waiting on review**   | Non-draft PR whose GitHub `reviewDecision` is `REVIEW_REQUIRED` (or empty) and no core-maintainer approve or request-changes exists. Distinct from **changes requested**, where a maintainer already looked and the author owes a revision. |
 
 A single item can carry more than one flag. See [Review bottleneck](#review-bottleneck) for the counts.
@@ -87,12 +87,12 @@ Reject (out of scope):
 ## Do this first (recommended order)
 
 0. **Clear the review gate**  
-    Merge the two already-approved community PRs (1712, and 1656 if the
+   Merge the two already-approved community PRs (1712, and 1656 if the
    vitest pin is still the intent). Then approve the community
    obviously-adopt list — those are `REVIEW_REQUIRED` with no human
    review.
-   0b. **Maintainer queue hygiene**  
-    52 of 138 open PRs are from Eoghan, Justin, or Yun. Closing stale
+0b. **Maintainer queue hygiene**  
+   52 of 138 open PRs are from Eoghan, Justin, or Yun. Closing stale
    own-drafts first makes the community queue easier to see: Justin 1239,
    Eoghan 1477/294/389/558/724, and any draft no longer intended
    (1046, 1015, 1874). 47 of those 52 are also `REVIEW_REQUIRED`.
@@ -171,24 +171,24 @@ Already-approved **1712**, then 1921, 1906, 1905, 1904, 1903, 1856,
 These are the patches and bugs that stop rrweb from shipping user data it
 already promised to mask, or that shrink replay/XSS surface.
 
-| ID                                            | Bucket                                       | Why                                                                                                                                                                                                                              |
-| --------------------------------------------- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ID                                            | Bucket                                       | Why                                                                                                                                                                                                                        |
+| --------------------------------------------- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | PR 1912                                       | Request clean-up                             | Masks `placeholder` when input masking is on. Real PII leak (`"Enter email: user@…"`). This repository’s privacy policy already treats `placeholder` as a sensitive attribute — upstream `main` does not. Add changeset, rebase. |
 | PR 1745 / PR 1610 / issue 1609                | Request clean-up (pick **1745**, close 1610) | `maskAllInputs` currently omits `hidden`. Tokens, CSRF, internal IDs leak. This repository marks `input[type=hidden]` protected under the new policy; upstream still needs the `maskAllInputs` gap closed.                       |
-| PR 1257 / issue 1581                          | Discuss in team                              | Generic `maskAttributesFn`. Needed by PostHog-class vendors. Overlaps privacy-at-capture `SENSITIVE_ATTRIBUTES` / `maskAttributeFn`. Do not land a second API.                                                                   |
-| PR 1164                                       | Discuss in team                              | Masks option/radio/checkbox values. Correct privacy instinct; API should fold into the policy, not a one-off.                                                                                                                    |
-| PR 1097 / issue 874 / issue 1385 / issue 1488 | Discuss in team                              | Text-masking should apply to inputs; `maskInputFn` skipped on full snapshot. Several reports of the same hole.                                                                                                                   |
-| PR 1212                                       | Request clean-up                             | Custom mask selector / `maskTextFn` improvements. Stale, DIRTY.                                                                                                                                                                  |
-| PR 1642 / issue 1644                          | Discuss in team                              | `blockElementFN` whitelist/strict blocking. Enterprise control. Conflicts with policy selectors.                                                                                                                                 |
-| PR 1800                                       | Discuss in team                              | `allowedIframeOrigins` allowlist. This is the security model to decide.                                                                                                                                                          |
-| PR 1679 / issue 1680                          | Reject with explanation                      | Sender-origin is not validated; narrower than 1800. Close in favor of the allowlist if that is the chosen model.                                                                                                                 |
-| PR 1256                                       | Reject with explanation                      | Earlier `safeCrossOrigin` sketch. Superseded by 1800.                                                                                                                                                                            |
-| PR 1766                                       | Request clean-up                             | Optional CSP on the replay iframe. Complements sandbox ADR. Needs tests and a changeset.                                                                                                                                         |
-| PR 1905 / issue 1736                          | Obviously adopt                              | Omit `srcdoc` on rebuild. Fixes a race **and** stops the browser parsing attacker HTML into the iframe. rrdom already omits `srcdoc`; snapshot rebuild does not.                                                                 |
-| PR 1771 / issue 1315                          | Obviously adopt                              | `autocomplete=off` during replay so the reviewer’s browser does not prompt-fill passwords into the session.                                                                                                                      |
-| PR 1790 **Justin**                            | Request clean-up                             | Privacy recipe docs. Author notes they were not verified. Rewrite against the policy, then merge.                                                                                                                                |
-| issue 1919                                    | Review individually                          | Blocked `<img>` still pays the full `inlineImages` encode. Block is a privacy control; encoding the bytes anyway is a leak plus a perf bug.                                                                                      |
-| issue 816 / issue 423 / issue 1699            | Review individually                          | Strict CSP / no-`blob:` worker. Security of the _recorded_ app, not of replay.                                                                                                                                                   |
+| PR 1257 / issue 1581                          | Discuss in team                              | Generic `maskAttributesFn`. Needed by PostHog-class vendors. Overlaps privacy-at-capture `SENSITIVE_ATTRIBUTES` / `maskAttributeFn`. Do not land a second API.                                                             |
+| PR 1164                                       | Discuss in team                              | Masks option/radio/checkbox values. Correct privacy instinct; API should fold into the policy, not a one-off.                                                                                                              |
+| PR 1097 / issue 874 / issue 1385 / issue 1488 | Discuss in team                              | Text-masking should apply to inputs; `maskInputFn` skipped on full snapshot. Several reports of the same hole.                                                                                                             |
+| PR 1212                                       | Request clean-up                             | Custom mask selector / `maskTextFn` improvements. Stale, DIRTY.                                                                                                                                                            |
+| PR 1642 / issue 1644                          | Discuss in team                              | `blockElementFN` whitelist/strict blocking. Enterprise control. Conflicts with policy selectors.                                                                                                                           |
+| PR 1800                                       | Discuss in team                              | `allowedIframeOrigins` allowlist. This is the security model to decide.                                                                                                                                                    |
+| PR 1679 / issue 1680                          | Reject with explanation                      | Sender-origin is not validated; narrower than 1800. Close in favor of the allowlist if that is the chosen model.                                                                                                           |
+| PR 1256                                       | Reject with explanation                      | Earlier `safeCrossOrigin` sketch. Superseded by 1800.                                                                                                                                                                      |
+| PR 1766                                       | Request clean-up                             | Optional CSP on the replay iframe. Complements sandbox ADR. Needs tests and a changeset.                                                                                                                                   |
+| PR 1905 / issue 1736                          | Obviously adopt                              | Omit `srcdoc` on rebuild. Fixes a race **and** stops the browser parsing attacker HTML into the iframe. rrdom already omits `srcdoc`; snapshot rebuild does not.                                                           |
+| PR 1771 / issue 1315                          | Obviously adopt                              | `autocomplete=off` during replay so the reviewer’s browser does not prompt-fill passwords into the session.                                                                                                                |
+| PR 1790 **Justin**                            | Request clean-up                             | Privacy recipe docs. Author notes they were not verified. Rewrite against the policy, then merge.                                                                                                                          |
+| issue 1919                                    | Review individually                          | Blocked `<img>` still pays the full `inlineImages` encode. Block is a privacy control; encoding the bytes anyway is a leak plus a perf bug.                                                                                |
+| issue 816 / issue 423 / issue 1699            | Review individually                          | Strict CSP / no-`blob:` worker. Security of the _recorded_ app, not of replay.                                                                                                                                             |
 
 ### Impacts privacy (collection or contract changes)
 
@@ -200,7 +200,7 @@ Treat as “discuss” unless the expansion is clearly opt-in and documented.
 | PR 1914 **Eoghan**                  | Discuss in team         | Heatmap plugin. Extra semantic click payload (selector/text). PII in button labels. **Also commercial.**                                                           |
 | PR 1900                             | Discuss in team         | Records `alert`/`confirm`/`prompt`. `prompt()` is often credentials or PII.                                                                                        |
 | PR 1909 **Justin**                  | Discuss in team         | Extension upload to `api.rrweb.com` with a stored bearer token. Data leaves the machine. Draft. **Also commercial.**                                               |
-| PR 1861 / PR 1848 **Justin**        | Discuss in team         | Cloud-bound sequence IDs / browser-client defaults (`maskAllInputs: true` already in this repository). Product + privacy defaults.                                 |
+| PR 1861 / PR 1848 **Justin**        | Discuss in team         | Cloud-bound sequence IDs / browser-client defaults (`maskAllInputs: true` already in this repository). Product + privacy defaults.                                       |
 | PR 1475 **Eoghan**                  | Discuss in team         | Asset events capture image/media bytes. Retention and PII-in-images problem. **Also commercial.** Close Justin draft 1239.                                         |
 | PR 1046 **Justin**                  | Discuss in team         | WebRTC streaming of `<video>`. Live biometric / meeting content. Draft, stale.                                                                                     |
 | PR 1465                             | Discuss in team         | Parent forces a snapshot in a cross-origin iframe via postMessage.                                                                                                 |
@@ -334,19 +334,19 @@ The remaining ~86 PRs. Maintainer PRs live only in the section above.
 
 Ship after rebase + CI.
 
-| PR      | Notes                                                                        | Flags                                  |
-| ------- | ---------------------------------------------------------------------------- | -------------------------------------- |
-| PR 1712 | `console.log` → `warn`. **Already APPROVED by Justin and Eoghan.**           | Approved, unmerged                     |
-| PR 1921 | `ignoreAttribute` tagName case. Tests + changeset. Fixes 1916.               | Waiting on review                      |
-| PR 1906 | Regression tests only for CSS crash 1734/1692.                               | Waiting on review                      |
-| PR 1905 | Omit iframe `srcdoc` on rebuild. Tests + changeset. rrdom already does this. | Strengthens privacy, waiting on review |
-| PR 1904 | Console plugin `this` binding. Fixes Chrome extension crash 1772.            | Waiting on review                      |
-| PR 1903 | `repository.directory` so npm README links resolve. Fixes 1738.              | Waiting on review                      |
-| PR 1856 | “Who’s using rrweb?” logos. Verify the two names, then merge.                | Waiting on review                      |
-| PR 1771 | Disable autocomplete on replay inputs.                                       | Strengthens privacy, waiting on review |
-| PR 1769 | One-line: emit custom events when seeking. Fixes 1666.                       | Waiting on review                      |
-| PR 1737 | `image.currentSrc` can be undefined. One line.                               | Waiting on review                      |
-| PR 1802 | `querySelector` as untainted methods.                                        | Waiting on review                      |
+| PR      | Notes                                                                            | Flags                                |
+| ------- | -------------------------------------------------------------------------------- | ------------------------------------ |
+| PR 1712 | `console.log` → `warn`. **Already APPROVED by Justin and Eoghan.** | Approved, unmerged                   |
+| PR 1921 | `ignoreAttribute` tagName case. Tests + changeset. Fixes 1916.                   | Waiting on review                      |
+| PR 1906 | Regression tests only for CSS crash 1734/1692.                                   | Waiting on review                      |
+| PR 1905 | Omit iframe `srcdoc` on rebuild. Tests + changeset. rrdom already does this.     | Strengthens privacy, waiting on review |
+| PR 1904 | Console plugin `this` binding. Fixes Chrome extension crash 1772.                | Waiting on review                      |
+| PR 1903 | `repository.directory` so npm README links resolve. Fixes 1738.                  | Waiting on review                      |
+| PR 1856 | “Who’s using rrweb?” logos. Verify the two names, then merge.                    | Waiting on review                      |
+| PR 1771 | Disable autocomplete on replay inputs.                                           | Strengthens privacy, waiting on review |
+| PR 1769 | One-line: emit custom events when seeking. Fixes 1666.                           | Waiting on review                      |
+| PR 1737 | `image.currentSrc` can be undefined. One line.                                   | Waiting on review                      |
+| PR 1802 | `querySelector` as untainted methods.                                            | Waiting on review                      |
 
 ### Review individually (29)
 
@@ -385,7 +385,7 @@ Worth a human read. Not a product fork.
 | PR 1356 | Native `setTimeout` under zone.js.                                                                                  |                                 |
 | PR 1463 | Patched `toString` returns original. Detection-adjacent; still a correctness fix for apps that inspect native code. | Impacts privacy (weak: stealth) |
 | PR 1873 | `attributeFilter`.                                                                                                  | Impacts privacy                 |
-| PR 1373 | `null` mask/block class. Tiny and mergeable, but it is a privacy-default opt-out, so it still needs a privacy read. | Impacts privacy                 |
+| PR 1373 | `null` mask/block class. Tiny and mergeable, but it is a privacy-default opt-out, so it still needs a privacy read.            | Impacts privacy                 |
 | PR 1726 | Nested iframe emit.                                                                                                 | Impacts privacy                 |
 | PR 1336 | Compression level.                                                                                                  | Commercial value                |
 
@@ -464,18 +464,18 @@ Try clean-up once on 1722 / 1768, then reject if silent.
 
 Resolve the cluster, don’t review every member.
 
-| Cluster                     | Keep                                                                   | Close or fold                                                         |
-| --------------------------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| Hidden input masking        | 1745 (after changeset)                                                 | 1610                                                                  |
-| Cross-origin iframe origins | 1800                                                                   | 1679, 1256                                                            |
-| Canvas in iframe/shadow     | 1428                                                                   | 1413, 1235                                                            |
-| Asset capture               | Eoghan 1475 (and Justin 1848 if Cloud needs it)                        | Justin 1239                                                           |
-| Invalid media targets       | community 1688 + Eoghan 1673                                           | Justin 1462, community 1798                                           |
-| CSS crash “Unclosed string” | Regression tests 1906 (+ split-point fix 1920 if still needed)         | 1735 (already fixed on main)                                          |
-| Hover / pseudo-class replay | Team picks 1897 / 1917 / 1480                                          | don’t land all three                                                  |
+| Cluster                     | Keep                                                             | Close or fold                                                         |
+| --------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Hidden input masking        | 1745 (after changeset)                                           | 1610                                                                  |
+| Cross-origin iframe origins | 1800                                                             | 1679, 1256                                                            |
+| Canvas in iframe/shadow     | 1428                                                             | 1413, 1235                                                            |
+| Asset capture               | Eoghan 1475 (and Justin 1848 if Cloud needs it)                  | Justin 1239                                                           |
+| Invalid media targets       | community 1688 + Eoghan 1673                                     | Justin 1462, community 1798                                           |
+| CSS crash “Unclosed string” | Regression tests 1906 (+ split-point fix 1920 if still needed)   | 1735 (already fixed on main)                                          |
+| Hover / pseudo-class replay | Team picks 1897 / 1917 / 1480                                    | don’t land all three                                                  |
 | Masking API                 | Privacy-at-capture policy in this repository, or a single upstream API | 1257, 1164, 1097, 1212, 1912 as separate knobs                        |
-| Mutation perf               | 1652                                                                   | 1653, 1300, 1302                                                      |
-| Docs link rot               | One new PR                                                             | 1748, 1744, 1709, 1903 (keep 1903 — it is package.json, not markdown) |
+| Mutation perf               | 1652                                                             | 1653, 1300, 1302                                                      |
+| Docs link rot               | One new PR                                                       | 1748, 1744, 1709, 1903 (keep 1903 — it is package.json, not markdown) |
 
 ---
 
@@ -621,6 +621,24 @@ PostHog’s own rule: they do **line-by-line review, not blind cherry-pick**.
 “Already in our fork” means the patch is in production posthog-js, not
 that the git blob is identical.
 
+### Follow-up after they shipped (checked 2026-09-04)
+
+No second adoption batch. Tracker 3765 has no comments after 2026-07-11.
+No later posthog-js PR cites 4128–4131 as a regression. What they did
+change:
+
+| After | Relates to | What they found | What we should take |
+| --- | --- | --- | --- |
+| 4129 review (same day) | 1873 | Shadow roots were not filtered (`bypassOptions`). Empty `[]` would observe no attributes. | Fold both into 1873 if it lands. No later attributeFilter bugfix. |
+| 4131 review (Codex) | 1697 | Skipping unfreeze on autoplay still lets `checkoutEveryNth` / `checkoutEveryNms` take a full snapshot and unfreeze. Paul: PostHog does not use those options. | Real for vanilla rrweb. Guard checkout as well, or document the hole. |
+| 4130 review | 1302 | They almost diverged to `Set.delete`; reverted to upstream’s `has` → `delete` → `add` so re-syncs stay clean. Reorder is shallow (children stay put; emit deferral fixes parent/child). | Keep Eoghan/upstream shape. Comment that it is shallow. |
+| posthog-js 4325 (2026-07-30) | 1854 | Safari-only UA was too narrow. iOS Chrome / WKWebView are WebKit and drop detached-iframe observers the same way. | 1854 is already on `main`. If we touch keepalive, key off WebKit, not Safari. They still keep the iframe for page lifetime (their stop/restart divergence). |
+| posthog-js 4697 (2026-08-31) | same `MutationBuffer` as 1302 | Empty-payload early return skips `addedSet` / `droppedSet` reset (add+remove in one task leaks DOM nodes). Not filed as a 1302 regression; still present in this tree. | If 1302 lands, take this reset-before-return as well. |
+
+Later rrweb hardening in posthog-js (4157 adoptedStyleSheets `NotAllowedError`, 4209 input-setter `Illegal invocation`, 4390 callback `errorHandler`, 4523 observer-init teardown, 4612 CSSOM/shadow/canvas) is separate work, not a walk-back of the July ports.
+
+Batch 2 (1812, 1313, 1737, 1463, 558) was never executed. Those still sit as “already in fork” or “planned,” with no later production write-up.
+
 ### Already in their fork — still open upstream — adopt on that review
 
 These are the ones we can treat as pre-reviewed. Promote to obviously
@@ -638,18 +656,18 @@ adopt (rebase + CI) unless a row below says otherwise.
 | 1771 | heathdutton  | Obviously adopt                    | Same. Replay `autocomplete=off`.                                                                                                                               |
 | 1737 | QuentinLowe  | Obviously adopt                    | On their planned batch-2 stability list. One-line guard.                                                                                                       |
 | 1812 | juliecheng   | Review individually                | Next on their batch-2 list after the July ports. Native `Proxy`.                                                                                               |
-| 1697 | eoghanmurray | Review individually (maintainer)   | **Shipped in posthog-js 4131** (2026-07-15). They hoisted the event-source list into a Set; take that or land Eoghan’s version and let them feed the Set back. |
+| 1697 | eoghanmurray | Review individually (maintainer)   | Shipped in posthog-js 4131. Take the Set hoist. CheckoutEveryNth can still unfreeze; they skipped that. |
 | 1633 | pauldambra   | Review individually                | Their own Angular untainted-prototype PR. Nudge/merge.                                                                                                         |
 | 1814 | megboehlert  | Review individually                | Their own. Untainted add/removeEventListener.                                                                                                                  |
 
 ### Shipped in posthog-js after a real review — not verbatim
 
-| PR   | posthog-js PR | Verdict for us                                                                                                                                                                                                                             |
-| ---- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1854 | 4128 (merged) | Already on upstream `main`. Ignore. They diverged (page-lifetime keepalive vs teardown).                                                                                                                                                   |
-| 1302 | 4130 (merged) | 7-line `addedSet` order fix. Still a **draft** here; we had folded it into Eoghan 1652. PostHog’s port is the one to land if we do not want to wait on 1652.                                                                               |
-| 1873 | 4129 (merged) | Still needs a privacy review. PostHog found two bugs (shadow roots via `bypassOptions`; empty array silently disables all attribute recording). `attributeFilter` can drop mutations masking depends on. Take those two fixes if it lands. |
-| 1697 | 4131 (merged) | See table above. Near-verbatim plus the Set hoist.                                                                                                                                                                                         |
+| PR   | posthog-js PR | Verdict for us                                                                                                                                                                                                                                       |
+| ---- | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1854 | 4128 (merged) | Already on upstream `main`. They diverged (page-lifetime keepalive) and later widened Safari → WebKit (4325). |
+| 1302 | 4130 (merged) | 7-line `addedSet` order fix. Still a **draft** here. If it lands, also take the empty-payload buffer reset (their 4697; this tree still returns before reset). |
+| 1873 | 4129 (merged) | Still needs a privacy review. Two bugs at port time: shadow roots; empty array. No later follow-up. |
+| 1697 | 4131 (merged) | Near-verbatim plus a Set hoist. Checkout timers can still unfreeze; they ignored that because PostHog does not use checkout. |
 
 ### In their fork — do not adopt from that fact
 
@@ -695,6 +713,6 @@ class — unreachable under their hard-coded classes). 1356 (zone.js
 - Eoghan: merge 1673 and 1697 (PostHog already runs 1697); close 294/389/558/724/1477
 - Justin: merge 1891/1732; close 1239/1462
 - Yun: decide whether 1149 is split or closed
-- Optional: land the 7-line 1302 `addedSet` fix instead of waiting on 1652
+- Optional: land the 7-line 1302 `addedSet` fix instead of waiting on 1652, and take the empty-payload buffer reset PostHog shipped later
 
 Then the team meeting (assets, heatmaps, Cloud/extension, closed shadow, 2.0).
