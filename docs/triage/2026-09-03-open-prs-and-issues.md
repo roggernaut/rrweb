@@ -1,33 +1,35 @@
-# rrweb-io/rrweb backlog triage
+# Proposed intake triage for rrweb-io/rrweb
 
-Local maintainer brief for restarting PR and issue intake on
-rrweb-io/rrweb. Snapshot taken 2026-09-03
-from GitHub read-only APIs. Nothing in this file was posted upstream.
+A snapshot proposal for restarting pull-request and issue intake on
+rrweb-io/rrweb. Taken 2026-09-03 from public GitHub read-only APIs.
+This is a working document, not a decision log: buckets can change after
+maintainer review.
 
-IDs such as 1712 are upstream tracker numbers. They are written as
-plain numbers (not GitHub links) so this private fork does not
-cross-notify the public project.
+IDs such as 1712 are rrweb-io/rrweb pull or issue numbers. They are
+written as plain numbers, not tracker URLs, so this file does not create
+GitHub cross-references. Look them up under the project's Pull requests
+or Issues tabs.
 
 - Open PRs: **138** (19 drafts). Oldest: 2020-08 (294). Newest: 2026-09-02 (1921).
-  **52 are core maintainers** (Eoghan 29, Justin 22, Yun 1); the other 86 are community.
+  **52 are from core maintainers** (Eoghan 29, Justin 22, Yun 1); the other 86 are community.
 - Open issues: **289**. Oldest: 2019-07 (88). Newest: 2026-09-01 (1919).
 - Upstream `main` HEAD at snapshot: `37a946a5` (docs 1910).
-- This fork is already ahead of that with privacy-at-capture work. Several
-  upstream masking PRs overlap that work; do not merge them blindly onto
-  either branch.
+- This repository also contains privacy-at-capture work that is ahead of
+  upstream `main`. Several open masking PRs overlap that work; they should
+  not be merged as parallel APIs.
 - A second pass over 62 older PRs tightened duplicates and already-fixed
   patches (CSS crash 1735, media-target cluster, asset draft 1239, etc.).
-- **Review bottleneck is on our side, not the authors’.** GitHub
+- Most of the queue is waiting on review, not on authors. GitHub
   `reviewDecision` on 2026-09-03: **125 REVIEW_REQUIRED**, 9
   CHANGES_REQUESTED, 2 APPROVED and still open, 2 with no decision.
-  Branch protection needs a human review; almost none have one. 107 PRs
-  share an `updatedAt` of 2026-06-08 (a bulk touch, not a review pass).
+  Branch protection requires a human review. 107 PRs share an `updatedAt`
+  of 2026-06-08 (a bulk touch, not a review pass).
 
-Most of the queue is not “new work waiting for a rubber stamp.” It is years of
-un-triaged patches plus bugs that never got a reproduction. The useful move is
-to **accept a small high-confidence slice, discuss a handful of product/privacy
-forks, and close or bounce the rest with a template**. The slice that is
-already approved should merge today — that is purely our delay.
+The queue is years of un-triaged patches plus bugs that never got a
+reproduction. A practical restart is to **accept a small high-confidence
+slice, discuss a handful of product and privacy forks, and close or
+bounce the rest with a short explanation**. The two already-approved PRs
+can merge as soon as someone presses the button.
 
 ---
 
@@ -55,13 +57,13 @@ happens to mention `canvas` or `plugin`.
 | **Impacts privacy**     | Changes what gets recorded, who can receive it, or how replay executes untrusted data. Can expand collection, punch through a previous isolation boundary, or change the masking contract.                                                                                               |
 | **Strengthens privacy** | Closes a leak, tightens masking/blocking, or reduces exfil / XSS surface.                                                                                                                                                                                                                |
 | **Commercial value**    | Helps session-replay products, rrweb Cloud, the Chrome extension, heatmaps, assets, scale, or enterprise compliance. Privacy work is commercially valuable when it is what vendors need to ship.                                                                                         |
-| **Stuck on review**     | Non-draft PR whose GitHub `reviewDecision` is `REVIEW_REQUIRED` (or empty) and no core-maintainer approve/request-changes exists. The author is done; the ball is on Eoghan / Yun / Justin. Distinct from **changes requested**, where we already looked and the author owes a revision. |
+| **Waiting on review**   | Non-draft PR whose GitHub `reviewDecision` is `REVIEW_REQUIRED` (or empty) and no core-maintainer approve or request-changes exists. Distinct from **changes requested**, where a maintainer already looked and the author owes a revision. |
 
-A single item can carry more than one flag. See [Review bottleneck](#review-bottleneck-stuck-on-our-side) for the counts.
+A single item can carry more than one flag. See [Review bottleneck](#review-bottleneck) for the counts.
 
-**Who:** Core maintainers are **Eoghan** (`eoghanmurray`), **Yun** (`YunFeng0817`), and **Justin** (`Juice10`). Everyone else is community. Their 52 open PRs are listed in [Core maintainer queue](#core-maintainer-queue-eoghan-yun-justin) and are **not** mixed into the community bucket tables. Treat those as internal work: rebase or close yourselves; do not send the community clean-up template.
+**Who:** Core maintainers are **Eoghan** (`eoghanmurray`), **Yun** (`YunFeng0817`), and **Justin** (`Juice10`). Everyone else is community. Their 52 open PRs are listed in [Core maintainer queue](#core-maintainer-queue-eoghan-yun-justin) and are **not** mixed into the community bucket tables. Maintainer PRs can be rebased, merged, or closed without the community clean-up template.
 
-## Suggested comment templates (use later; not posted)
+## Suggested comment templates
 
 Request clean-up:
 
@@ -84,19 +86,18 @@ Reject (out of scope):
 
 ## Do this first (recommended order)
 
-0. **Unstick review (today, before anything else)**  
-    Merge the two already-approved community PRs (1712, and 1656 if you
-   still want that vitest pin). Then one of you approve the community
+0. **Clear the review gate**  
+   Merge the two already-approved community PRs (1712, and 1656 if the
+   vitest pin is still the intent). Then approve the community
    obviously-adopt list — those are `REVIEW_REQUIRED` with no human
-   review, not missing work from the author.
-   0b. **Maintainer self-hygiene (30 minutes, the three of you)**  
-    52 of 138 open PRs are yours (Eoghan 29, Justin 22, Yun 1). Close the
-   stale own-drafts first so community review is not drowning in internal
-   WIP: Justin 1239, Eoghan 1477/294/389/558/724, and any draft you
-   no longer intend to finish (1046, 1015, 1874). 47 of those 52 are
-   also `REVIEW_REQUIRED` — you are blocking your own patches.
+   review.
+0b. **Maintainer queue hygiene**  
+   52 of 138 open PRs are from Eoghan, Justin, or Yun. Closing stale
+   own-drafts first makes the community queue easier to see: Justin 1239,
+   Eoghan 1477/294/389/558/724, and any draft no longer intended
+   (1046, 1015, 1874). 47 of those 52 are also `REVIEW_REQUIRED`.
 1. **Team discussion (90 minutes), privacy + product only**
-   - Masking API vs this fork’s privacy-at-capture policy (1257, 1164,
+   - Masking API vs this repository’s privacy-at-capture policy (1257, 1164,
      1097, 1745/1610, 1912, 1642, 1581).
    - Collection expansion: closed shadow DOM (1739), assets (1475),
      heatmaps (1914), WebRTC A/V (1046), extension upload (1909).
@@ -113,17 +114,17 @@ Reject (out of scope):
 
 ---
 
-## Review bottleneck (stuck on our side)
+## Review bottleneck
 
 GitHub `reviewDecision` for all 138 open PRs, 2026-09-03. Branch protection
 on `rrweb-io/rrweb` requires a review (`REVIEW_REQUIRED` / merge
-`BLOCKED`). That gate is almost never cleared.
+`BLOCKED`). Almost none of the open PRs have cleared that gate.
 
 | `reviewDecision`    |     All | Community | Maintainer (Eoghan/Yun/Justin) | What it means                                                                                              |
 | ------------------- | ------: | --------: | -----------------------------: | ---------------------------------------------------------------------------------------------------------- |
 | `REVIEW_REQUIRED`   | **125** |        78 |                             47 | Waiting on a core-maintainer review. Most have **no human review at all** (Copilot comments do not count). |
-| `CHANGES_REQUESTED` |       9 |         6 |                              3 | We already looked. Ball is on the author — except when we requested changes on each other’s PRs.           |
-| `APPROVED`          |       2 |         2 |                              0 | Review done. Still not merged. **This is 100% our delay.**                                                 |
+| `CHANGES_REQUESTED` |       9 |         6 |                              3 | A maintainer already reviewed. The author owes a revision — except maintainer-on-maintainer threads.       |
+| `APPROVED`          |       2 |         2 |                              0 | Review done. Still open; merge or refresh against current `main`.                                          |
 | (none)              |       2 |         0 |                              2 | Drafts / no review requested.                                                                              |
 
 Non-draft and still `REVIEW_REQUIRED`: **109** (74 community, 35 maintainer).
@@ -137,7 +138,7 @@ than June 2026.
 
 | PR      | Who approved                                   | Bucket                     | Why it is still open                                                                                                             |
 | ------- | ---------------------------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| PR 1712 | **Justin** and **Eoghan** both APPROVED        | Community obviously adopt  | `console.log` → `warn`. Two-line. No reason to sit.                                                                              |
+| PR 1712 | **Justin** and **Eoghan** both APPROVED        | Community obviously adopt  | `console.log` → `warn`. Two-line change. Ready to merge.                                                                         |
 | PR 1656 | **Justin** APPROVED (Eoghan earlier dismissed) | Community request clean-up | Vitest 1.6.1 CVE pin. DIRTY vs current tree — merge if the pin is still the intent, otherwise close and bump vitest in a new PR. |
 
 ### Changes requested — we engaged; don’t re-review from scratch
@@ -154,9 +155,9 @@ than June 2026.
 | PR 1164 | **Yun**                                       | Author: option/radio/checkbox masking.       |
 | PR 768  | **Eoghan**                                    | Author: inline-style URLs. Very stale.       |
 
-### Community adopt list — all stuck on review except 1712
+### Community adopt list — waiting on review except 1712
 
-These are ready for a 10-minute approve pass. Authors are not the blocker.
+These are small enough for a short approve pass. Authors are not waiting to revise.
 
 Already-approved **1712**, then 1921, 1906, 1905, 1904, 1903, 1856,
 1771, 1769, 1737, 1802.
@@ -172,8 +173,8 @@ already promised to mask, or that shrink replay/XSS surface.
 
 | ID                                            | Bucket                                       | Why                                                                                                                                                                                                                        |
 | --------------------------------------------- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| PR 1912                                       | Request clean-up                             | Masks `placeholder` when input masking is on. Real PII leak (`"Enter email: user@…"`). This fork’s privacy policy already treats `placeholder` as a sensitive attribute — upstream `main` does not. Add changeset, rebase. |
-| PR 1745 / PR 1610 / issue 1609                | Request clean-up (pick **1745**, close 1610) | `maskAllInputs` currently omits `hidden`. Tokens, CSRF, internal IDs leak. This fork marks `input[type=hidden]` protected under the new policy; upstream still needs the `maskAllInputs` gap closed.                       |
+| PR 1912                                       | Request clean-up                             | Masks `placeholder` when input masking is on. Real PII leak (`"Enter email: user@…"`). This repository’s privacy policy already treats `placeholder` as a sensitive attribute — upstream `main` does not. Add changeset, rebase. |
+| PR 1745 / PR 1610 / issue 1609                | Request clean-up (pick **1745**, close 1610) | `maskAllInputs` currently omits `hidden`. Tokens, CSRF, internal IDs leak. This repository marks `input[type=hidden]` protected under the new policy; upstream still needs the `maskAllInputs` gap closed.                       |
 | PR 1257 / issue 1581                          | Discuss in team                              | Generic `maskAttributesFn`. Needed by PostHog-class vendors. Overlaps privacy-at-capture `SENSITIVE_ATTRIBUTES` / `maskAttributeFn`. Do not land a second API.                                                             |
 | PR 1164                                       | Discuss in team                              | Masks option/radio/checkbox values. Correct privacy instinct; API should fold into the policy, not a one-off.                                                                                                              |
 | PR 1097 / issue 874 / issue 1385 / issue 1488 | Discuss in team                              | Text-masking should apply to inputs; `maskInputFn` skipped on full snapshot. Several reports of the same hole.                                                                                                             |
@@ -199,7 +200,7 @@ Treat as “discuss” unless the expansion is clearly opt-in and documented.
 | PR 1914 **Eoghan**                  | Discuss in team         | Heatmap plugin. Extra semantic click payload (selector/text). PII in button labels. **Also commercial.**                                                           |
 | PR 1900                             | Discuss in team         | Records `alert`/`confirm`/`prompt`. `prompt()` is often credentials or PII.                                                                                        |
 | PR 1909 **Justin**                  | Discuss in team         | Extension upload to `api.rrweb.com` with a stored bearer token. Data leaves the machine. Draft. **Also commercial.**                                               |
-| PR 1861 / PR 1848 **Justin**        | Discuss in team         | Cloud-bound sequence IDs / browser-client defaults (`maskAllInputs: true` already on this fork). Product + privacy defaults.                                       |
+| PR 1861 / PR 1848 **Justin**        | Discuss in team         | Cloud-bound sequence IDs / browser-client defaults (`maskAllInputs: true` already in this repository). Product + privacy defaults.                                       |
 | PR 1475 **Eoghan**                  | Discuss in team         | Asset events capture image/media bytes. Retention and PII-in-images problem. **Also commercial.** Close Justin draft 1239.                                         |
 | PR 1046 **Justin**                  | Discuss in team         | WebRTC streaming of `<video>`. Live biometric / meeting content. Draft, stale.                                                                                     |
 | PR 1465                             | Discuss in team         | Parent forces a snapshot in a cross-origin iframe via postMessage.                                                                                                 |
@@ -247,9 +248,9 @@ items. Privacy rows above that are also commercial are marked.
 
 ## Core maintainer queue (Eoghan, Yun, Justin)
 
-52 open PRs. These are not community contributions. Default action is
-**rebase, merge, or close yourselves** — the 14-day community clean-up
-template does not apply. Drafts are marked.
+52 open PRs from core maintainers, listed separately from community
+work. Default action is rebase, merge, or close. The 14-day community
+clean-up template does not apply. Drafts are marked.
 
 ### Eoghan (`eoghanmurray`) — 29
 
@@ -331,21 +332,21 @@ The remaining ~86 PRs. Maintainer PRs live only in the section above.
 
 ### Obviously adopt (11)
 
-Ship after rebase + CI. Do not bikeshed.
+Ship after rebase + CI.
 
 | PR      | Notes                                                                            | Flags                                |
 | ------- | -------------------------------------------------------------------------------- | ------------------------------------ |
-| PR 1712 | `console.log` → `warn`. **Already APPROVED by Justin and Eoghan — merge today.** | Approved, unmerged                   |
-| PR 1921 | `ignoreAttribute` tagName case. Tests + changeset. Fixes 1916.                   | Stuck on review                      |
-| PR 1906 | Regression tests only for CSS crash 1734/1692.                                   | Stuck on review                      |
-| PR 1905 | Omit iframe `srcdoc` on rebuild. Tests + changeset. rrdom already does this.     | Strengthens privacy, stuck on review |
-| PR 1904 | Console plugin `this` binding. Fixes Chrome extension crash 1772.                | Stuck on review                      |
-| PR 1903 | `repository.directory` so npm README links resolve. Fixes 1738.                  | Stuck on review                      |
-| PR 1856 | “Who’s using rrweb?” logos. Verify the two names, then merge.                    | Stuck on review                      |
-| PR 1771 | Disable autocomplete on replay inputs.                                           | Strengthens privacy, stuck on review |
-| PR 1769 | One-line: emit custom events when seeking. Fixes 1666.                           | Stuck on review                      |
-| PR 1737 | `image.currentSrc` can be undefined. One line.                                   | Stuck on review                      |
-| PR 1802 | `querySelector` as untainted methods.                                            | Stuck on review                      |
+| PR 1712 | `console.log` → `warn`. **Already APPROVED by Justin and Eoghan.** | Approved, unmerged                   |
+| PR 1921 | `ignoreAttribute` tagName case. Tests + changeset. Fixes 1916.                   | Waiting on review                      |
+| PR 1906 | Regression tests only for CSS crash 1734/1692.                                   | Waiting on review                      |
+| PR 1905 | Omit iframe `srcdoc` on rebuild. Tests + changeset. rrdom already does this.     | Strengthens privacy, waiting on review |
+| PR 1904 | Console plugin `this` binding. Fixes Chrome extension crash 1772.                | Waiting on review                      |
+| PR 1903 | `repository.directory` so npm README links resolve. Fixes 1738.                  | Waiting on review                      |
+| PR 1856 | “Who’s using rrweb?” logos. Verify the two names, then merge.                    | Waiting on review                      |
+| PR 1771 | Disable autocomplete on replay inputs.                                           | Strengthens privacy, waiting on review |
+| PR 1769 | One-line: emit custom events when seeking. Fixes 1666.                           | Waiting on review                      |
+| PR 1737 | `image.currentSrc` can be undefined. One line.                                   | Waiting on review                      |
+| PR 1802 | `querySelector` as untainted methods.                                            | Waiting on review                      |
 
 ### Review individually (29)
 
@@ -384,7 +385,7 @@ Worth a human read. Not a product fork.
 | PR 1356 | Native `setTimeout` under zone.js.                                                                                  |                                 |
 | PR 1463 | Patched `toString` returns original. Detection-adjacent; still a correctness fix for apps that inspect native code. | Impacts privacy (weak: stealth) |
 | PR 1873 | `attributeFilter`.                                                                                                  | Impacts privacy                 |
-| PR 1373 | `null` mask/block class. Tiny and mergeable, but it is a privacy-default opt-out so do not rubber-stamp.            | Impacts privacy                 |
+| PR 1373 | `null` mask/block class. Tiny and mergeable, but it is a privacy-default opt-out, so it still needs a privacy read.            | Impacts privacy                 |
 | PR 1726 | Nested iframe emit.                                                                                                 | Impacts privacy                 |
 | PR 1336 | Compression level.                                                                                                  | Commercial value                |
 
@@ -472,7 +473,7 @@ Resolve the cluster, don’t review every member.
 | Invalid media targets       | community 1688 + Eoghan 1673                                     | Justin 1462, community 1798                                           |
 | CSS crash “Unclosed string” | Regression tests 1906 (+ split-point fix 1920 if still needed)   | 1735 (already fixed on main)                                          |
 | Hover / pseudo-class replay | Team picks 1897 / 1917 / 1480                                    | don’t land all three                                                  |
-| Masking API                 | Privacy-at-capture policy on this fork, or a single upstream API | 1257, 1164, 1097, 1212, 1912 as separate knobs                        |
+| Masking API                 | Privacy-at-capture policy in this repository, or a single upstream API | 1257, 1164, 1097, 1212, 1912 as separate knobs                        |
 | Mutation perf               | 1652                                                             | 1653, 1300, 1302                                                      |
 | Docs link rot               | One new PR                                                       | 1748, 1744, 1709, 1903 (keep 1903 — it is package.json, not markdown) |
 
@@ -586,7 +587,7 @@ Label `reproduction needed` already exists. Use it.
 
 ---
 
-## Overlap with this fork (do not double-land)
+## Overlap with privacy-at-capture in this repository
 
 This working tree already contains privacy-at-capture:
 
@@ -604,7 +605,7 @@ Consequences for upstream intake:
   old `maskAllInputs` laundry list.
 - **1817 / 1913** should be answered with the sandbox ADR, then either
   closed or turned into “implement the ADR on upstream `main`.”
-- If the plan is “this fork becomes upstream,” merge privacy-at-capture
+- If privacy-at-capture is meant to become upstream `main`, land that
   first, then cherry-pick only the non-overlapping obviously-adopt PRs.
 
 ---
@@ -614,8 +615,7 @@ Consequences for upstream intake:
 Read-only check of PostHog’s two trackers. 3766 is contribute-back (their
 divergences → us). 3765 is downstream pull-in (our open PRs → their
 vendored `packages/rrweb`). They last re-verified the fork grep on
-2026-07-11 and merged four adoption PRs on 2026-07-15. Nothing here was
-posted to rrweb-io.
+2026-07-11 and merged four adoption PRs on 2026-07-15.
 
 PostHog’s own rule: they do **line-by-line review, not blind cherry-pick**.
 “Already in our fork” means the patch is in production posthog-js, not
@@ -648,7 +648,7 @@ adopt (rebase + CI) unless a row below says otherwise.
 | ---- | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1854 | 4128 (merged) | Already on upstream `main`. Ignore. They diverged (page-lifetime keepalive vs teardown).                                                                                                                                                             |
 | 1302 | 4130 (merged) | 7-line `addedSet` order fix. Still a **draft** here; we had folded it into Eoghan 1652. PostHog’s port is the one to land if we do not want to wait on 1652.                                                                                         |
-| 1873 | 4129 (merged) | **Do not rubber-stamp.** They found two bugs (shadow roots via `bypassOptions`; empty array silently disables all attribute recording). Privacy: `attributeFilter` can drop mutations masking depends on. Review individually; take their two fixes. |
+| 1873 | 4129 (merged) | Still needs a privacy review. PostHog found two bugs (shadow roots via `bypassOptions`; empty array silently disables all attribute recording). `attributeFilter` can drop mutations masking depends on. Take those two fixes if it lands. |
 | 1697 | 4131 (merged) | See table above. Near-verbatim plus the Set hoist.                                                                                                                                                                                                   |
 
 ### In their fork — do not adopt from that fact
@@ -683,12 +683,12 @@ class — unreachable under their hard-coded classes). 1356 (zone.js
 
 1. **1712** (already approved by Justin + Eoghan). Decide 1656 the same day.
 2. Approve+merge 1921, 1905, 1904, 1903, 1906 — all `REVIEW_REQUIRED`, no human review.
-3. 1771, 1769, 1737, 1802, 1856 — same: stuck on us, not the author.
-4. **PostHog-pre-reviewed (3765 already-in-fork):** 1688, 1691, 1711, 1770, 1812, 1633, 1814.
+3. 1771, 1769, 1737, 1802, 1856 — same review state, authors are not waiting to revise.
+4. **Already running in PostHog’s fork (posthog-js 3765):** 1688, 1691, 1711, 1770, 1812, 1633, 1814.
 5. Stop. Hidden-input / placeholder masking (1745, 1912) need a changeset
    and a decision against privacy-at-capture. Cross-origin allowlisting is
-   1800, not 1679. Invalid-media leftover 1798 should be closed. Do not
-   rubber-stamp 1873 even though PostHog shipped it.
+   1800, not 1679. Invalid-media leftover 1798 should be closed. 1873 still
+   needs a privacy review even though PostHog shipped a port.
 
 **Maintainers, same day**
 
