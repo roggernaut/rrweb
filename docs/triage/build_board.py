@@ -1075,7 +1075,7 @@ HTML_HEAD = r"""<!DOCTYPE html>
     position: sticky; top: 0; z-index: 20;
   }
   h1 { font-size: 22px; font-weight: 650; letter-spacing: -0.02em; margin: 0 0 6px; }
-  .lede { color: var(--muted); max-width: 920px; margin: 0 0 14px; }
+  .lede { color: var(--muted); margin: 0 0 10px; }
   .prefilters { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
   .prefilters button {
     appearance: none; border: 1px solid var(--line); background: var(--bg-2);
@@ -1171,14 +1171,7 @@ HTML_HEAD = r"""<!DOCTYPE html>
 <header class="page">
   <h1>rrweb-io/rrweb intake triage</h1>
   <p class="lede">
-    Snapshot 2026-09-03 from public GitHub APIs. Numbers link to the upstream
-    pull or issue. Downstream evidence links go to the vendor PR that provides
-    it — not only PostHog. Mixpanel, Amplitude, Grafana, New Relic, Sprig
-    (UserLeap), LaunchDarkly, Highlight, and Datadog were checked against
-    every still-open PR on 2026-09-05. Sentry’s public fork had no 1:1 ports
-    of the still-open set. Datadog’s recorder has diverged. 107 PRs share an
-    <code>updatedAt</code> of 2026-06-08 (a bulk touch, not a review pass).
-    Pre-filters run left to right by restart priority.
+    Snapshot 2026-09-03. Numbers link upstream; vendor links go to the PR that provides the evidence.
   </p>
   <div class="prefilters" id="prefilters"></div>
   <div class="toolbar">
