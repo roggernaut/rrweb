@@ -720,3 +720,41 @@ class — unreachable under their hard-coded classes). 1356 (zone.js
 - Optional: land the 7-line 1302 `addedSet` fix instead of waiting on 1652, and take the empty-payload buffer reset PostHog shipped later
 
 Then the team meeting (assets, heatmaps, Cloud/extension, closed shadow, 2.0).
+
+---
+
+## Other vendor forks (checked 2026-09-05)
+
+The first evidence pass used PostHog’s public pull-in tracker. A second
+pass walked **every still-open PR** against public production forks and
+their own PRs. Vendor URLs below are the proof; upstream IDs are plain
+numbers so this file does not create more cross-references.
+
+Forks scanned: Mixpanel, Amplitude, Grafana (`@grafana/rrweb`, Faro
+replay), New Relic, Sprig/UserLeap, LaunchDarkly (Highlight successor),
+Highlight, Sentry, Datadog, Bugsee, browser-replay, Hanzo, rrweb-cloud.
+
+| Upstream | Vendor evidence | What it proves |
+| -------- | --------------- | -------------- |
+| 1688 / 1798 | [mixpanel/rrweb#10](https://github.com/mixpanel/rrweb/pull/10) | Mixpanel shipped the MediaInteraction `isSupportedMediaElement` guard. Their write-up cites 1798 (the weaker duplicate). Prefer 1688 + 1673. |
+| 1691 | [grafana/rrweb#31](https://github.com/grafana/rrweb/pull/31) | Grafana independently re-implemented skip-unchanged `setAttribute` in rrdom `diffProps` (plus SVG NS + iframe `src` coverage). Open on their fork. |
+| 1791 | [mixpanel/rrweb#8](https://github.com/mixpanel/rrweb/pull/8), [mixpanel/rrweb#12](https://github.com/mixpanel/rrweb/pull/12), [grafana/rrweb#41](https://github.com/grafana/rrweb/pull/41) | Mixpanel explicitly ported 1791 and then recursed iframe `contentDocument` so the mirror does not pin GC. Grafana has the same leak class (`IframeManager.reset()`). |
+| 1755 | [grafana/rrweb#32](https://github.com/grafana/rrweb/pull/32) | Same stop-path: reset every `MutationBuffer` and empty the `mutationBuffers` registry. |
+| 1633 | [newrelic-forks/rrweb#8](https://github.com/newrelic-forks/rrweb/pull/8) (plus Amplitude 61 already listed) | New Relic shipped a Safari-only port; the full patch froze their Angular app in Chrome. |
+| 1912 | [newrelic-forks/rrweb#19](https://github.com/newrelic-forks/rrweb/pull/19) (plus Mixpanel 18 / Datadog 1660) | New Relic opened the same `maskInputValue` placeholder path. Closed unmerged. |
+| 1739 | [amplitude/rrweb#102](https://github.com/amplitude/rrweb/pull/102), [highlight/rrweb#118](https://github.com/highlight/rrweb/pull/118) | Amplitude: closed-mode shadow mutations (`element.shadowRoot` is null). Highlight: Salesforce LWC / closed shadow. Same product need; 102 unmerged. |
+| 1586 / 1395 | [amplitude/rrweb#126](https://github.com/amplitude/rrweb/pull/126) | Amplitude serializes `grid-template-areas` to fix mobile replay overlap. Unmerged. |
+| 1641 / 1626 / 1567 | [amplitude/rrweb#101](https://github.com/amplitude/rrweb/pull/101), [amplitude/rrweb#133](https://github.com/amplitude/rrweb/pull/133) | Amplitude shipped inline `adoptedStyleSheets` in the full snapshot; 133 inlines them on mutation add too. |
+| 1766 | [launchdarkly/rrweb#36](https://github.com/launchdarkly/rrweb/pull/36) | LaunchDarkly shipped optional replayer CSP (`cspContent` → meta). Same need, different API than this PR’s iframe CSP. |
+| 1707 | [PostHog/posthog-js#3667](https://github.com/PostHog/posthog-js/pull/3667), [UserLeap/rrweb#2](https://github.com/UserLeap/rrweb/pull/2) | Endless `rel=preload as=style` poll. PostHog shipped; Sprig/UserLeap ported that fix and cites this issue. |
+
+Checked, no new 1:1 port of a still-open PR:
+
+- Sentry `getsentry/rrweb` 2.43.2 — last documented upstream merge is older; `ignoreAttribute` is still exact lowercase (1921 not present).
+- New Relic default branch does **not** contain 1921, 1737’s `currentSrc?.startsWith`, or 1802’s querySelector move. Their Angular work cites 1633 (above) and an older merged video path, not open 1688.
+- Grafana 22 / 23 / 24 are cherry-picks of **already-merged** upstream 1865 / 1864 / 1854, not of the open queue.
+- LaunchDarkly 36’s tag-casing work is SVG `tagMap` during rebuild, not 1921’s `ignoreAttribute`.
+- OpenReplay / HyperDX / Zipy / Smartlook do not publish an rrweb fork that maps 1:1 onto this queue.
+- Fingerprint hits on `isSupportedMediaElement`, `hoverElements`, `stringifyRule`, `callbackWrapper`, and `hookSetter` are upstream-main APIs, not ports of still-open PRs.
+
+The board’s **Other vendors** pre-filter is this non-PostHog set.

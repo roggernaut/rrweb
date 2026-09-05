@@ -207,7 +207,7 @@ pr(
     reason="Invalid media processing. Pair with Eoghan 1673; close Justin 1462 and community 1798.",
     next_step="Approve + merge after rebase. Close 1462 and 1798 in the same pass.",
     tags=("posthog-backed",),
-    downstream="Already in PostHog's fork.",
+    downstream="Already in PostHog's fork. Mixpanel shipped the same MediaInteraction guard (their write-up cites 1798).",
     related=(1673, 1462, 1798),
 )
 pr(
@@ -216,7 +216,7 @@ pr(
     reason="Skip setAttribute when unchanged.",
     next_step="Approve + merge after rebase and green CI.",
     tags=("posthog-backed",),
-    downstream="Already in PostHog's fork.",
+    downstream="Already in PostHog's fork. Grafana independently re-implemented the same skip-unchanged setAttribute in rrdom (grafana/rrweb 31).",
 )
 pr(
     1711,
@@ -248,7 +248,7 @@ pr(
     reason="Untainted prototype access in Angular. Paul's own PR.",
     next_step="Nudge/merge. Already running in PostHog.",
     tags=("posthog-backed",),
-    downstream="PostHog's own Angular untainted-prototype PR. In their fork.",
+    downstream="PostHog's own Angular untainted-prototype PR. Amplitude shipped a port; New Relic shipped a Safari-only variant of this PR.",
 )
 pr(
     1814,
@@ -267,14 +267,14 @@ pr(1796, "review", reason="Preserve class attribute text in hoverElements for [c
 pr(1733, "review", reason="absolutifyURLs edge cases. DIRTY. Eoghan requested changes.", next_step="Author owes the perf/implementation fix. Do not re-review from scratch.", tags=("changes-requested",))
 pr(1718, "review", reason="rrdom oldChild detach.", next_step="Assign one reviewer.")
 pr(1681, "review", reason=":hover regex too large (1675). Tests exist; also listed under clean-up for a changeset.", next_step="Add changeset, then review. Fixes 1675.", related=(1675,))
-pr(1641, "review", reason="Preserve adopted styles when nodes are removed (virtual DOM).", next_step="Assign one reviewer. PostHog listed this as a nudge, not a free merge.", tags=("posthog-nudge",), downstream="PostHog wants tests; not treated as pre-reviewed.")
+pr(1641, "review", reason="Preserve adopted styles when nodes are removed (virtual DOM).", next_step="Assign one reviewer. PostHog listed this as a nudge, not a free merge. Amplitude already ships the full-snapshot half of this.", tags=("posthog-nudge",), downstream="PostHog wants tests. Amplitude shipped inline adoptedStyleSheets in the full snapshot (101) and has a mutation-add follow-up open (133).")
 pr(1638, "review", reason="Parent missing during record/playback. Also listed under clean-up as untested.", next_step="Needs an explanation and tests before a real review.", related=())
 pr(1635, "review", reason="Iframes + custom elements in Chrome.", next_step="Needs a browser regression test. PostHog nudge, not a free merge.", tags=("posthog-nudge",), downstream="On PostHog's own open-PR nudge list.")
-pr(1586, "review", reason="Chrome grid-template inlining (1395).", next_step="Assign one reviewer.", related=(1395,))
+pr(1586, "review", reason="Chrome grid-template inlining (1395).", next_step="Assign one reviewer. Amplitude independently wrote a grid-template-areas serializer for the same mobile-overlap hole.", related=(1395,), downstream="Amplitude rrweb 126 (unmerged) serializes grid-template-areas faithfully.")
 pr(1357, "review", reason="Inserted styles lost when moving elements. Eoghan requested changes.", next_step="Author: isolate the fix; drop the innerText reflow cost.", tags=("changes-requested",))
 pr(1814, "adopt", reason="Untainted add/removeEventListener.", next_step="Nudge/merge. Already running in PostHog.", tags=("posthog-backed",), downstream="PostHog's own PR. In their fork.")
-pr(1755, "review", reason="Clear mutation buffer on iframe pagehide.", next_step="Review with 1791 as one iframe-lifecycle change. PostHog wants them folded together.", tags=("posthog-nudge",), downstream="PostHog: fold into a combined iframe-lifecycle PR with 1791.", related=(1791, 1770))
-pr(1791, "review", reason="Iframe memory leaks. DIRTY. Related 1585/1628.", next_step="Do not adopt from the PostHog fork — they solved it differently. Review this branch on its own or fold with 1755.", tags=("posthog-in-fork",), downstream="In PostHog's fork but they solved the leak differently. Not their code.", related=(1585, 1628, 1755, 1770))
+pr(1755, "review", reason="Clear mutation buffer on iframe pagehide.", next_step="Review with 1791 as one iframe-lifecycle change. PostHog wants them folded together. Grafana already has a stop-path MutationBuffer reset open.", tags=("posthog-nudge",), downstream="PostHog: fold into a combined iframe-lifecycle PR with 1791. Grafana rrweb 32 resets mutationBuffers on stop.", related=(1791, 1770))
+pr(1791, "review", reason="Iframe memory leaks. DIRTY. Related 1585/1628.", next_step="Review this branch, or fold with 1755. Mixpanel already shipped this PR plus a follow-up; Grafana has an independent IframeManager.reset(). Do not adopt from the PostHog fork — they solved it differently.", tags=("posthog-in-fork",), downstream="Mixpanel shipped this PR (mixpanel/rrweb 8 + 12). Grafana has the same leak class open. PostHog has it in-fork but solved the leak differently.", related=(1585, 1628, 1755, 1770))
 pr(1356, "review", reason="Native setTimeout under zone.js. Justin requested changes.", next_step="Author owes the revision. Do not promote on PostHog's review — they declined.", tags=("changes-requested", "posthog-declined", "impacts-privacy"), downstream="PostHog declined: they have their own Zone path.")
 pr(1463, "review", reason="Patched toString returns original. Detection-adjacent; still a correctness fix for apps that inspect native code.", next_step="Assign one reviewer. Weak stealth adjacency — read the privacy note.", tags=("impacts-privacy",), downstream="On PostHog planned batch-2 list; never executed.")
 pr(1873, "review", reason="Native attributeFilter on MutationObserver. Can drop sensitive attribute mutations or drop the mutations masking depends on.", next_step="Privacy review required even though PostHog shipped a port. Fold in shadow bypassOptions + treat [] as unset.", tags=("impacts-privacy", "posthog-shipped"), downstream="Shipped posthog-js 4129. At port time: shadow roots were not filtered; empty [] observed no attributes. No later attributeFilter bugfix.")
@@ -300,7 +300,7 @@ pr(1475, "discuss", reason="Asset events capture image/media bytes. Retention an
 pr(1046, "discuss", reason="WebRTC streaming of <video>. Live biometric / meeting content. Draft, stale.", next_step="Close unless live video is a 2.x goal. Also a maintainer-close candidate.", tags=("impacts-privacy", "commercial", "maintainer-close"))
 pr(1465, "discuss", reason="Parent forces a snapshot in a cross-origin iframe via postMessage. Eoghan requested changes.", next_step="Author + testcase needed. Security-origin discussion.", tags=("impacts-privacy", "changes-requested"))
 pr(1023, "discuss", reason="Inject recorder from another frame / custom Window. Changes the security origin story.", next_step="Team meeting. Preferable to Eoghan 294 if this is needed at all.", tags=("impacts-privacy",), related=(294,))
-pr(1739, "discuss", reason="Records attachShadow({mode:'closed'}). Closed shadow was an isolation boundary.", next_step="Team meeting. High replay-fidelity win, real privacy/ToS issue.", tags=("impacts-privacy", "commercial"))
+pr(1739, "discuss", reason="Records attachShadow({mode:'closed'}). Closed shadow was an isolation boundary.", next_step="Team meeting. High replay-fidelity win, real privacy/ToS issue. Amplitude and Highlight both needed this in production.", tags=("impacts-privacy", "commercial"), downstream="Amplitude opened a closed-shadow mutation port (amplitude/rrweb 102, unmerged). Highlight has a Salesforce LWC / closed-shadow PR (highlight/rrweb 118).")
 pr(1877, "discuss", reason="Changeset compress. Process, not product.", next_step="Agenda: process decision, not a code review.")
 pr(1871, "discuss", reason="inlineStylesheet / inlineImages not deprecated. Ties to assets. Draft.", next_step="Discuss with the assets decision (1475).", tags=("impacts-privacy",), related=(1475,))
 pr(1652, "discuss", reason="Large mutation-ordering refactor. Tests are good; blast radius is not a solo review.", next_step="Team meeting. Fold 1653/1300/1302 into this or land 1302 separately.", tags=("commercial",), related=(1653, 1300, 1302))
@@ -321,9 +321,9 @@ pr(1097, "discuss", reason="Text-masking should apply to inputs; maskInputFn ski
 pr(1149, "discuss", reason="@rrweb/cutter + sync replayer. Huge, DIRTY, TODOs. Session clip is commercially real; this PR is not reviewable as-is.", next_step="Yun: split or close and re-file.", tags=("commercial",), related=(398, 160, 1560))
 
 # --- Cleanup ----------------------------------------------------------------
-pr(1912, "cleanup", reason="Masks placeholder when input masking is on. Real PII leak. This repository already treats placeholder as sensitive; upstream main does not.", next_step="Add changeset, rebase, then re-evaluate against privacy-at-capture. Do not land as a parallel knob.", tags=("strengthens-privacy", "privacy-overlap"))
+pr(1912, "cleanup", reason="Masks placeholder when input masking is on. Real PII leak. This repository already treats placeholder as sensitive; upstream main does not.", next_step="Add changeset, rebase, then re-evaluate against privacy-at-capture. Do not land as a parallel knob.", tags=("strengthens-privacy", "privacy-overlap"), downstream="Mixpanel shipped this. New Relic opened the same mask-placeholder change (closed unmerged). Datadog hides placeholders in their own recorder.")
 pr(1745, "cleanup", reason="maskAllInputs currently omits hidden. Tokens, CSRF, internal IDs leak. Fresher copy of 1610.", next_step="Add changeset and rebase. Close 1610. Re-evaluate against privacy-at-capture.", tags=("strengthens-privacy", "privacy-overlap"), related=(1610, 1609))
-pr(1766, "cleanup", reason="Optional CSP on the replay iframe. Complements sandbox ADR.", next_step="Add tests, changeset, and a browser-support note.", tags=("strengthens-privacy",))
+pr(1766, "cleanup", reason="Optional CSP on the replay iframe. Complements sandbox ADR.", next_step="Add tests, changeset, and a browser-support note. LaunchDarkly already ships a replayer CSP option (different API).", tags=("strengthens-privacy",), downstream="LaunchDarkly rrweb 36 shipped cspContent as a meta CSP on rebuild — same product need, not this PR’s iframe attribute.")
 pr(1686, "cleanup", reason="stringifyRule fallback.", next_step="Needs a failing CSS-import test. PostHog nudge.", tags=("posthog-nudge",), downstream="On PostHog's own open-PR nudge list.")
 pr(1313, "cleanup", reason="hookSetter recursion.", next_step="Add a reproduction. On PostHog planned batch-2; never executed.", downstream="PostHog batch-2 candidate; no later production write-up.")
 pr(1879, "cleanup", reason="Svelte browser runtime. Likely superseded by merged 1901.", next_step="Confirm 1901 covered it, then close or rebase leftover.")
@@ -364,7 +364,7 @@ pr(1790, "cleanup", reason="Privacy recipe docs. Author notes they were not veri
 
 # --- Reject -----------------------------------------------------------------
 pr(1610, "reject", reason="Exact older duplicate of 1745.", next_step="Close in favor of 1745. The hidden-input bug remains.", tags=("strengthens-privacy",), related=(1745, 1609), notes="Keep 1745.")
-pr(1798, "reject", reason="Weaker duplicate of 1688.", next_step="Close in favor of 1688 + Eoghan 1673.", related=(1688, 1673))
+pr(1798, "reject", reason="Weaker duplicate of 1688.", next_step="Close in favor of 1688 + Eoghan 1673. Mixpanel already shipped this weaker variant.", related=(1688, 1673), downstream="Mixpanel rrweb 10 cites this PR as the upstream they shipped.")
 pr(1735, "reject", reason="Crash already handled by merged 1580 / 1600. Keep regression-only 1906.", next_step="Close. Point at 1906 and split-point 1920.", related=(1906, 1920, 1734, 1692))
 pr(1679, "reject", reason="Sender-origin is not validated; narrower than 1800.", next_step="Close in favor of the 1800 allowlist if that is the chosen model.", tags=("strengthens-privacy",), related=(1800, 1256, 1680))
 pr(1256, "reject", reason="Earlier safeCrossOrigin sketch. Superseded by 1800.", next_step="Close in favor of 1800.", related=(1800, 1679))
@@ -432,21 +432,21 @@ issue(1785, "review", reason="Record bundle size.", next_step="Assign an owner."
 issue(1742, "review", reason="Record bundle size.", next_step="Assign an owner.", tags=("commercial",), related=(1785,))
 issue(1724, "review", reason="Web-extension broken.", next_step="Assign an owner.", tags=("commercial",))
 issue(1720, "review", reason="Cross-origin iframe blanks after parent fullSnapshot.", next_step="Assign an owner.")
-issue(1707, "review", reason="Memory/CPU on rel=preload links.", next_step="Assign an owner.")
+issue(1707, "review", reason="Memory/CPU on rel=preload links.", next_step="Assign an owner. PostHog and Sprig already shipped a production fix for the endless preload-as-style poll.", downstream="PostHog posthog-js 3667 shipped. Sprig/UserLeap rrweb 2 cites this issue and that port.")
 issue(1701, "review", reason="Popover API. Modern UI fidelity.", next_step="Assign an owner.", tags=("commercial",))
 issue(1690, "review", reason="Mobile DOM order.", next_step="Assign an owner.")
 issue(1667, "review", reason="background shorthand expands empty. Related CSSOM bugs.", next_step="Assign an owner.")
 issue(1628, "review", reason="Stop-recording / iframe leaks. Pair with PR 1791/1770.", next_step="Pair with PR 1791/1770.", related=(1585, 1791, 1770))
 issue(1585, "review", reason="Iframe leaks. Pair with PR 1791/1770.", next_step="Pair with PR 1791/1770.", related=(1628, 1791, 1770))
-issue(1626, "review", reason="Adopted stylesheets missing from first full snapshot.", next_step="Assign an owner.", related=(1567,))
-issue(1567, "review", reason="Adopted stylesheets missing from first full snapshot.", next_step="Assign an owner.", related=(1626,))
+issue(1626, "review", reason="Adopted stylesheets missing from first full snapshot.", next_step="Assign an owner. Amplitude already ships the full-snapshot inline.", related=(1567,), downstream="Amplitude rrweb 101.")
+issue(1567, "review", reason="Adopted stylesheets missing from first full snapshot.", next_step="Assign an owner. Amplitude already ships the full-snapshot inline.", related=(1626,), downstream="Amplitude rrweb 101.")
 issue(1577, "review", reason="Duplicate cross-origin message listeners.", next_step="Assign an owner.", tags=("impacts-privacy",), related=(1590,))
 issue(1590, "review", reason="Duplicate cross-origin message listeners.", next_step="Assign an owner.", tags=("impacts-privacy",), related=(1577,))
 issue(1564, "review", reason="Table alignment in replay.", next_step="Assign an owner.")
 issue(1505, "review", reason="all: unset expansion.", next_step="Assign an owner.")
 issue(1488, "review", reason="maskInputFn skipped.", next_step="Same hole as 1097 / 1385.", tags=("strengthens-privacy",), related=(1097, 1385, 874))
 issue(1385, "review", reason="maskInputFn skipped.", next_step="Same hole as 1097 / 1488.", tags=("strengthens-privacy",), related=(1097, 1488, 874))
-issue(1395, "review", reason="Grid template areas. PR 1586.", next_step="Review PR 1586.", related=(1586,))
+issue(1395, "review", reason="Grid template areas. PR 1586.", next_step="Review PR 1586. Amplitude independently wrote a grid-template-areas serializer.", related=(1586,), downstream="Amplitude rrweb 126.")
 issue(816, "review", reason="Strict CSP vs style mutation. 34 comments, still open.", next_step="Keep open. Security of the recorded app.", tags=("strengthens-privacy",))
 issue(423, "review", reason="Inline/blob workers vs CSP.", next_step="Keep open with 1699.", tags=("strengthens-privacy",), related=(1699,))
 issue(1699, "review", reason="Inline/blob workers vs CSP.", next_step="Keep open with 423.", tags=("strengthens-privacy",), related=(423,))
@@ -514,6 +514,10 @@ TAG_LABEL = {
     "newrelic-backed": "New Relic-backed",
     "amplitude-backed": "Amplitude-backed",
     "mixpanel-backed": "Mixpanel-backed",
+    "grafana-backed": "Grafana-backed",
+    "sprig-backed": "Sprig-backed",
+    "launchdarkly-backed": "LaunchDarkly-backed",
+    "highlight-backed": "Highlight-backed",
     "privacy-overlap": "Privacy-at-capture overlap",
     "maintainer-close": "Maintainer close",
     "draft": "Draft",
@@ -539,8 +543,12 @@ TAG_RANK = {
     "mixpanel-backed": 12.1,
     "amplitude-backed": 12.2,
     "newrelic-backed": 12.3,
-    "sentry-backed": 12.4,
-    "datadog-diverged": 12.5,
+    "grafana-backed": 12.4,
+    "sprig-backed": 12.5,
+    "launchdarkly-backed": 12.6,
+    "highlight-backed": 12.7,
+    "sentry-backed": 12.8,
+    "datadog-diverged": 12.9,
     "draft": 13,
     "maintainer": 14,
     "community": 15,
@@ -557,6 +565,10 @@ MX = "https://github.com/mixpanel/rrweb"
 AMP = "https://github.com/amplitude/rrweb"
 NR = "https://github.com/newrelic-forks/rrweb"
 DD = "https://github.com/DataDog/browser-sdk"
+GF = "https://github.com/grafana/rrweb"
+LD = "https://github.com/launchdarkly/rrweb"
+UL = "https://github.com/UserLeap/rrweb"
+HL = "https://github.com/highlight/rrweb"
 
 PH_TRACKER = ev(
     "PostHog/posthog-js#3765",
@@ -592,14 +604,21 @@ EVIDENCE: dict[int, list[dict]] = {
     1769: [PH_ADOPT],
     1737: [PH_ADOPT],
     1802: [PH_ALREADY],
-    1688: [PH_ALREADY],
-    1691: [PH_ALREADY],
+    1688: [
+        PH_ALREADY,
+        ev("mixpanel/rrweb#10", f"{MX}/pull/10", "Shipped the MediaInteraction isSupportedMediaElement guard. Their write-up cites the weaker duplicate 1798, not this PR."),
+    ],
+    1691: [
+        PH_ALREADY,
+        ev("grafana/rrweb#31", f"{GF}/pull/31", "Independent re-implementation of skip-unchanged setAttribute in rrdom diffProps (plus SVG NS + iframe src coverage). Open on their fork."),
+    ],
     1711: [PH_ALREADY],
     1770: [PH_ALREADY],
     1812: [PH_ADOPT],
     1633: [
         PH_ALREADY,
         ev("amplitude/rrweb#61", f"{AMP}/pull/61", "Shipped better Angular zone / unpatched-prototype detection."),
+        ev("newrelic-forks/rrweb#8", f"{NR}/pull/8", "Shipped a Safari-only port of this PR (Chrome froze their Angular app when they took the full patch)."),
     ],
     1814: [PH_ADOPT],
     1697: [ev("PostHog/posthog-js#4131", f"{PH}/pull/4131", "Shipped adopt of this PR (plus a Set hoist). Checkout timers can still unfreeze.")],
@@ -619,7 +638,49 @@ EVIDENCE: dict[int, list[dict]] = {
     ],
     1912: [
         ev("mixpanel/rrweb#18", f"{MX}/pull/18", "Shipped placeholder masking when input masking is on."),
+        ev("newrelic-forks/rrweb#19", f"{NR}/pull/19", "Same product: mask placeholder via maskInputValue. Closed unmerged on their fork."),
         ev("DataDog/browser-sdk#1660", f"{DD}/pull/1660", "Datadog hides placeholders under mask privacy in their own recorder — not a port of this PR."),
+    ],
+    1798: [
+        ev("mixpanel/rrweb#10", f"{MX}/pull/10", "They shipped this weaker duplicate and cited it as the upstream. Prefer 1688 + 1673."),
+    ],
+    1791: [
+        PH_ALREADY,
+        ev("mixpanel/rrweb#8", f"{MX}/pull/8", "Explicit port of this PR. Shipped iframe teardown + removeNodeFromMapPermanently."),
+        ev("mixpanel/rrweb#12", f"{MX}/pull/12", "Follow-up: recurse iframe contentDocument children so the mirror does not pin GC."),
+        ev("grafana/rrweb#41", f"{GF}/pull/41", "Same leak class: IframeManager.reset() on stop. Independent, still open on their fork."),
+    ],
+    1755: [
+        PH_NUDGE,
+        ev("grafana/rrweb#32", f"{GF}/pull/32", "Same stop-path: reset all MutationBuffer collections and empty the mutationBuffers registry. Open on their fork."),
+    ],
+    1739: [
+        ev("amplitude/rrweb#102", f"{AMP}/pull/102", "Closed-mode shadow mutation capture (patchAttachShadow used element.shadowRoot which is null for closed roots). Open, not merged."),
+        ev("highlight/rrweb#118", f"{HL}/pull/118", "Salesforce LWC / closed shadow recording. Same product need, not a port of this PR."),
+    ],
+    1586: [
+        ev("amplitude/rrweb#126", f"{AMP}/pull/126", "Serialize grid-template-areas faithfully (mobile replay overlap). Same Chrome grid-template hole. Open, not merged."),
+    ],
+    1641: [
+        PH_NUDGE,
+        ev("amplitude/rrweb#101", f"{AMP}/pull/101", "Shipped inline adoptedStyleSheets in the full snapshot so dropped incremental style events cannot leave shadow CSS empty."),
+        ev("amplitude/rrweb#133", f"{AMP}/pull/133", "Follow-up: inline adoptedStyleSheets on mutation add as well. Open."),
+    ],
+    1766: [
+        ev("launchdarkly/rrweb#36", f"{LD}/pull/36", "Shipped optional replayer CSP (cspContent → meta http-equiv). Same product need, different API than this PR’s iframe CSP."),
+    ],
+    1707: [
+        ev("PostHog/posthog-js#3667", f"{PH}/pull/3667", "Shipped: stop polling preload-as-style <link> forever (Next.js chunked CSS)."),
+        ev("UserLeap/rrweb#2", f"{UL}/pull/2", "Sprig/UserLeap shipped the same preload event-listener leak fix; their write-up cites this issue and PostHog 3667."),
+    ],
+    1395: [
+        ev("amplitude/rrweb#126", f"{AMP}/pull/126", "Amplitude’s grid-template-areas serializer. Review with PR 1586."),
+    ],
+    1626: [
+        ev("amplitude/rrweb#101", f"{AMP}/pull/101", "Shipped inline adoptedStyleSheets in the full snapshot."),
+    ],
+    1567: [
+        ev("amplitude/rrweb#101", f"{AMP}/pull/101", "Shipped inline adoptedStyleSheets in the full snapshot."),
     ],
     1800: [ev("mixpanel/rrweb#9", f"{MX}/pull/9", "Their public fork has allowedIframeOrigins (own cross-origin port).")],
     1609: [
@@ -629,10 +690,8 @@ EVIDENCE: dict[int, list[dict]] = {
     1680: [ev("mixpanel/rrweb#9", f"{MX}/pull/9", "Mixpanel already ships an iframe-origin allowlist in their fork.")],
     1469: [PH_ADOPT],
     1635: [PH_NUDGE],
-    1641: [PH_NUDGE],
     1642: [PH_ADOPT],
     1686: [PH_NUDGE],
-    1755: [PH_NUDGE],
     1164: [PH_ADOPT],
     1097: [PH_ADOPT],
     1257: [PH_ADOPT],
@@ -642,7 +701,6 @@ EVIDENCE: dict[int, list[dict]] = {
     1313: [PH_ADOPT],
     1463: [PH_ADOPT],
     1428: [PH_ADOPT],
-    1791: [PH_ALREADY],
     1413: [PH_ALREADY],
     1462: [PH_ALREADY],
     724: [PH_ALREADY],
@@ -655,11 +713,26 @@ EVIDENCE: dict[int, list[dict]] = {
 }
 
 EVIDENCE_TAGS: dict[int, tuple[str, ...]] = {
-    1912: ("mixpanel-backed",),
+    1912: ("mixpanel-backed", "newrelic-backed"),
     1745: ("mixpanel-backed",),
     1610: ("mixpanel-backed",),
     1800: ("mixpanel-backed",),
-    1633: ("amplitude-backed",),
+    1609: ("mixpanel-backed",),
+    1680: ("mixpanel-backed",),
+    1688: ("mixpanel-backed",),
+    1798: ("mixpanel-backed",),
+    1791: ("mixpanel-backed", "grafana-backed"),
+    1633: ("amplitude-backed", "newrelic-backed"),
+    1691: ("grafana-backed",),
+    1755: ("grafana-backed",),
+    1739: ("amplitude-backed", "highlight-backed"),
+    1586: ("amplitude-backed",),
+    1395: ("amplitude-backed",),
+    1641: ("amplitude-backed",),
+    1626: ("amplitude-backed",),
+    1567: ("amplitude-backed",),
+    1766: ("launchdarkly-backed",),
+    1707: ("sprig-backed", "posthog-shipped"),
 }
 
 
@@ -920,6 +993,8 @@ def assemble() -> list[dict]:
             name = lab if isinstance(lab, str) else lab.get("name")
             if name and name not in tags:
                 tags.append(name)
+        for t in EVIDENCE_TAGS.get(n, ()):
+            tags.append(t)
         seen = set()
         uniq = []
         for t in tags:
@@ -1097,12 +1172,13 @@ HTML_HEAD = r"""<!DOCTYPE html>
   <h1>rrweb-io/rrweb intake triage</h1>
   <p class="lede">
     Snapshot 2026-09-03 from public GitHub APIs. Numbers link to the upstream
-    pull or issue. Downstream evidence links go to the vendor PR or tracker
-    that provides it (PostHog, Mixpanel, Amplitude, Datadog). Sentry’s
-    public fork and New Relic’s fork were checked 2026-09-05; no 1:1 ports
-    of the still-open PRs were found. Datadog’s recorder has diverged.
-    107 PRs share an <code>updatedAt</code> of 2026-06-08 (a bulk touch, not
-    a review pass). Pre-filters run left to right by restart priority.
+    pull or issue. Downstream evidence links go to the vendor PR that provides
+    it — not only PostHog. Mixpanel, Amplitude, Grafana, New Relic, Sprig
+    (UserLeap), LaunchDarkly, Highlight, and Datadog were checked against
+    every still-open PR on 2026-09-05. Sentry’s public fork had no 1:1 ports
+    of the still-open set. Datadog’s recorder has diverged. 107 PRs share an
+    <code>updatedAt</code> of 2026-06-08 (a bulk touch, not a review pass).
+    Pre-filters run left to right by restart priority.
   </p>
   <div class="prefilters" id="prefilters"></div>
   <div class="toolbar">
@@ -1157,6 +1233,10 @@ const TAG_LABEL = {
   "newrelic-backed": "New Relic-backed",
   "amplitude-backed": "Amplitude-backed",
   "mixpanel-backed": "Mixpanel-backed",
+  "grafana-backed": "Grafana-backed",
+  "sprig-backed": "Sprig-backed",
+  "launchdarkly-backed": "LaunchDarkly-backed",
+  "highlight-backed": "Highlight-backed",
   "privacy-overlap": "Privacy-at-capture overlap",
   "maintainer-close": "Maintainer close",
   "draft": "Draft",
@@ -1169,14 +1249,18 @@ const TAG_RANK = {
   "strengthens-privacy": 3, "impacts-privacy": 4, "privacy-overlap": 5,
   "waiting-on-review": 6, "changes-requested": 7, "maintainer-close": 8,
   "commercial": 9, "posthog-declined": 10, "posthog-in-fork": 11,
-  "posthog-nudge": 12, "draft": 13, "maintainer": 14, "community": 15,
-  "bulk-updated": 16,
+  "posthog-nudge": 12, "mixpanel-backed": 12.1, "amplitude-backed": 12.2,
+  "newrelic-backed": 12.3, "grafana-backed": 12.4, "sprig-backed": 12.5,
+  "launchdarkly-backed": 12.6, "highlight-backed": 12.7,
+  "sentry-backed": 12.8, "datadog-diverged": 12.9,
+  "draft": 13, "maintainer": 14, "community": 15, "bulk-updated": 16,
 };
 
 const PREFILTERS = [
   { id: "merge-now", label: "Merge now" },
   { id: "adopt", label: "Adopt" },
   { id: "posthog", label: "PostHog-backed" },
+  { id: "vendor", label: "Other vendors" },
   { id: "privacy", label: "Strengthens privacy" },
   { id: "waiting", label: "Waiting on review" },
   { id: "maintainer-close", label: "Maintainer close" },
@@ -1199,6 +1283,10 @@ function matchesPre(item, pre) {
   if (pre === "merge-now") return item.triage === "merge-now";
   if (pre === "adopt") return item.triage === "adopt";
   if (pre === "posthog") return item.tags.includes("posthog-backed") || item.tags.includes("posthog-shipped");
+  if (pre === "vendor") return [
+    "mixpanel-backed", "amplitude-backed", "newrelic-backed", "grafana-backed",
+    "sprig-backed", "launchdarkly-backed", "highlight-backed",
+  ].some((t) => item.tags.includes(t));
   if (pre === "privacy") return item.tags.includes("strengthens-privacy");
   if (pre === "waiting") return item.kind === "pr" && item.tags.includes("waiting-on-review");
   if (pre === "maintainer-close") return item.tags.includes("maintainer-close") || (item.who === "maintainer" && item.triage === "reject");
@@ -1411,6 +1499,11 @@ def main() -> None:
     print("Merge now", [i["id"] for i in prs if i["triage"] == "merge-now"])
     print("Adopt", sorted(i["id"] for i in prs if i["triage"] == "adopt"))
     print("PostHog-backed", sorted(i["id"] for i in items if "posthog-backed" in i["tags"] or "posthog-shipped" in i["tags"]))
+    vendor_tags = (
+        "mixpanel-backed", "amplitude-backed", "newrelic-backed", "grafana-backed",
+        "sprig-backed", "launchdarkly-backed", "highlight-backed",
+    )
+    print("Other vendors", sorted(i["id"] for i in items if any(t in i["tags"] for t in vendor_tags)))
     print("Maintainer close", sorted(i["id"] for i in items if "maintainer-close" in i["tags"] or (i["who"] == "maintainer" and i["triage"] == "reject")))
 
 
