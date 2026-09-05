@@ -53,6 +53,7 @@ def pr(
     tags: tuple[str, ...] = (),
     downstream: str = "",
     related: tuple[int, ...] = (),
+    message: str = "",
 ) -> None:
     PR[number] = {
         "triage": triage,
@@ -62,6 +63,7 @@ def pr(
         "tags": list(tags),
         "downstream": downstream,
         "related": list(related),
+        "message": message,
     }
 
 
@@ -395,6 +397,7 @@ def issue(
     tags: tuple[str, ...] = (),
     downstream: str = "",
     related: tuple[int, ...] = (),
+    message: str = "",
 ) -> None:
     ISSUE[number] = {
         "triage": triage,
@@ -404,6 +407,7 @@ def issue(
         "tags": list(tags),
         "downstream": downstream,
         "related": list(related),
+        "message": message,
     }
 
 
@@ -544,6 +548,122 @@ def who_of(login: str) -> tuple[str, str]:
     return "community", "Community"
 
 
+def _sentence(text: str) -> str:
+    text = (text or "").strip()
+    if not text:
+        return ""
+    return text if text.endswith((".", "!", "?")) else text + "."
+
+
+def _keep_ref(related: list) -> str | None:
+    return f"#{related[0]}" if related else None
+
+
+def compose_message(kind: str, overlay: dict, who: str) -> str:
+    if overlay.get("message"):
+        return overlay["message"]
+    triage = overlay["triage"]
+    reason = _sentence(overlay.get("reason") or "")
+    next_step = _sentence(overlay.get("next") or "")
+    related = overlay.get("related") or []
+    tags = overlay.get("tags") or []
+    keep = _keep_ref(related)
+    noun = "pull request" if kind == "pr" else "issue"
+
+    if triage == "reject":
+        if keep:
+            return (
+                f"Closing in favor of {keep}, which covers the same ground. "
+                f"Please move any extra test cases there.\n\n{reason}"
+            )
+        lowered = reason.lower()
+        if any(
+            token in lowered
+            for token in (
+                "out of scope",
+                "stealth",
+                "captcha",
+                "mitm",
+                "remote control",
+                "ie11",
+                "react native",
+                "wechat",
+                "profiler",
+            )
+        ):
+            return (
+                "rrweb records and replays the DOM. Remote control, captcha evasion, "
+                f"and host-app MITM are out of scope for this repo.\n\n{reason}"
+            )
+        if who == "maintainer":
+            return f"Closing this stale {noun}.\n\n{reason}"
+        return f"Closing this {noun}.\n\n{reason}"
+
+    if triage == "cleanup":
+        if kind == "issue":
+            return (
+                "Thanks for filing this. We need a reduced reproduction, an English "
+                "summary, or a failing fixture before we can spend review time on it. "
+                "If that doesn’t happen in two weeks we’ll close and you can reopen "
+                f"when it’s ready.\n\n{reason}"
+            )
+        if who == "maintainer":
+            return (
+                "This still needs a rebase / tests / split before review is worth "
+                f"the time.\n\n{reason}\n\n{next_step}"
+            ).strip()
+        return (
+            "Thanks for this — the direction looks useful. Before we can review it on "
+            "current `main`, please rebase, add a changeset, and add a regression test "
+            "for the reported case. If that doesn’t happen in two weeks we’ll close and "
+            f"you can reopen when it’s ready.\n\n{reason}"
+        )
+
+    if triage == "review":
+        if "changes-requested" in tags:
+            return (
+                "A maintainer already reviewed this. Please address the requested "
+                "changes and we’ll pick it back up — no need to re-review from "
+                f"scratch.\n\n{reason}"
+            )
+        if kind == "issue":
+            return (
+                "This looks like a real bug or a small, well-scoped feature. "
+                f"Putting it in the individual-review queue.\n\n{reason}\n\n{next_step}"
+            ).strip()
+        return (
+            "Could someone from core take a look at this? It’s a focused change, "
+            f"not a product-strategy fork.\n\n{reason}\n\n{next_step}"
+        ).strip()
+
+    if triage == "discuss":
+        return (
+            "Holding this for a team discussion rather than merging or closing from "
+            f"the thread.\n\n{reason}"
+        )
+
+    if triage == "merge-now":
+        return f"Review is already done. Merging this onto current `main`.\n\n{reason}"
+
+    if triage == "adopt":
+        extra = f" Related: {', '.join(f'#{n}' for n in related)}." if related else ""
+        if kind == "issue":
+            return (
+                f"This has a known fix in the adopt queue.{extra}\n\n{reason}\n\n{next_step}"
+            ).strip()
+        return (
+            "This looks small and correct enough to adopt after rebase + green CI. "
+            f"Approving.\n\n{reason}{extra}"
+        )
+
+    return (
+        "Not individually reviewed in the first pass. Applying the bulk hygiene "
+        "rule: questions go to the guide, 2.0 duplicates to 1671, privacy "
+        "duplicates to the policy comment, and reports without a reduced fixture "
+        f"need a reproduction before review.\n\n{reason}"
+    )
+
+
 def assemble() -> list[dict]:
     prs = load_json(CACHE_PRS)
     issues = load_json(CACHE_ISSUES)
@@ -563,6 +683,7 @@ def assemble() -> list[dict]:
                 "tags": [],
                 "downstream": "",
                 "related": [],
+                "message": "",
             }
         login = (raw.get("author") or {}).get("login") or "unknown"
         who_kind, who_label = who_of(login)
@@ -614,6 +735,7 @@ def assemble() -> list[dict]:
                 "notes": overlay["notes"],
                 "downstream": overlay["downstream"],
                 "related": overlay["related"],
+                "message": compose_message("pr", overlay, who_kind),
                 "additions": raw.get("additions"),
                 "deletions": raw.get("deletions"),
                 "changedFiles": raw.get("changedFiles"),
@@ -636,6 +758,7 @@ def assemble() -> list[dict]:
                 "tags": [],
                 "downstream": "",
                 "related": [],
+                "message": "",
             }
         login = (raw.get("author") or {}).get("login") or "unknown"
         who_kind, who_label = who_of(login)
@@ -674,6 +797,7 @@ def assemble() -> list[dict]:
                 "notes": overlay["notes"],
                 "downstream": overlay["downstream"],
                 "related": overlay["related"],
+                "message": compose_message("issue", overlay, who_kind),
                 "additions": None,
                 "deletions": None,
                 "changedFiles": None,
@@ -793,6 +917,24 @@ HTML_HEAD = r"""<!DOCTYPE html>
   .cell.empty p { color: #6d6858; font-style: italic; }
   .related a { margin-right: 8px; }
   .empty-board { color: var(--muted); padding: 40px 8px; }
+  .msg { position: relative; display: inline-flex; margin-left: auto; }
+  .copy-msg {
+    appearance: none; border: 1px solid var(--line); background: var(--bg-3);
+    color: var(--ink); padding: 3px 9px; border-radius: 6px; cursor: pointer;
+    font: inherit; font-size: 12px; white-space: nowrap;
+  }
+  .copy-msg:hover, .copy-msg:focus-visible {
+    border-color: var(--accent); color: #ffe08a;
+  }
+  .copy-msg.copied { border-color: var(--adopt); color: var(--adopt); }
+  .msg-tip {
+    display: none; position: absolute; right: 0; top: calc(100% + 6px);
+    z-index: 40; width: min(440px, 78vw); background: #2a2718;
+    border: 1px solid var(--accent); color: var(--ink); padding: 10px 12px;
+    border-radius: 8px; white-space: pre-wrap; font-size: 12px; line-height: 1.45;
+    box-shadow: 0 10px 28px rgba(0,0,0,0.45);
+  }
+  .msg:hover .msg-tip, .msg:focus-within .msg-tip { display: block; }
 </style>
 </head>
 <body>
@@ -912,7 +1054,7 @@ function filtered() {
     const hay = [
       item.id, item.title, item.author, item.authorName, item.triage,
       TRIAGE_LABEL[item.triage], item.next, item.reason, item.notes,
-      item.downstream, ...(item.tags || []), ...(item.related || []),
+      item.downstream, item.message, ...(item.tags || []), ...(item.related || []),
     ].join(" ").toLowerCase();
     return hay.includes(q);
   });
@@ -982,12 +1124,19 @@ function renderRow(item) {
   const review = item.kind === "pr"
     ? ` · ${esc(item.reviewDecision)}${item.draft ? " · draft" : ""}`
     : "";
+  const msg = item.message
+    ? `<span class="msg">
+        <button type="button" class="copy-msg" data-id="${item.id}" data-kind="${item.kind}">Copy message</button>
+        <span class="msg-tip">${esc(item.message)}</span>
+      </span>`
+    : "";
   return `<article class="row" data-id="${item.id}" data-kind="${item.kind}">
     <div class="row-top">
       <span class="kind">${item.kind === "pr" ? "PR" : "Issue"}</span>
       <span class="id"><a href="${esc(item.url)}" target="_blank" rel="noreferrer">#${item.id}</a></span>
       <span class="title">${esc(item.title)}</span>
       <span class="triage ${esc(item.triage)}">${esc(TRIAGE_LABEL[item.triage] || item.triage)}</span>
+      ${msg}
     </div>
     <div class="sub">${esc(item.authorName || item.author)} (@${esc(item.author)}) · ${esc(item.whoLabel)} · updated ${fmtDate(item.updatedAt)} · opened ${fmtDate(item.createdAt)}${review}</div>
     <div class="tags">${tags || '<span class="tag">No extra tags</span>'}</div>
@@ -1037,6 +1186,30 @@ document.getElementById("sorts").addEventListener("click", (e) => {
 document.getElementById("kind").addEventListener("change", (e) => { state.kind = e.target.value; render(); });
 document.getElementById("who").addEventListener("change", (e) => { state.who = e.target.value; render(); });
 document.getElementById("q").addEventListener("input", (e) => { state.q = e.target.value; render(); });
+document.getElementById("board").addEventListener("click", async (e) => {
+  const btn = e.target.closest("button.copy-msg");
+  if (!btn) return;
+  const id = Number(btn.dataset.id);
+  const kind = btn.dataset.kind;
+  const item = ITEMS.find((x) => x.id === id && x.kind === kind);
+  if (!item || !item.message) return;
+  try {
+    await navigator.clipboard.writeText(item.message);
+  } catch {
+    const ta = document.createElement("textarea");
+    ta.value = item.message;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    ta.remove();
+  }
+  btn.classList.add("copied");
+  btn.textContent = "Copied";
+  setTimeout(() => {
+    btn.classList.remove("copied");
+    btn.textContent = "Copy message";
+  }, 1400);
+});
 
 render();
 </script>
