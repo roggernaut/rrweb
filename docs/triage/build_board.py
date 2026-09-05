@@ -509,6 +509,11 @@ TAG_LABEL = {
     "posthog-declined": "PostHog declined",
     "posthog-in-fork": "In PostHog fork — do not adopt",
     "posthog-nudge": "PostHog nudge",
+    "sentry-backed": "Sentry-backed",
+    "datadog-diverged": "Datadog diverged",
+    "newrelic-backed": "New Relic-backed",
+    "amplitude-backed": "Amplitude-backed",
+    "mixpanel-backed": "Mixpanel-backed",
     "privacy-overlap": "Privacy-at-capture overlap",
     "maintainer-close": "Maintainer close",
     "draft": "Draft",
@@ -531,10 +536,130 @@ TAG_RANK = {
     "posthog-declined": 10,
     "posthog-in-fork": 11,
     "posthog-nudge": 12,
+    "mixpanel-backed": 12.1,
+    "amplitude-backed": 12.2,
+    "newrelic-backed": 12.3,
+    "sentry-backed": 12.4,
+    "datadog-diverged": 12.5,
     "draft": 13,
     "maintainer": 14,
     "community": 15,
     "bulk-updated": 16,
+}
+
+
+def ev(label: str, url: str, note: str = "") -> dict:
+    return {"label": label, "url": url, "note": note}
+
+
+PH = "https://github.com/PostHog/posthog-js"
+MX = "https://github.com/mixpanel/rrweb"
+AMP = "https://github.com/amplitude/rrweb"
+NR = "https://github.com/newrelic-forks/rrweb"
+DD = "https://github.com/DataDog/browser-sdk"
+
+PH_TRACKER = ev(
+    "PostHog/posthog-js#3765",
+    f"{PH}/issues/3765",
+    "Their public pull-in tracker. Evidence is the row for this upstream PR.",
+)
+PH_ALREADY = ev(
+    "PostHog/posthog-js#3765",
+    f"{PH}/issues/3765",
+    "Listed as already in their vendored rrweb (verified by them, not re-verified here).",
+)
+PH_ADOPT = ev(
+    "PostHog/posthog-js#3765",
+    f"{PH}/issues/3765",
+    "On their adopt / adopt-high list. Not treated as shipped unless a port PR is linked.",
+)
+PH_DECLINE = ev(
+    "PostHog/posthog-js#3765",
+    f"{PH}/issues/3765",
+    "They explicitly declined to adopt this from that review.",
+)
+PH_NUDGE = ev(
+    "PostHog/posthog-js#3765",
+    f"{PH}/issues/3765",
+    "On their own-open / nudge list — needs tests or a cluster decision.",
+)
+
+# Links to the vendor PR/issue that provides the evidence. Only rows we
+# actually opened. Datadog is an in-tree fork that has diverged.
+EVIDENCE: dict[int, list[dict]] = {
+    1712: [ev("PostHog/posthog-js#3765", f"{PH}/issues/3765", "Their own two-line warn fix; listed as already in the fork / APPROVED upstream.")],
+    1771: [PH_ADOPT],
+    1769: [PH_ADOPT],
+    1737: [PH_ADOPT],
+    1802: [PH_ALREADY],
+    1688: [PH_ALREADY],
+    1691: [PH_ALREADY],
+    1711: [PH_ALREADY],
+    1770: [PH_ALREADY],
+    1812: [PH_ADOPT],
+    1633: [
+        PH_ALREADY,
+        ev("amplitude/rrweb#61", f"{AMP}/pull/61", "Shipped better Angular zone / unpatched-prototype detection."),
+    ],
+    1814: [PH_ADOPT],
+    1697: [ev("PostHog/posthog-js#4131", f"{PH}/pull/4131", "Shipped adopt of this PR (plus a Set hoist). Checkout timers can still unfreeze.")],
+    1873: [ev("PostHog/posthog-js#4129", f"{PH}/pull/4129", "Shipped adopt. At port time: shadow roots were not filtered; empty [] observed no attributes.")],
+    1302: [
+        ev("PostHog/posthog-js#4130", f"{PH}/pull/4130", "Shipped adopt. They kept has→delete→add."),
+        ev("PostHog/posthog-js#4697", f"{PH}/pull/4697", "Empty-payload early return skips addedSet reset — still missing in this tree."),
+    ],
+    1673: [PH_ADOPT],
+    1745: [
+        PH_ADOPT,
+        ev("mixpanel/rrweb#4", f"{MX}/pull/4", "Re-implemented hidden-input masking (maskInputOptions.hidden)."),
+    ],
+    1610: [
+        PH_TRACKER,
+        ev("mixpanel/rrweb#4", f"{MX}/pull/4", "They shipped a hidden-input fix. Close this duplicate; keep 1745."),
+    ],
+    1912: [
+        ev("mixpanel/rrweb#18", f"{MX}/pull/18", "Shipped placeholder masking when input masking is on."),
+        ev("DataDog/browser-sdk#1660", f"{DD}/pull/1660", "Datadog hides placeholders under mask privacy in their own recorder — not a port of this PR."),
+    ],
+    1800: [ev("mixpanel/rrweb#9", f"{MX}/pull/9", "Their public fork has allowedIframeOrigins (own cross-origin port).")],
+    1609: [
+        ev("mixpanel/rrweb#4", f"{MX}/pull/4", "Re-implemented hidden-input masking."),
+        ev("PostHog/posthog-js#3765", f"{PH}/issues/3765", "They list upstream 1745, not 1610."),
+    ],
+    1680: [ev("mixpanel/rrweb#9", f"{MX}/pull/9", "Mixpanel already ships an iframe-origin allowlist in their fork.")],
+    1469: [PH_ADOPT],
+    1635: [PH_NUDGE],
+    1641: [PH_NUDGE],
+    1642: [PH_ADOPT],
+    1686: [PH_NUDGE],
+    1755: [PH_NUDGE],
+    1164: [PH_ADOPT],
+    1097: [PH_ADOPT],
+    1257: [PH_ADOPT],
+    1356: [PH_DECLINE],
+    1373: [PH_DECLINE],
+    1694: [PH_DECLINE],
+    1313: [PH_ADOPT],
+    1463: [PH_ADOPT],
+    1428: [PH_ADOPT],
+    1791: [PH_ALREADY],
+    1413: [PH_ALREADY],
+    1462: [PH_ALREADY],
+    724: [PH_ALREADY],
+    558: [PH_ADOPT],
+    1320: [PH_ADOPT],
+    1854: [
+        ev("PostHog/posthog-js#4128", f"{PH}/pull/4128", "Shipped adopt. Already on upstream main."),
+        ev("PostHog/posthog-js#4325", f"{PH}/pull/4325", "Later widened Safari keepalive to WebKit."),
+    ],
+}
+
+EVIDENCE_TAGS: dict[int, tuple[str, ...]] = {
+    1912: ("mixpanel-backed",),
+    1745: ("mixpanel-backed",),
+    1610: ("mixpanel-backed",),
+    1800: ("mixpanel-backed",),
+    1633: ("amplitude-backed",),
 }
 
 
@@ -729,6 +854,8 @@ def assemble() -> list[dict]:
             name = lab if isinstance(lab, str) else lab.get("name")
             if name and name not in tags:
                 tags.append(name)
+        for t in EVIDENCE_TAGS.get(n, ()):
+            tags.append(t)
         # de-dupe preserving order
         seen = set()
         uniq = []
@@ -756,6 +883,7 @@ def assemble() -> list[dict]:
                 "reason": overlay["reason"],
                 "notes": overlay["notes"],
                 "downstream": overlay["downstream"],
+                "downstreamLinks": EVIDENCE.get(n, []),
                 "related": overlay["related"],
                 "message": compose_message("pr", overlay, who_kind),
                 "additions": raw.get("additions"),
@@ -818,6 +946,7 @@ def assemble() -> list[dict]:
                 "reason": overlay["reason"],
                 "notes": overlay["notes"],
                 "downstream": overlay["downstream"],
+                "downstreamLinks": EVIDENCE.get(n, []),
                 "related": overlay["related"],
                 "message": compose_message("issue", overlay, who_kind),
                 "additions": None,
@@ -938,6 +1067,9 @@ HTML_HEAD = r"""<!DOCTYPE html>
   .cell p { margin: 0; color: #e6e0cf; }
   .cell.empty p { color: #6d6858; font-style: italic; }
   .related a { margin-right: 8px; }
+  .ev-links { margin: 6px 0 0; padding-left: 18px; }
+  .ev-links li { margin: 0 0 4px; }
+  .ev-links a { font-weight: 550; }
   .empty-board { color: var(--muted); padding: 40px 8px; }
   .msg { position: relative; display: inline-flex; margin-left: auto; }
   .copy-msg {
@@ -965,9 +1097,12 @@ HTML_HEAD = r"""<!DOCTYPE html>
   <h1>rrweb-io/rrweb intake triage</h1>
   <p class="lede">
     Snapshot 2026-09-03 from public GitHub APIs. Numbers link to the upstream
-    pull or issue. 107 PRs share an <code>updatedAt</code> of 2026-06-08
-    (a bulk touch, not a review pass). Pre-filters run left to right by
-    restart priority.
+    pull or issue. Downstream evidence links go to the vendor PR or tracker
+    that provides it (PostHog, Mixpanel, Amplitude, Datadog). Sentry’s
+    public fork and New Relic’s fork were checked 2026-09-05; no 1:1 ports
+    of the still-open PRs were found. Datadog’s recorder has diverged.
+    107 PRs share an <code>updatedAt</code> of 2026-06-08 (a bulk touch, not
+    a review pass). Pre-filters run left to right by restart priority.
   </p>
   <div class="prefilters" id="prefilters"></div>
   <div class="toolbar">
@@ -1017,6 +1152,11 @@ const TAG_LABEL = {
   "posthog-declined": "PostHog declined",
   "posthog-in-fork": "In PostHog fork — do not adopt",
   "posthog-nudge": "PostHog nudge",
+  "sentry-backed": "Sentry-backed",
+  "datadog-diverged": "Datadog diverged",
+  "newrelic-backed": "New Relic-backed",
+  "amplitude-backed": "Amplitude-backed",
+  "mixpanel-backed": "Mixpanel-backed",
   "privacy-overlap": "Privacy-at-capture overlap",
   "maintainer-close": "Maintainer close",
   "draft": "Draft",
@@ -1078,6 +1218,7 @@ function filtered() {
       item.id, item.title, item.author, item.authorName, item.triage,
       TRIAGE_LABEL[item.triage], item.next, item.reason, item.notes,
       item.downstream, item.message, ...(item.tags || []), ...(item.related || []),
+      ...((item.downstreamLinks || []).map((l) => [l.label, l.note, l.url].join(" "))),
     ].join(" ").toLowerCase();
     return hay.includes(q);
   });
@@ -1137,6 +1278,20 @@ function cell(title, text) {
   return `<div class="cell${empty ? " empty" : ""}"><h3>${esc(title)}</h3><p>${empty ? "None recorded." : esc(text)}</p></div>`;
 }
 
+function downstreamCell(item) {
+  const links = item.downstreamLinks || [];
+  const empty = !item.downstream && !links.length;
+  const list = links.length
+    ? `<ul class="ev-links">${links.map((l) =>
+        `<li><a href="${esc(l.url)}" target="_blank" rel="noreferrer">${esc(l.label)}</a>${l.note ? " — " + esc(l.note) : ""}</li>`
+      ).join("")}</ul>`
+    : "";
+  const body = item.downstream
+    ? `<p>${esc(item.downstream)}</p>${list}`
+    : (list || `<p>None recorded.</p>`);
+  return `<div class="cell${empty ? " empty" : ""}"><h3>Downstream evidence</h3>${body}</div>`;
+}
+
 function renderRow(item) {
   const tags = (item.tags || []).map((t) =>
     `<span class="tag ${esc(t)}">${esc(TAG_LABEL[t] || t)}</span>`
@@ -1164,7 +1319,7 @@ function renderRow(item) {
     <div class="sub">${esc(item.authorName || item.author)} (@${esc(item.author)}) · ${esc(item.whoLabel)} · updated ${fmtDate(item.updatedAt)} · opened ${fmtDate(item.createdAt)}${review}</div>
     <div class="tags">${tags || '<span class="tag">No extra tags</span>'}</div>
     <div class="grid">
-      ${cell("Downstream evidence", item.downstream)}
+      ${downstreamCell(item)}
       ${cell("Reason", item.reason)}
       ${cell("Notes", item.notes)}
       ${cell("Suggested next step", item.next)}
