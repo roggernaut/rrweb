@@ -559,6 +559,20 @@ def _keep_ref(related: list) -> str | None:
     return f"#{related[0]}" if related else None
 
 
+def _close_footer(kind: str) -> str:
+    if kind == "pr":
+        return (
+            "If this is still relevant, please open a new PR against current `main` "
+            "with a rebase, a changeset, and a regression test. We’re closing stale "
+            "work so intake can restart."
+        )
+    return (
+        "If this is still relevant, please open a new issue with a reduced "
+        "reproduction on a current release. We’re closing stale work so intake "
+        "can restart."
+    )
+
+
 def compose_message(kind: str, overlay: dict, who: str) -> str:
     if overlay.get("message"):
         return overlay["message"]
@@ -574,7 +588,8 @@ def compose_message(kind: str, overlay: dict, who: str) -> str:
         if keep:
             return (
                 f"Closing in favor of {keep}, which covers the same ground. "
-                f"Please move any extra test cases there.\n\n{reason}"
+                "Please move any extra test cases there.\n\n"
+                f"{reason}\n\n{_close_footer(kind)}"
             )
         lowered = reason.lower()
         if any(
@@ -585,38 +600,45 @@ def compose_message(kind: str, overlay: dict, who: str) -> str:
                 "captcha",
                 "mitm",
                 "remote control",
-                "ie11",
-                "react native",
                 "wechat",
                 "profiler",
             )
         ):
             return (
                 "rrweb records and replays the DOM. Remote control, captcha evasion, "
-                f"and host-app MITM are out of scope for this repo.\n\n{reason}"
+                "and host-app MITM are out of scope for this repo. Please don’t "
+                f"re-open that class of request.\n\n{reason}"
             )
         if who == "maintainer":
-            return f"Closing this stale {noun}.\n\n{reason}"
-        return f"Closing this {noun}.\n\n{reason}"
+            return (
+                f"Closing this stale {noun} as part of intake cleanup.\n\n"
+                f"{reason}\n\n{_close_footer(kind)}"
+            )
+        return (
+            f"Closing this {noun} as part of intake cleanup.\n\n"
+            f"{reason}\n\n{_close_footer(kind)}"
+        )
 
     if triage == "cleanup":
         if kind == "issue":
             return (
                 "Thanks for filing this. We need a reduced reproduction, an English "
                 "summary, or a failing fixture before we can spend review time on it. "
-                "If that doesn’t happen in two weeks we’ll close and you can reopen "
-                f"when it’s ready.\n\n{reason}"
+                "If that doesn’t happen in two weeks we’ll close it; open a new issue "
+                f"if this is still relevant.\n\n{reason}"
             )
         if who == "maintainer":
             return (
                 "This still needs a rebase / tests / split before review is worth "
-                f"the time.\n\n{reason}\n\n{next_step}"
+                "the time. If it stays stale we should close it and open a new PR "
+                f"against current `main` if it is still relevant.\n\n{reason}\n\n{next_step}"
             ).strip()
         return (
             "Thanks for this — the direction looks useful. Before we can review it on "
             "current `main`, please rebase, add a changeset, and add a regression test "
-            "for the reported case. If that doesn’t happen in two weeks we’ll close and "
-            f"you can reopen when it’s ready.\n\n{reason}"
+            "for the reported case. If that doesn’t happen in two weeks we’ll close "
+            "it; open a new PR if this is still relevant.\n\n"
+            f"{reason}"
         )
 
     if triage == "review":
@@ -657,10 +679,10 @@ def compose_message(kind: str, overlay: dict, who: str) -> str:
         )
 
     return (
-        "Not individually reviewed in the first pass. Applying the bulk hygiene "
-        "rule: questions go to the guide, 2.0 duplicates to 1671, privacy "
-        "duplicates to the policy comment, and reports without a reduced fixture "
-        f"need a reproduction before review.\n\n{reason}"
+        "Closing as part of intake cleanup. This was not individually reviewed "
+        "in the first pass: questions go to the guide, 2.0 duplicates to 1671, "
+        "privacy duplicates to the policy comment, and reports without a reduced "
+        f"fixture need a reproduction.\n\n{reason}\n\n{_close_footer(kind)}"
     )
 
 
