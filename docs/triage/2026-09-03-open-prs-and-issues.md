@@ -1,5 +1,9 @@
 # Proposed intake triage for rrweb-io/rrweb
 
+The working board is the interactive page in `index.html` (same folder).
+Open that file in a browser for filters, sorts, tags, downstream evidence,
+and links. This markdown is the research notes behind the board.
+
 A snapshot proposal for restarting pull-request and issue intake on
 rrweb-io/rrweb. Taken 2026-09-03 from public GitHub read-only APIs.
 This is a working document, not a decision log: buckets can change after
