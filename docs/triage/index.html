@@ -38,7 +38,7 @@
     position: sticky; top: 0; z-index: 20;
   }
   h1 { font-size: 22px; font-weight: 650; letter-spacing: -0.02em; margin: 0 0 6px; }
-  .lede { color: var(--muted); max-width: 920px; margin: 0 0 14px; }
+  .lede { color: var(--muted); margin: 0 0 10px; }
   .prefilters { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
   .prefilters button {
     appearance: none; border: 1px solid var(--line); background: var(--bg-2);
@@ -62,12 +62,19 @@
     color: var(--ink); padding: 5px 10px; border-radius: 6px; cursor: pointer; font: inherit;
   }
   .sorts button.active { border-color: var(--accent-2); color: var(--accent-2); }
-  .meta { color: var(--muted); font-size: 12px; margin: 4px 0 0; }
-  main { padding: 16px 28px 80px; }
-  .row {
-    background: var(--bg-2); border: 1px solid var(--line); border-radius: 10px;
-    padding: 12px 14px 10px; margin: 0 0 8px;
+  .meta { color: var(--muted); font-size: 12px; margin: 4px 0 0; display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+  .meta-actions { display: inline-flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .meta-actions label { text-transform: none; letter-spacing: 0; font-size: 12px; color: var(--muted); display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+  .ghost {
+    appearance: none; border: 1px solid var(--line); background: var(--bg-3);
+    color: var(--ink); padding: 3px 9px; border-radius: 6px; cursor: pointer;
+    font: inherit; font-size: 12px; white-space: nowrap;
   }
+  .ghost:hover, .ghost:focus-visible { border-color: var(--accent); color: #ffe08a; }
+  .ghost.copied { border-color: var(--adopt); color: var(--adopt); background: #1c2a22; }
+  main { padding: 16px 28px 80px; }
+  .row.done { opacity: 0.55; }
+  .row.done .title { text-decoration: line-through; }
   .row-top { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: baseline; }
   .id a { font-weight: 650; text-decoration: none; font-variant-numeric: tabular-nums; }
   .kind { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
@@ -115,10 +122,13 @@
     color: var(--ink); padding: 3px 9px; border-radius: 6px; cursor: pointer;
     font: inherit; font-size: 12px; white-space: nowrap;
   }
-  .copy-msg:hover, .copy-msg:focus-visible {
+  .copy-msg:hover, .copy-msg:focus-visible,
+  .mark-done:hover, .mark-done:focus-visible {
     border-color: var(--accent); color: #ffe08a;
   }
   .copy-msg.copied { border-color: var(--adopt); color: var(--adopt); background: #1c2a22; }
+  .mark-done.done-on { border-color: var(--reject); color: #ffc9b8; }
+  .row-actions { margin-left: auto; display: inline-flex; gap: 6px; align-items: center; }
   .msg:has(.copy-msg.copied) .msg-tip { display: none; }
   .msg-tip {
     display: none; position: absolute; right: 0; top: calc(100% + 6px);
@@ -155,7 +165,13 @@
     <input type="search" id="q" placeholder="Filter title, author, tags, notes…" />
     <div class="sorts" id="sorts"></div>
   </div>
-  <p class="meta" id="meta"></p>
+  <p class="meta">
+    <span id="meta-count"></span>
+    <span class="meta-actions">
+      <label><input type="checkbox" id="show-done" /> Show done</label>
+      <button type="button" class="ghost" id="copy-done">Copy done IDs</button>
+    </span>
+  </p>
 </header>
 <main id="board"></main>
 <script>
@@ -221,6 +237,7 @@ const PREFILTERS = [
   { id: "maintainer-close", label: "Maintainer close" },
   { id: "discuss", label: "Discuss" },
   { id: "reject", label: "Reject" },
+  { id: "done", label: "Done here" },
   { id: "all", label: "All" },
 ];
 
@@ -231,7 +248,46 @@ const SORTS = [
   { id: "tags", label: "Tags" },
 ];
 
-const state = { pre: "merge-now", kind: "all", who: "all", q: "", sort: "recency" };
+const state = { pre: "merge-now", kind: "all", who: "all", q: "", sort: "recency", showDone: false };
+
+const DONE_KEY = "rrweb-triage-done:2026-09-03";
+
+function itemKey(item) {
+  return item.kind + ":" + item.id;
+}
+
+function loadDone() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(DONE_KEY) || "{}");
+    return raw && typeof raw === "object" ? raw : {};
+  } catch {
+    return {};
+  }
+}
+
+let doneMap = loadDone();
+
+function saveDone() {
+  localStorage.setItem(DONE_KEY, JSON.stringify(doneMap));
+}
+
+function isDone(item) {
+  return Boolean(doneMap[itemKey(item)]);
+}
+
+function setDone(item, on) {
+  if (on) doneMap[itemKey(item)] = true;
+  else delete doneMap[itemKey(item)];
+  saveDone();
+}
+
+function doneItems() {
+  return ITEMS.filter(isDone);
+}
+
+function doneCount() {
+  return doneItems().length;
+}
 
 function matchesPre(item, pre) {
   if (pre === "all") return true;
@@ -247,6 +303,7 @@ function matchesPre(item, pre) {
   if (pre === "maintainer-close") return item.tags.includes("maintainer-close") || (item.who === "maintainer" && item.triage === "reject");
   if (pre === "discuss") return item.triage === "discuss";
   if (pre === "reject") return item.triage === "reject";
+  if (pre === "done") return isDone(item);
   return true;
 }
 
@@ -254,6 +311,7 @@ function filtered() {
   const q = state.q.trim().toLowerCase();
   return ITEMS.filter((item) => {
     if (!matchesPre(item, state.pre)) return false;
+    if (state.pre !== "done" && !state.showDone && isDone(item)) return false;
     if (state.kind !== "all" && item.kind !== state.kind) return false;
     if (state.who !== "all" && item.who !== state.who) return false;
     if (!q) return true;
@@ -346,18 +404,20 @@ function renderRow(item) {
     ? ` · ${esc(item.reviewDecision)}${item.draft ? " · draft" : ""}`
     : "";
   const msg = item.message
-    ? `<span class="msg">
-        <button type="button" class="copy-msg" data-id="${item.id}" data-kind="${item.kind}">Copy message</button>
-        <span class="msg-tip">${esc(item.message)}</span>
-      </span>`
+    ? `<button type="button" class="copy-msg" data-id="${item.id}" data-kind="${item.kind}">Copy message</button>
+        <span class="msg-tip">${esc(item.message)}</span>`
     : "";
-  return `<article class="row" data-id="${item.id}" data-kind="${item.kind}">
+  const marked = isDone(item);
+  return `<article class="row${marked ? " done" : ""}" data-id="${item.id}" data-kind="${item.kind}">
     <div class="row-top">
       <span class="kind">${item.kind === "pr" ? "PR" : "Issue"}</span>
       <span class="id"><a href="${esc(item.url)}" target="_blank" rel="noreferrer">#${item.id}</a></span>
       <span class="title">${esc(item.title)}</span>
       <span class="triage ${esc(item.triage)}">${esc(TRIAGE_LABEL[item.triage] || item.triage)}</span>
-      ${msg}
+      <span class="row-actions">
+        <button type="button" class="mark-done ghost${marked ? " done-on" : ""}" data-id="${item.id}" data-kind="${item.kind}">${marked ? "Undo" : "Done"}</button>
+        ${msg ? `<span class="msg">${msg}</span>` : ""}
+      </span>
     </div>
     <div class="sub">${esc(item.authorName || item.author)} (@${esc(item.author)}) · ${esc(item.whoLabel)} · updated ${fmtDate(item.updatedAt)} · opened ${fmtDate(item.createdAt)}${review}</div>
     <div class="tags">${tags || '<span class="tag">No extra tags</span>'}</div>
@@ -372,7 +432,13 @@ function renderRow(item) {
 }
 
 function countPre(id) {
-  return ITEMS.filter((item) => matchesPre(item, id) && (state.kind === "all" || item.kind === state.kind) && (state.who === "all" || item.who === state.who)).length;
+  return ITEMS.filter((item) => {
+    if (!matchesPre(item, id)) return false;
+    if (id !== "done" && !state.showDone && isDone(item)) return false;
+    if (state.kind !== "all" && item.kind !== state.kind) return false;
+    if (state.who !== "all" && item.who !== state.who) return false;
+    return true;
+  }).length;
 }
 
 function render() {
@@ -385,8 +451,8 @@ function render() {
     SORTS.map((s) =>
       `<button type="button" data-sort="${s.id}" class="${state.sort === s.id ? "active" : ""}">${esc(s.label)}</button>`
     ).join("");
-  document.getElementById("meta").textContent =
-    `${list.length} shown · snapshot 2026-09-03 · ${ITEMS.filter(i => i.kind==="pr").length} open PRs · ${ITEMS.filter(i => i.kind==="issue").length} open issues`;
+  document.getElementById("meta-count").textContent =
+    `${list.length} shown · ${doneCount()} done in this browser · snapshot 2026-09-03`;
   document.getElementById("board").innerHTML = list.length
     ? list.map(renderRow).join("")
     : `<p class="empty-board">No rows match these filters.</p>`;
@@ -407,7 +473,44 @@ document.getElementById("sorts").addEventListener("click", (e) => {
 document.getElementById("kind").addEventListener("change", (e) => { state.kind = e.target.value; render(); });
 document.getElementById("who").addEventListener("change", (e) => { state.who = e.target.value; render(); });
 document.getElementById("q").addEventListener("input", (e) => { state.q = e.target.value; render(); });
+document.getElementById("show-done").addEventListener("change", (e) => {
+  state.showDone = e.target.checked;
+  render();
+});
+document.getElementById("copy-done").addEventListener("click", async (e) => {
+  const btn = e.currentTarget;
+  const lines = doneItems().map((item) =>
+    `${item.kind === "pr" ? "PR" : "Issue"} ${item.id}  ${item.title}`
+  );
+  const text = lines.length ? lines.join("\n") : "None marked done.";
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    ta.remove();
+  }
+  btn.classList.add("copied");
+  btn.textContent = "Copied";
+  setTimeout(() => {
+    btn.classList.remove("copied");
+    btn.textContent = "Copy done IDs";
+  }, 1400);
+});
 document.getElementById("board").addEventListener("click", async (e) => {
+  const doneBtn = e.target.closest("button.mark-done");
+  if (doneBtn) {
+    const id = Number(doneBtn.dataset.id);
+    const kind = doneBtn.dataset.kind;
+    const item = ITEMS.find((x) => x.id === id && x.kind === kind);
+    if (!item) return;
+    setDone(item, !isDone(item));
+    render();
+    return;
+  }
   const btn = e.target.closest("button.copy-msg");
   if (!btn) return;
   const id = Number(btn.dataset.id);
