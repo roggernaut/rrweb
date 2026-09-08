@@ -1110,6 +1110,10 @@ HTML_HEAD = r"""<!DOCTYPE html>
   .ghost:hover, .ghost:focus-visible { border-color: var(--accent); color: #ffe08a; }
   .ghost.copied { border-color: var(--adopt); color: var(--adopt); background: #1c2a22; }
   main { padding: 16px 28px 80px; }
+  .row {
+    background: var(--bg-2); border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px 14px 10px; margin: 0 0 8px;
+  }
   .row.done { opacity: 0.55; }
   .row.done .title { text-decoration: line-through; }
   .row-top { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: baseline; }
@@ -1153,7 +1157,7 @@ HTML_HEAD = r"""<!DOCTYPE html>
   .ev-links li { margin: 0 0 4px; }
   .ev-links a { font-weight: 550; }
   .empty-board { color: var(--muted); padding: 40px 8px; }
-  .msg { position: relative; display: inline-flex; margin-left: auto; }
+  .msg { position: relative; display: inline-flex; }
   .copy-msg {
     appearance: none; border: 1px solid var(--line); background: var(--bg-3);
     color: var(--ink); padding: 3px 9px; border-radius: 6px; cursor: pointer;
