@@ -234,38 +234,49 @@ describe('text masking v2', () => {
   });
 });
 
-describe('data-privacy="ignore" snapshots exactly like mask', () => {
+describe('data-privacy="ignore" is events-only; mask ignore snapshots like mask', () => {
   const balanced: PrivacyPolicy = { version: 1, preset: 'balanced' };
 
-  it('masks text and attributes identically to data-privacy="mask"', () => {
+  it('bare ignore leaves text recorded', () => {
+    const out = serialize(
+      '<div data-privacy="ignore"><p>plain text</p></div>',
+      balanced,
+    );
+    expect(out).toContain('plain text');
+  });
+
+  it('mask ignore masks text and attributes identically to data-privacy="mask"', () => {
     const markup = (verb: string) =>
       `<div data-privacy="${verb}" title="secret title"><p>secret text</p></div>`;
-    const asIgnore = serialize(markup('ignore'), balanced);
-    expect(asIgnore).not.toContain('secret text');
-    expect(asIgnore).not.toContain('secret title');
+    const asMaskIgnore = serialize(markup('mask ignore'), balanced);
+    expect(asMaskIgnore).not.toContain('secret text');
+    expect(asMaskIgnore).not.toContain('secret title');
     // Identical to the mask serialization, apart from the verb itself and
     // the serializer's global node-id counter.
     const normalize = (out: string) =>
       out.replace(/"(rootId|id)":\d+/g, '"$1":0');
     expect(
       normalize(
-        asIgnore.replace('"data-privacy":"ignore"', '"data-privacy":"mask"'),
+        asMaskIgnore.replace(
+          '"data-privacy":"mask ignore"',
+          '"data-privacy":"mask"',
+        ),
       ),
     ).toBe(normalize(serialize(markup('mask'), balanced)));
   });
 
-  it('a descendant unmask re-enables content inside an ignore subtree', () => {
+  it('a descendant unmask re-enables content inside a mask ignore subtree', () => {
     const out = serialize(
-      '<div data-privacy="ignore"><p>hidden text</p><div data-privacy="unmask"><p>shown text</p></div></div>',
+      '<div data-privacy="mask ignore"><p>hidden text</p><div data-privacy="unmask"><p>shown text</p></div></div>',
       balanced,
     );
     expect(out).not.toContain('hidden text');
     expect(out).toContain('shown text');
   });
 
-  it('same-element ignore + .rr-unmask resolves to ignore: still masked', () => {
+  it('same-element mask ignore + .rr-unmask resolves to mask: still masked', () => {
     const out = serialize(
-      '<div class="rr-unmask" data-privacy="ignore"><p>secret text</p></div>',
+      '<div class="rr-unmask" data-privacy="mask ignore"><p>secret text</p></div>',
       balanced,
     );
     expect(out).not.toContain('secret text');

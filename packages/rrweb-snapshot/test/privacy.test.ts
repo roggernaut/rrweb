@@ -253,10 +253,11 @@ describe('an unrecognized data-privacy value fails closed to mask', () => {
 });
 
 /**
- * `data-privacy="ignore"` is `mask` plus event silence: content masks through
- * the fail-closed mask token (no dedicated mask entry), and the compiled
- * `ignoreSelector` lets the record side suppress the subtree's input events.
- * Severity ladder: unmask < mask < ignore < block, nearest annotation wins.
+ * `data-privacy="ignore"` is event silence only, exactly what `.rr-ignore`
+ * did: the compiled `ignoreSelector` lets the record side suppress the
+ * subtree's input events, and content is not masked by the token itself.
+ * `mask ignore` does both. `ignore` sits outside the severity ladder
+ * `unmask < mask < block` and composes with any rung.
  */
 describe('data-privacy="ignore"', () => {
   const balanced = compilePrivacyPolicy({ version: 1, preset: 'balanced' });
@@ -265,37 +266,38 @@ describe('data-privacy="ignore"', () => {
     document.body.innerHTML = '';
   });
 
-  it('content is masked by the compiled policy, exactly as mask is', () => {
+  it('bare ignore does not mask; mask ignore does', () => {
     document.body.innerHTML =
       '<div id="i" data-privacy="ignore"></div>' +
+      '<div id="mi" data-privacy="mask ignore"></div>' +
       '<div id="m" data-privacy="mask"></div>';
     const mask = balanced.maskTextSelector as string;
-    expect((document.querySelector('#i') as HTMLElement).matches(mask)).toBe(
-      true,
-    );
-    expect((document.querySelector('#m') as HTMLElement).matches(mask)).toBe(
-      true,
-    );
+    const el = (id: string) => document.querySelector(`#${id}`) as HTMLElement;
+    expect(el('i').matches(mask)).toBe(false);
+    expect(el('mi').matches(mask)).toBe(true);
+    expect(el('m').matches(mask)).toBe(true);
   });
 
-  it('compiles an ignoreSelector under managed presets, none under minimal', () => {
-    expect(balanced.ignoreSelector).toBe('[data-privacy="ignore"]');
+  it('compiles a token-matching ignoreSelector under managed presets, none under minimal', () => {
+    expect(balanced.ignoreSelector).toBe('[data-privacy~="ignore"]');
     expect(
       compilePrivacyPolicy({ version: 1, preset: 'strict' }).ignoreSelector,
-    ).toBe('[data-privacy="ignore"]');
+    ).toBe('[data-privacy~="ignore"]');
     expect(
       compilePrivacyPolicy({ version: 1, preset: 'minimal' }).ignoreSelector,
     ).toBeNull();
   });
 
-  it('isEventIgnored: the nearest data-privacy annotation decides', () => {
+  it('isEventIgnored: the nearest data-privacy annotation decides, for ignore and mask ignore', () => {
     document.body.innerHTML =
       '<div data-privacy="ignore"><input id="in-ignore">' +
       '<div data-privacy="unmask"><input id="in-unmask"></div>' +
       '<div data-privacy="mask"><input id="in-mask"></div></div>' +
+      '<div data-privacy="mask ignore"><input id="in-mask-ignore"></div>' +
       '<input id="outside">';
     const el = (id: string) => document.querySelector(`#${id}`) as HTMLElement;
     expect(isEventIgnored(el('in-ignore'), balanced)).toBe(true);
+    expect(isEventIgnored(el('in-mask-ignore'), balanced)).toBe(true);
     expect(isEventIgnored(el('in-unmask'), balanced)).toBe(false);
     expect(isEventIgnored(el('in-mask'), balanced)).toBe(false);
     expect(isEventIgnored(el('outside'), balanced)).toBe(false);

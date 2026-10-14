@@ -353,11 +353,11 @@ describe('record() warns once when strict disables an explicit recordCanvas', ()
 });
 
 /**
- * `data-privacy="ignore"` is `mask` plus event silence: the subtree's content
- * masks like `mask`, and no input events are emitted for it at all — absence,
- * not stars. The nearest `data-privacy` annotation decides, so a descendant
- * `unmask` re-enables events; the legacy `.rr-ignore` control stays what it
- * always was, per-element and events-only.
+ * `data-privacy="ignore"` is event silence only, exactly what `.rr-ignore`
+ * does: no input events are emitted for the subtree at all — absence, not
+ * stars — and content is left to the rest of the policy. `mask ignore` masks
+ * as well. The nearest `data-privacy` annotation decides, so a descendant
+ * `unmask` re-enables events.
  */
 describe('record() input events under data-privacy="ignore"', () => {
   afterEach(() => {
@@ -398,6 +398,14 @@ describe('record() input events under data-privacy="ignore"', () => {
     expect(inputs).toHaveLength(0);
   });
 
+  it('emits no input events at all inside a mask ignore subtree', async () => {
+    const inputs = await recordedInputEvents(
+      '<div data-privacy="mask ignore"><input id="t"></div>',
+      balanced,
+    );
+    expect(inputs).toHaveLength(0);
+  });
+
   it('same-element ignore + .rr-unmask resolves to ignore: still silent', async () => {
     const inputs = await recordedInputEvents(
       '<input id="t" class="rr-unmask" data-privacy="ignore">',
@@ -424,8 +432,8 @@ describe('record() input events under data-privacy="ignore"', () => {
   /**
    * A vendorCompat ignore token is events-only: the vendor's own recorder
    * suppresses input events from the annotated element and records its
-   * content normally, and compat reproduces exactly that — unlike
-   * `data-privacy="ignore"`, which is mask plus silence.
+   * content normally, and compat reproduces exactly that, as the native
+   * `data-privacy="ignore"` does.
    */
   it('a vendorCompat ignore token suppresses events, for its vendor only', async () => {
     const sentryCompat = {
@@ -501,9 +509,8 @@ describe('record() input events under data-privacy="ignore"', () => {
     expect(onAncestor.length).toBeGreaterThan(0);
   });
 
-  it('a characterData mutation under ignore arrives masked', async () => {
-    document.body.innerHTML =
-      '<div data-privacy="ignore"><p id="t">before text</p></div>';
+  async function recordedTextMutations(verb: string): Promise<string[]> {
+    document.body.innerHTML = `<div data-privacy="${verb}"><p id="t">before text</p></div>`;
     const events: eventWithTime[] = [];
     const stop = record({ ...balanced, emit: (event) => events.push(event) });
     try {
@@ -513,13 +520,22 @@ describe('record() input events under data-privacy="ignore"', () => {
     } finally {
       stop?.();
     }
-    const texts = events.flatMap((event) =>
+    return events.flatMap((event) =>
       event.type === EventType.IncrementalSnapshot &&
       event.data.source === IncrementalSource.Mutation
         ? event.data.texts.map((t) => t.value)
         : [],
     );
+  }
+
+  it('a characterData mutation under mask ignore arrives masked', async () => {
+    const texts = await recordedTextMutations('mask ignore');
     expect(texts).toContain('****** *****');
     expect(texts).not.toContain('secret after');
+  });
+
+  it('a characterData mutation under bare ignore arrives unmasked', async () => {
+    const texts = await recordedTextMutations('ignore');
+    expect(texts).toContain('secret after');
   });
 });

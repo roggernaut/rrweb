@@ -284,9 +284,10 @@ recognized directly in markup, no extra configuration required:
 
 ```html
 <section data-privacy="block">Never capture this subtree</section>
-<section data-privacy="ignore">
+<section data-privacy="mask ignore">
   Mask content, and never emit its input events
 </section>
+<input data-privacy="ignore" name="search" />
 <section data-privacy="mask">Mask content in this subtree</section>
 <span data-privacy="unmask">This content may be captured</span>
 ```
@@ -301,19 +302,22 @@ can say so in the same edit rather than in a selector list maintained
 somewhere else.
 
 The four values above are the whole vocabulary, and they are case-sensitive.
-They form a severity ladder, `unmask < mask < ignore < block`, and the
-nearest annotated ancestor decides. `ignore` is `mask` plus event silence:
-the subtree's content is masked exactly as under `data-privacy="mask"`, and
-nothing typed or clicked in it is ever emitted -- not even a length-only
-starred value. A descendant `data-privacy="unmask"` inside an `ignore`
-subtree re-enables both content and events, exactly as it does inside
-`mask`; `block` remains absolute, and on one element the strictest verb
-present wins.
+The content verbs form a severity ladder, `unmask < mask < block`, and the
+nearest annotated ancestor decides. `ignore` governs events rather than
+content: it suppresses the subtree's input events, exactly as `.rr-ignore`
+does, and leaves the recorded value to the rest of the policy. It composes
+with `mask` as `data-privacy="mask ignore"`, which masks the content and
+emits no input event at all -- not even a length-only starred value.
+`unmask` and `block` are always bare. A descendant `data-privacy="unmask"`
+inside a `mask ignore` subtree re-enables both content and events, exactly
+as it does inside `mask`; `block` remains absolute, and on one element the
+strictest verb present wins.
 
 The legacy `.rr-ignore` class (with the `ignoreClass`/`ignoreSelector`
 options) is an event-suppression-only noise control -- per-element, input
-events only, and it never masks content -- NOT a privacy mechanism.
-`data-privacy="ignore"` is its privacy-grade replacement.
+events only, and it never masks content. `data-privacy="ignore"` is its
+portable, markup-owned equivalent; add `mask` when the content needs
+protecting too.
 
 **Any other value masks.** `data-privacy="masked"`, `data-privacy="Block"`,
 `data-privacy=""` -- each of these protects the subtree exactly as
@@ -413,8 +417,8 @@ recorded), **block** (subtree removed or placeholdered), or **ignore**
 (input events suppressed, content untouched) -- and never to a less
 protective one. A vendor's ignore token silences input events from the
 annotated element itself, exactly as that vendor's recorder does; it
-carries no masking, unlike the native `data-privacy="ignore"`, which is
-mask plus silence. Vendors whose masking is configured purely from
+carries no masking, exactly like the native `data-privacy="ignore"`
+(`mask ignore` is the mask-and-silence form). Vendors whose masking is configured purely from
 their own console with no reserved markup (Pendo, Statsig, Sprig, Userpilot,
 Cobrowse) have nothing to recognize.
 

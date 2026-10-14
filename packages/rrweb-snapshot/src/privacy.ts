@@ -18,8 +18,9 @@ const NATIVE_BLOCK_CLASSES = '.rr-block';
 // The mapping rule: each token maps to the closest treatment our verbs
 // express (mask, block, ignoreEvents), never a less protective one.
 // `ignoreEvents` tokens suppress input events from the annotated element
-// only, exactly as the vendor's own recorder does — they never imply
-// masking, unlike `data-privacy="ignore"`, which is mask plus silence. No
+// only, exactly as the vendor's own recorder does. They never imply
+// masking, and neither does the native `data-privacy="ignore"`, which is
+// events-only too (`mask ignore` is the mask-and-silence form). No
 // vendor's unmask/allow token is ever merged, under any form of the
 // setting: `vendorCompat` may only reduce what is recorded, never reveal,
 // and `.rr-unmask` stays native-only.
@@ -194,13 +195,15 @@ function vendorCompatSelector(
 }
 
 // `data-privacy` fails closed: the mask token is the bare attribute minus the
-// two values that mean something else, so an unrecognized value masks.
+// three values that mean something else, so an unrecognized value masks.
+// `ignore` is events-only and matched as a token, so `mask ignore` masks
+// (it is not one of the three exact exclusions) and silences events.
 const DATA_PRIVACY = '[data-privacy]';
 const DATA_PRIVACY_MASK =
-  '[data-privacy]:not([data-privacy="unmask"]):not([data-privacy="block"])';
+  '[data-privacy]:not([data-privacy="unmask"]):not([data-privacy="block"]):not([data-privacy="ignore"])';
 const DATA_PRIVACY_UNMASK = '[data-privacy="unmask"]';
 const DATA_PRIVACY_BLOCK = '[data-privacy="block"]';
-const DATA_PRIVACY_IGNORE = '[data-privacy="ignore"]';
+const DATA_PRIVACY_IGNORE = '[data-privacy~="ignore"]';
 
 const PRIVACY_PRESETS = new Set(['strict', 'balanced', 'minimal']);
 const MASKED_ATTRIBUTE_DEFAULTS = ['title', 'placeholder', 'aria-label'];
@@ -479,9 +482,11 @@ export function compilePrivacyPolicy(
 
 /**
  * Whether input events from `element`'s subtree are suppressed entirely: the
- * nearest `data-privacy` annotation, ancestor-or-self, is `ignore`. A nearer
- * annotation of any other value overrides, per the severity ladder
- * `unmask, mask, ignore, block`. Any throw fails closed to suppression.
+ * nearest `data-privacy` annotation, ancestor-or-self, carries the `ignore`
+ * token (`ignore` or `mask ignore`). A nearer annotation without the token
+ * overrides. `ignore` sits outside the content severity ladder
+ * `unmask, mask, block`; it governs events only. Any throw fails closed to
+ * suppression.
  */
 export function isEventIgnored(
   element: Element,

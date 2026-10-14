@@ -372,9 +372,9 @@ export type CompiledPrivacyPolicy = {
   unmaskTextSelector: string | null;
   /** 'block' rules + [data-privacy="block"] + .rr-block (+ compat classes) */
   blockSelector: string | null;
-  /** [data-privacy="ignore"] under balanced/strict: content is masked through the fail-closed mask token, and input events from the subtree are suppressed */
+  /** [data-privacy~="ignore"] under balanced/strict: input events from the subtree are suppressed, as `.rr-ignore` did; content is not masked by the token itself (`mask ignore` does both) */
   ignoreSelector: string | null;
-  /** vendorCompat input-ignore tokens: input events from a matching element are suppressed, and nothing else changes — no masking implied, unlike `data-privacy="ignore"`. Matched on the element itself, mirroring the vendors' own input observers. */
+  /** vendorCompat input-ignore tokens: input events from a matching element are suppressed, and nothing else changes — no masking implied, like `data-privacy="ignore"`. Matched on the element itself, mirroring the vendors' own input observers. */
   ignoreEventsSelector: string | null;
   /** true under balanced/strict */
   maskAllInputs: boolean;
