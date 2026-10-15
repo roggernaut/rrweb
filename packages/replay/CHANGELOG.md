@@ -1,5 +1,17 @@
 # @rrweb/replay
 
+## 2.2.0
+
+### Minor Changes
+
+- [#1928](https://github.com/rrweb-io/rrweb/pull/1928) [`9b9a1ff`](https://github.com/rrweb-io/rrweb/commit/9b9a1ff30dd281d00317b0fbece3dbd90a9e0a80) Thanks [@Juice10](https://github.com/Juice10)! - Add a top-level annotation event with `record.addAnnotation()` and `replayer.on('annotation', handler)`. Annotation data uses `type: 'caption'` or `type: 'timelineMarker'`. Import `annotationData` from `@rrweb/types` to type annotation data. The player can display these annotations as captions and interactive timeline markers.
+
+### Patch Changes
+
+- Updated dependencies [[`43d0ebd`](https://github.com/rrweb-io/rrweb/commit/43d0ebd7dbd845a8e39b264885613b3d9b30f3f5), [`3b8004a`](https://github.com/rrweb-io/rrweb/commit/3b8004a0a60200afab8b0605e936e7fede35da7f), [`d30807d`](https://github.com/rrweb-io/rrweb/commit/d30807d56f72849e860272fea3f10f81688feece), [`9b9a1ff`](https://github.com/rrweb-io/rrweb/commit/9b9a1ff30dd281d00317b0fbece3dbd90a9e0a80)]:
+  - rrweb@2.2.0
+  - @rrweb/types@2.2.0
+
 ## 2.1.7
 
 ### Patch Changes

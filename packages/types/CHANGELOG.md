@@ -1,5 +1,16 @@
 # @rrweb/types
 
+## 2.2.0
+
+### Minor Changes
+
+- [`3b8004a`](https://github.com/rrweb-io/rrweb/commit/3b8004a0a60200afab8b0605e936e7fede35da7f) Thanks [@cursoragent](https://github.com/cursoragent)! - Move Highlight-style heuristic PII auto-detection out of `balanced`/`strict`
+  defaults and into an opt-in `@rrweb/rrweb-plugin-privacy-detectors` plugin.
+  Presets still mask form values and honor policy rules; email/phone/card/SSN/IP
+  text matching is enabled only by the plugin or `applyPrivacyDetectors`.
+
+- [#1928](https://github.com/rrweb-io/rrweb/pull/1928) [`9b9a1ff`](https://github.com/rrweb-io/rrweb/commit/9b9a1ff30dd281d00317b0fbece3dbd90a9e0a80) Thanks [@Juice10](https://github.com/Juice10)! - Add a top-level annotation event with `record.addAnnotation()` and `replayer.on('annotation', handler)`. Annotation data uses `type: 'caption'` or `type: 'timelineMarker'`. Import `annotationData` from `@rrweb/types` to type annotation data. The player can display these annotations as captions and interactive timeline markers.
+
 ## 2.1.7
 
 ## 2.1.6
