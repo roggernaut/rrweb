@@ -304,6 +304,18 @@ export function splitMaskAllSelector(
 let warnedMaskDecisionThrew = false;
 
 /**
+ * The next element up for a masking decision. Unlike `parentElement`, this
+ * crosses a shadow boundary onto the host, so a mask on the host governs
+ * every text node inside its shadow root.
+ */
+function maskingAncestor(n: Node): Element | null {
+  const parent = dom.parentElement(n);
+  if (parent) return parent;
+  const parentNode = dom.parentNode(n);
+  return parentNode && isShadowRoot(parentNode) ? dom.host(parentNode) : null;
+}
+
+/**
  * Two shapes are accepted here, and both are coerced at runtime rather than
  * being trusted from the type signature:
  *
@@ -341,18 +353,13 @@ export function needMaskingText(
         ? splitMaskAllSelector(maskTextSelector ?? null)
         : maskTextSelector;
     if ((maskAll || inheritedNeedsMask) && !unmaskTextSelector) return true;
-    let el: Element;
-    if (isElement(node)) {
-      el = node;
-      if (!dom.childNodes(el).length) {
-        return inheritedNeedsMask;
-      }
-    } else if (dom.parentElement(node) === null) {
-      return inheritedNeedsMask || maskAll;
-    } else {
-      el = dom.parentElement(node)!;
-    }
-    let current: Element | null = el;
+    // An element is checked itself even when it has no light-DOM children:
+    // a shadow host's content lives entirely in its shadow root, and the
+    // result computed here is what that shadow tree inherits.
+    let current: Element | null = isElement(node)
+      ? node
+      : maskingAncestor(node);
+    if (!current) return inheritedNeedsMask || maskAll;
     while (current) {
       if (
         classMatches(current, maskTextClass) ||
@@ -362,7 +369,7 @@ export function needMaskingText(
       if (unmaskTextSelector && current.matches(unmaskTextSelector))
         return false;
       if (!checkAncestors) break;
-      current = dom.parentElement(current);
+      current = maskingAncestor(current);
     }
     return maskAll || inheritedNeedsMask;
   } catch (e) {

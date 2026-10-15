@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import snapshot from '../src/snapshot';
+import snapshot, { needMaskingText } from '../src/snapshot';
 import {
   compilePrivacyPolicy,
   finalizeAttribute,
@@ -215,6 +215,44 @@ describe('text masking v2', () => {
       }),
     );
     expect(out).toContain('visible');
+  });
+
+  // Host-only masking: the host has no light-DOM children, every byte lives
+  // in the shadow root. The two markers share one walk but hit different
+  // matchers (class vs selector), so both are tabled here.
+  it.each([
+    ['data-privacy="mask"', '<div id="host" data-privacy="mask"></div>'],
+    ['class="rr-mask"', '<div id="host" class="rr-mask"></div>'],
+  ])('masks shadow content when the host itself carries %s', (_, hostHtml) => {
+    withShadowRoot(hostHtml + '<p>visible</p>', '<p>secret</p>');
+    const out = JSON.stringify(
+      snapshot(document, {
+        privacyPolicy: { version: 1, preset: 'balanced' },
+      }),
+    );
+    expect(out).not.toContain('secret');
+    // Capability survives: the shadow tree is still serialized, with the
+    // text node present but masked, and the light-DOM sibling is untouched.
+    expect(out).toContain('"isShadow":true');
+    expect(out).toMatch(/"textContent":"\*{6}"/);
+    expect(out).toContain('visible');
+  });
+
+  it('needMaskingText walks from a shadow text node up through the host (mutation path)', () => {
+    withShadowRoot(
+      '<div id="host" data-privacy="mask"></div><div id="plain"></div>',
+      '<p>secret</p>',
+    );
+    const shadowText = (host: Element) =>
+      host.shadowRoot!.querySelector('p')!.firstChild!;
+    const plain = document.querySelector('#plain') as HTMLElement;
+    plain.attachShadow({ mode: 'open' }).innerHTML = '<p>open</p>';
+    // Same call shape as the recorder's characterData handler: no inherited flag.
+    const decide = (text: Node) =>
+      needMaskingText(text, 'rr-mask', '[data-privacy~="mask"]', null, true);
+    expect(decide(shadowText(document.querySelector('#host')!))).toBe(true);
+    // Paired valid path: an unmarked host leaves its shadow text recordable.
+    expect(decide(shadowText(plain))).toBe(false);
   });
 
   it('masks a text node parented directly by a shadow root under strict', () => {

@@ -81,3 +81,6 @@ primitives.
   (whereas `strict` emits none), and pages with a pre-existing
   `data-privacy` attribute of their own will have it read as rrweb's under
   managed presets.
+- Fix: a mask on a shadow host itself (`data-privacy="mask"` or `.rr-mask`) now
+  masks the content of its shadow root; the mask-decision walk crosses shadow
+  boundaries onto the host instead of stopping at `parentElement`.
