@@ -17,6 +17,8 @@ export {
   type CanvasMasking,
   type CanvasMaskRegion,
   type eventWithTime,
+  type annotationData,
+  type annotationEvent,
 } from '@rrweb/types';
 
 // exports style.css from replay
@@ -35,13 +37,14 @@ export type {
   SensitiveDataKind,
 } from 'rrweb-snapshot';
 
-const { addCustomEvent } = record;
+const { addCustomEvent, addAnnotation } = record;
 const { freezePage } = record;
 const { takeFullSnapshot } = record;
 
 export {
   record,
   addCustomEvent,
+  addAnnotation,
   freezePage,
   takeFullSnapshot,
   Replayer,
