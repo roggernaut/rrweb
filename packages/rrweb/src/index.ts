@@ -14,6 +14,8 @@ export {
   IncrementalSource,
   MouseInteractions,
   ReplayerEvents,
+  type CanvasMasking,
+  type CanvasMaskRegion,
   type eventWithTime,
 } from '@rrweb/types';
 
@@ -21,6 +23,13 @@ export {
 import './replay/styles/style.css';
 
 export type { recordOptions, ReplayPlugin } from './types';
+export type {
+  PrivacyAction,
+  PrivacyPolicy,
+  PrivacyPreset,
+  PrivacyRule,
+  PrivacyTarget,
+} from 'rrweb-snapshot';
 
 const { addCustomEvent } = record;
 const { freezePage } = record;

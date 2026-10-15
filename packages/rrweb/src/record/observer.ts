@@ -1,8 +1,8 @@
 import {
-  type MaskInputOptions,
-  maskInputValue,
+  maskInput,
   Mirror,
   getInputType,
+  isEventIgnored,
   toLowerCase,
 } from 'rrweb-snapshot';
 import type { FontFaceSet } from 'css-font-loading-module';
@@ -391,6 +391,7 @@ function initInputObserver({
   maskInputFn,
   sampling,
   userTriggeredOnInput,
+  privacy,
 }: observerParam): listenerHandler {
   function eventHandler(event: Event) {
     let target = getEventTarget(event) as HTMLElement | null;
@@ -419,23 +420,24 @@ function initInputObserver({
     ) {
       return;
     }
+    if (isEventIgnored(target, privacy)) {
+      return;
+    }
     let text = (target as HTMLInputElement).value;
     let isChecked = false;
     const type: Lowercase<string> = getInputType(target) || '';
 
     if (type === 'radio' || type === 'checkbox') {
       isChecked = (target as HTMLInputElement).checked;
-    } else if (
-      maskInputOptions[tagName.toLowerCase() as keyof MaskInputOptions] ||
-      maskInputOptions[type as keyof MaskInputOptions]
-    ) {
-      text = maskInputValue({
+    } else {
+      text = maskInput({
         element: target,
         maskInputOptions,
         tagName,
         type,
         value: text,
         maskInputFn,
+        privacy,
       });
     }
     cbWithDedup(
@@ -451,7 +453,7 @@ function initInputObserver({
       doc
         .querySelectorAll(`input[type="radio"][name="${name}"]`)
         .forEach((el) => {
-          if (el !== target) {
+          if (el !== target && !isEventIgnored(el, privacy)) {
             const text = (el as HTMLInputElement).value;
             cbWithDedup(
               el,

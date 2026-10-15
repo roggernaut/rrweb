@@ -6,6 +6,8 @@ import snapshot, {
   visitSnapshot,
   cleanupSnapshot,
   needMaskingText,
+  splitMaskAllSelector,
+  type MaskTextSelector,
   classMatchesRegex,
   IGNORED_NODE,
   genId,
@@ -17,6 +19,7 @@ import rebuild, {
   createSandboxedIframe,
   rebuildIntoSandboxedIframe,
 } from './rebuild';
+export * from './privacy';
 export * from './types';
 // Legacy broad export kept for compatibility. New internal imports should
 // prefer snapshot-utils.ts / rebuild-utils.ts domain entrypoints.
@@ -37,7 +40,9 @@ export {
   visitSnapshot,
   cleanupSnapshot,
   needMaskingText,
+  splitMaskAllSelector,
   classMatchesRegex,
   IGNORED_NODE,
   genId,
 };
+export type { MaskTextSelector };

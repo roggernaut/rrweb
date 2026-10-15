@@ -67,10 +67,13 @@ export class StylesheetManager {
         styleId = this.styleMirror.add(sheet);
         styles.push({
           styleId,
-          rules: Array.from(sheet.rules || CSSRule, (r, index) => ({
-            rule: stringifyRule(r, sheet.href),
-            index,
-          })),
+          rules: Array.from(
+            sheet.cssRules || sheet.rules || [],
+            (r, index) => ({
+              rule: stringifyRule(r, sheet.href),
+              index,
+            }),
+          ),
         });
       } else styleId = this.styleMirror.getId(sheet);
       adoptedStyleSheetData.styleIds.push(styleId);

@@ -11,6 +11,7 @@ import {
   IncrementalSource,
   styleSheetRuleData,
   selectionData,
+  attributes,
 } from '@rrweb/types';
 import {
   assertSnapshot,
@@ -119,6 +120,125 @@ describe('record', function (this: ISuite) {
         (event: eventWithTime) => event.type === EventType.FullSnapshot,
       ).length,
     ).toEqual(1);
+  });
+
+  it('applies data-privacy to full snapshots and incremental events', async () => {
+    await ctx.page.setContent(`
+      <p id="contact" data-privacy="mask" title="initial@example.com">initial@example.com</p>
+      <input id="name" data-privacy="mask" type="text" value="Initial Name" />
+      <input id="password" data-privacy="unmask" type="password" value="secret" />
+      <div data-privacy="block"><p>excluded text</p></div>
+      <p data-privacy="unmask">visible text</p>
+    `);
+    await ctx.page.evaluate(() => {
+      const { record } = (window as unknown as IWindow).rrweb;
+      record({
+        emit: (window as unknown as IWindow).emit,
+        // `data-privacy` selectors are part of the v2 presets; a recording
+        // with no policy at all stays on minimal semantics by design.
+        privacyPolicy: { version: 1, preset: 'balanced' },
+      });
+
+      const contact = document.querySelector('#contact')!;
+      contact.textContent = 'changed@example.com';
+      contact.setAttribute('title', 'changed@example.com');
+
+      const name = document.querySelector('#name') as HTMLInputElement;
+      name.value = 'Changed Name';
+      name.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    });
+    await waitForRAF(ctx.page);
+
+    const payload = JSON.stringify(ctx.events);
+    expect(payload).not.toContain('initial@example.com');
+    expect(payload).not.toContain('changed@example.com');
+    expect(payload).not.toContain('Initial Name');
+    expect(payload).not.toContain('Changed Name');
+    expect(payload).not.toContain('secret');
+    expect(payload).not.toContain('excluded text');
+    expect(payload).toContain('visible text');
+    // v2 masking is shape-free: stars only, no `xxxx@xxxx.xxx` shape mask.
+    expect(payload).toContain('*'.repeat('changed@example.com'.length));
+  });
+
+  it('applies final attribute masking to snapshots and mutations', async () => {
+    await ctx.page.setContent(`
+      <div id="target" title="initial@example.com" style="color: red"></div>
+    `);
+    await ctx.page.evaluate(() => {
+      const { record } = (window as unknown as IWindow).rrweb;
+      record({
+        emit: (window as unknown as IWindow).emit,
+        maskAttributeFn: (name, value) =>
+          name === 'style' || name === 'title' ? '[MASKED]' : value,
+      });
+
+      const target = document.querySelector('#target')!;
+      target.setAttribute('title', 'changed@example.com');
+      target.setAttribute(
+        'style',
+        'color: blue; background-color: red; border-color: green;',
+      );
+    });
+    await waitForRAF(ctx.page);
+
+    const payload = JSON.stringify(ctx.events);
+    expect(payload).not.toContain('initial@example.com');
+    expect(payload).not.toContain('changed@example.com');
+    expect(payload).toContain('[MASKED]');
+    // CSS carried as an attribute is exempt from every masking path, so
+    // `maskAttributeFn` is never consulted for `style`.
+    expect(payload).toContain('background-color');
+  });
+
+  it('masks attributes of nodes added after recording starts', async () => {
+    await ctx.page.setContent(`<div id="root"></div>`);
+    await ctx.page.evaluate(() => {
+      const { record } = (window as unknown as IWindow).rrweb;
+      record({
+        emit: (window as unknown as IWindow).emit,
+        maskAllElementAttributes: true,
+      });
+
+      const added = document.createElement('div');
+      added.setAttribute('data-user', 'bob@x.com');
+      document.querySelector('#root')!.appendChild(added);
+    });
+    await waitForRAF(ctx.page);
+
+    const payload = JSON.stringify(ctx.events);
+    expect(payload).not.toContain('bob@x.com');
+    expect(payload).toContain('*'.repeat('bob@x.com'.length));
+  });
+
+  it('leaves the value attribute of non-form elements unmasked', async () => {
+    await ctx.page.setContent(`<ol><li id="item" value="3">three</li></ol>`);
+    await ctx.page.evaluate(() => {
+      const { record } = (window as unknown as IWindow).rrweb;
+      record({
+        emit: (window as unknown as IWindow).emit,
+        privacyPolicy: { version: 1, preset: 'balanced' },
+      });
+
+      document.querySelector('#item')!.setAttribute('value', '7');
+    });
+    await waitForRAF(ctx.page);
+
+    const attributeMutations = ctx.events
+      .filter(
+        (e) =>
+          e.type === EventType.IncrementalSnapshot &&
+          (e.data as { source: IncrementalSource }).source ===
+            IncrementalSource.Mutation,
+      )
+      .flatMap(
+        (e) =>
+          (e.data as unknown as { attributes: { attributes: attributes }[] })
+            .attributes,
+      );
+    expect(attributeMutations.some((m) => m.attributes.value === '7')).toBe(
+      true,
+    );
   });
 
   it('can checkout full snapshot by count', async () => {
