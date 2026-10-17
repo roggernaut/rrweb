@@ -29,6 +29,7 @@ export type {
   PrivacyPreset,
   PrivacyRule,
   PrivacyTarget,
+  PrivacyUrlOptions,
 } from 'rrweb-snapshot';
 
 const { addCustomEvent } = record;

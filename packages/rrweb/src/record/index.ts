@@ -4,6 +4,7 @@ import {
   type MaskInputOptions,
   createMirror,
   resolvePrivacyContext,
+  sanitizeMetaUrl,
 } from 'rrweb-snapshot';
 import { initObservers, mutationBuffers } from './observer';
 import {
@@ -387,7 +388,12 @@ function record<T = eventWithTime>(
       {
         type: EventType.Meta,
         data: {
-          href: window.location.href,
+          // Meta's `href` is a required string; '' is the inert fallback for
+          // an unparseable URL, which `sanitizeMetaUrl` otherwise drops
+          // (null). `sanitizeMetaUrl` masks only blocked-list params, even
+          // under `strict` -- see its doc comment for why the Meta event's
+          // own URL is scoped differently than a DOM URL attribute.
+          href: sanitizeMetaUrl(window.location.href, privacy) ?? '',
           width: getWindowWidth(),
           height: getWindowHeight(),
         },
