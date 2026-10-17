@@ -562,6 +562,7 @@ function serializeNode(
         maskTextFn,
         rootId,
         cssCaptured,
+        privacy,
       });
     case n.CDATA_SECTION_NODE:
       return {
@@ -594,9 +595,10 @@ function serializeTextNode(
     maskTextFn: MaskTextFn | undefined;
     rootId: number | undefined;
     cssCaptured?: boolean;
+    privacy?: CompiledPrivacyPolicy;
   },
 ): serializedNode {
-  const { needsMask, maskTextFn, rootId, cssCaptured } = options;
+  const { needsMask, maskTextFn, rootId, cssCaptured, privacy } = options;
   const parent = dom.parentElement(n);
   const parentTagName = dom.untaintedTagName(parent);
   let textContent: string | null = '';
@@ -620,6 +622,7 @@ function serializeTextNode(
       parentTagName,
       needsMask,
       maskTextFn,
+      privacy,
       exemptScript: true,
     });
   }
