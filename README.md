@@ -7,7 +7,7 @@
 
 # rrweb
 
-**[(new!) rrweb cloud - hosted rrweb backend is now available](https://rrweb.com/)**
+[rrweb Cloud](https://rrweb.com/) is the hosted backend for rrweb: ingestion, storage, and replay serving.
 
 [![Join the chat at slack](https://img.shields.io/badge/slack-@rrweb-teal.svg?logo=slack)](https://join.slack.com/t/rrweb/shared_invite/zt-41pxl6epj-~N2YyGQxvI5r3V6d59it8w)
 [![Twitter Follow](https://img.shields.io/badge/twitter-@rrweb__io-teal.svg?logo=twitter)](https://twitter.com/rrweb_io)
@@ -36,6 +36,8 @@ rrweb is composed of the following principal parts:
 - **[record](packages/record)**, builds on an initial snapshot to record all HTML state changes (mutations) and user interactions as the user browses the web page. Multiple page loads can be chained together into a single recording.
 - **[replay](packages/replay)**, rebuilds the inital snapshot and replays the list or stream of subsequent events to show a 'session replay'
 - **[rrweb-player](packages/rrweb-player/)**, a player UI on top of the replay package to provide GUI-based functions like pause, fast-forward, drag and drop to play at any time.
+
+These packages record and replay in the browser; storing events and serving them for replay is left to your own backend, or to [rrweb Cloud](https://rrweb.com/) if you would rather not run one.
 
 ## Roadmap
 

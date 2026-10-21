@@ -114,3 +114,5 @@ So if we are applying rrweb to github.com, we may record many duplicate CSS styl
 We can iterate the events and extract CSS. Then we can only store one copy of the styles.
 
 This strategy is also possible for the full snapshot across sessions.
+
+The [rrweb Cloud](https://rrweb.com/) storage engine applies this deduplication across sessions on the server side if you would rather not build it yourself.

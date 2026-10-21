@@ -21,6 +21,8 @@ But you should guarantee:
 - a set of events are sorted by its timestamp
 - save every event
 
+[rrweb Cloud](https://rrweb.com/) handles this ingestion and storage if you would rather not run your own backend.
+
 You can use the `stopFn` to stop the recording.
 
 Replay is also as simple as passing events into `Replayer`.

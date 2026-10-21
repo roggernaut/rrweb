@@ -164,6 +164,8 @@ function save() {
 setInterval(save, 10 * 1000);
 ```
 
+The endpoint in this example is the [rrweb Cloud](https://rrweb.com/docs/cloud/) ingest API, which handles storage and replay serving if you would rather not run your own event backend. Any endpoint that stores the posted events in timestamp order works the same way.
+
 #### Record Options
 
 The `record` function accepts the following options.
