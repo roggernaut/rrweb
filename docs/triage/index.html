@@ -254,26 +254,48 @@ const SORTS = [
 
 const state = { pre: "merge-now", kind: "all", who: "all", q: "", sort: "recency", showDone: false };
 
-const DONE_KEY = "rrweb-triage-done:2026-10-23";
+// One key across snapshots so marks survive a refresh. Earlier builds used
+// a per-snapshot key ("rrweb-triage-done:<date>"); those are merged in once,
+// on the first load without DONE_KEY, and left in place.
+const DONE_KEY = "rrweb-triage-done";
+const LEGACY_DONE_PREFIX = "rrweb-triage-done:";
 
 function itemKey(item) {
   return item.kind + ":" + item.id;
 }
 
-function loadDone() {
+function readDoneKey(key) {
   try {
-    const raw = JSON.parse(localStorage.getItem(DONE_KEY) || "{}");
+    const raw = JSON.parse(localStorage.getItem(key) || "{}");
     return raw && typeof raw === "object" ? raw : {};
   } catch {
     return {};
   }
 }
 
+function loadDone() {
+  const merged = {};
+  try {
+    if (localStorage.getItem(DONE_KEY) !== null) return readDoneKey(DONE_KEY);
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith(LEGACY_DONE_PREFIX)) Object.assign(merged, readDoneKey(key));
+    }
+  } catch {
+    return {};
+  }
+  return merged;
+}
+
 let doneMap = loadDone();
 
 function saveDone() {
-  localStorage.setItem(DONE_KEY, JSON.stringify(doneMap));
+  try {
+    localStorage.setItem(DONE_KEY, JSON.stringify(doneMap));
+  } catch {}
 }
+
+saveDone();
 
 function isDone(item) {
   return Boolean(doneMap[itemKey(item)]);

@@ -77,7 +77,9 @@ iframe/teardown cluster now has two competing maintainer PRs (Eoghan 1971,
 Justin draft 1963) on top of community 1791; pick one before reviewing the
 others.
 
-**Done marks:** the board's local Done list restarts with this snapshot.
+**Done marks:** stored in each browser under one key that no longer
+changes with the snapshot. Marks made against the 2026-09-03 board carry
+over on first load.
 
 ---
 
