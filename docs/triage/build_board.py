@@ -989,6 +989,7 @@ HTML_HEAD = r"""<!DOCTYPE html>
     --reject: #d37a6a;
     --bulk: #7a7668;
     --chip: #2a2e22;
+    color-scheme: dark;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink);
@@ -1266,10 +1267,63 @@ function isDone(item) {
   return Boolean(doneMap[itemKey(item)]);
 }
 
+// Opened as a claude.ai artifact, Done marks live in the artifact's shared
+// db ("done/<kind>-<id>") and every viewer sees them live. Anywhere else
+// (GitHub Pages, a local file) they stay in this browser's localStorage.
+let sharedDone = null;
+let sharedReadOnly = false;
+let viewerId = null;
+
+function sharedDocId(item) {
+  return item.kind + "-" + item.id;
+}
+
+async function connectShared() {
+  if (!window.claude || typeof window.claude.use !== "function") return;
+  const db = await window.claude.use("db");
+  if (!db) return;
+  const user = await window.claude.use("user");
+  viewerId = user ? await user.id() : null;
+  if (user && (await user.can("data.write")) === false) sharedReadOnly = true;
+  const col = db.collection("done");
+  col.limit(1000).onSnapshot(
+    (snap) => {
+      const next = {};
+      for (const doc of snap.docs) {
+        const body = doc.data();
+        if (body && typeof body.key === "string") next[body.key] = true;
+      }
+      sharedDone = col;
+      doneMap = next;
+      render();
+    },
+    () => {
+      sharedDone = null;
+      doneMap = loadDone();
+      render();
+    },
+  );
+}
+
+async function writeShared(item, on) {
+  const ref = sharedDone.doc(sharedDocId(item));
+  try {
+    if (on) await ref.set({ key: itemKey(item), by: viewerId, at: new Date().toISOString() });
+    else await ref.delete();
+  } catch (e) {
+    if (e && e.code === "invalid_argument") sharedReadOnly = true;
+    if (on) delete doneMap[itemKey(item)];
+    else doneMap[itemKey(item)] = true;
+    render();
+  }
+}
+
 function setDone(item, on) {
+  if (sharedDone && sharedReadOnly) return;
   if (on) doneMap[itemKey(item)] = true;
   else delete doneMap[itemKey(item)];
-  saveDone();
+  if (sharedDone) writeShared(item, on);
+  else saveDone();
 }
 
 function doneItems() {
@@ -1443,7 +1497,7 @@ function render() {
       `<button type="button" data-sort="${s.id}" class="${state.sort === s.id ? "active" : ""}">${esc(s.label)}</button>`
     ).join("");
   document.getElementById("meta-count").textContent =
-    `${list.length} shown · ${doneCount()} done in this browser · snapshot 2026-10-23`;
+    `${list.length} shown · ${doneCount()} ${!sharedDone ? "done in this browser" : sharedReadOnly ? "done by the team (view only)" : "done by the team"} · snapshot 2026-10-23`;
   document.getElementById("board").innerHTML = list.length
     ? list.map(renderRow).join("")
     : `<p class="empty-board">No rows match these filters.</p>`;
@@ -1527,6 +1581,7 @@ document.getElementById("board").addEventListener("click", async (e) => {
 });
 
 render();
+connectShared();
 </script>
 </body>
 </html>
