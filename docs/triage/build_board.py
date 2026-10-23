@@ -7,8 +7,8 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-CACHE_PRS = Path("/tmp/open-prs.json")
-CACHE_ISSUES = Path("/tmp/open-issues.json")
+# Checked-in upstream state; README.md has the command that refreshes it.
+SNAPSHOT = ROOT / "snapshot-2026-10-23.json"
 OUT_HTML = ROOT / "index.html"
 
 MAINTAINERS = {
@@ -506,6 +506,8 @@ LD = "https://github.com/launchdarkly/rrweb"
 UL = "https://github.com/UserLeap/rrweb"
 HL = "https://github.com/highlight/rrweb"
 
+PH_DIVERGENCE = "https://github.com/PostHog/posthog-js/issues/3766"
+
 PH_TRACKER = ev(
     "PostHog/posthog-js#3765",
     f"{PH}/issues/3765",
@@ -554,8 +556,14 @@ EVIDENCE: dict[int, list[dict]] = {
     ],
     1814: [PH_ADOPT],
     1697: [ev("PostHog/posthog-js#4131", f"{PH}/pull/4131", "Shipped adopt of this PR (plus a Set hoist). Checkout timers can still unfreeze.")],
-    1934: [PH_ADOPT],
-    1873: [ev("PostHog/posthog-js#4129", f"{PH}/pull/4129", "Shipped adopt. At port time: shadow roots were not filtered; empty [] observed no attributes.")],
+    1934: [
+        PH_ADOPT,
+        ev("PostHog/posthog-js#3766", PH_DIVERGENCE, "Their divergence tracker says this PR overtook their own iframe keepalive patch (4128) with a tighter MutationObserver-only scope. They plan a review comment, not a port."),
+    ],
+    1873: [
+        ev("PostHog/posthog-js#4129", f"{PH}/pull/4129", "Shipped adopt. At port time: shadow roots were not filtered; empty [] observed no attributes."),
+        ev("PostHog/posthog-js#3766", PH_DIVERGENCE, "They plan review comments on shadow-root plumbing and an empty-array guard."),
+    ],
     1302: [
         ev("PostHog/posthog-js#4130", f"{PH}/pull/4130", "Shipped adopt. They kept has→delete→add."),
         ev("PostHog/posthog-js#4697", f"{PH}/pull/4697", "Empty-payload early return skips addedSet reset — still missing in this tree."),
@@ -812,8 +820,9 @@ def compose_message(kind: str, overlay: dict, who: str) -> str:
 
 
 def assemble() -> list[dict]:
-    prs = load_json(CACHE_PRS)
-    issues = load_json(CACHE_ISSUES)
+    snapshot = load_json(SNAPSHOT)
+    prs = snapshot["pr"]
+    issues = snapshot["issue"]
     items: list[dict] = []
     missing_prs = []
 
@@ -1207,7 +1216,7 @@ const PREFILTERS = [
   { id: "maintainer-close", label: "Maintainer close" },
   { id: "discuss", label: "Discuss" },
   { id: "reject", label: "Reject" },
-  { id: "done", label: "Done here" },
+  { id: "done", label: "Done" },
   { id: "all", label: "All" },
 ];
 
@@ -1218,7 +1227,7 @@ const SORTS = [
   { id: "tags", label: "Tags" },
 ];
 
-const state = { pre: "merge-now", kind: "all", who: "all", q: "", sort: "recency", showDone: false };
+const state = { pre: "adopt", kind: "all", who: "all", q: "", sort: "recency", showDone: false };
 
 // One key across snapshots so marks survive a refresh. Earlier builds used
 // a per-snapshot key ("rrweb-triage-done:<date>"); those are merged in once,
@@ -1590,7 +1599,7 @@ connectShared();
 
 def main() -> None:
     items = assemble()
-    payload = json.dumps(items, ensure_ascii=False)
+    payload = json.dumps(items, ensure_ascii=False).replace("</", "<\\/")
     html = HTML_HEAD + f"const ITEMS = {payload};\n" + HTML_TAIL
     OUT_HTML.write_text(html)
     prs = [i for i in items if i["kind"] == "pr"]
