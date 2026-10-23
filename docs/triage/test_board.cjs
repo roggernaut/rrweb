@@ -64,7 +64,14 @@ function openBoard({ storage = memoryStorage(), claude } = {}) {
   }
   b.run('state.q = "release observers, buffers and listeners"; render()');
   assert.equal(b.rows(), 1);
-  b.run('state.q = ""; render()');
+  b.run('state.q = ""; state.assignee = "none"; render()');
+  assert.equal(b.rows(), b.run("ITEMS.filter((i) => i.assignees.length === 0).length"));
+  const someone = b.run("ITEMS.flatMap((i) => i.assignees)[0] || null");
+  if (someone) {
+    b.run(`state.assignee = ${JSON.stringify(someone)}; render()`);
+    assert.equal(b.rows(), b.run(`ITEMS.filter((i) => i.assignees.includes(${JSON.stringify(someone)})).length`));
+  }
+  b.run('state.assignee = "all"; render()');
   assert.equal((b.elements.board.innerHTML.match(/class="copy-msg"/g) || []).length, total);
 
   // Local Done marks: a mark hides the row, survives a reload, and undoes.

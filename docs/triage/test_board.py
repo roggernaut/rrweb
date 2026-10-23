@@ -1,5 +1,4 @@
 """Offline checks: overlays match the snapshot, and index.html is up to date."""
-import json
 import re
 import unittest
 
@@ -35,10 +34,14 @@ class BoardTest(unittest.TestCase):
         payload = re.search(r"const ITEMS = (\[.*?\]);\n", html, re.S).group(1)
         self.assertNotIn("</", payload)
 
+    def test_one_snapshot_and_its_date_on_the_page(self):
+        self.assertEqual(len(list(board.ROOT.glob("snapshot-*.json"))), 1)
+        html = board.OUT_HTML.read_text()
+        self.assertIn(f"Snapshot {self.snapshot['taken']}.", html)
+        self.assertNotIn("{{SNAPSHOT_DATE}}", html)
+
     def test_generated_html_matches(self):
-        payload = json.dumps(self.items, ensure_ascii=False).replace("</", "<\\/")
-        expected = board.HTML_HEAD + f"const ITEMS = {payload};\n" + board.HTML_TAIL
-        self.assertEqual(board.OUT_HTML.read_text(), expected,
+        self.assertEqual(board.OUT_HTML.read_text(), board.render_html(self.items),
                          "index.html is stale: run build_board.py")
 
 

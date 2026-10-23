@@ -17,8 +17,8 @@ written as plain numbers, not tracker URLs, so this file does not create
 GitHub cross-references. Look them up under the project's Pull requests
 or Issues tabs.
 
-- Open PRs: **140** (21 drafts). Oldest: 2020-08 (294). Newest: 2026-10-22 (1971).
-  **55 are from core maintainers** (Eoghan 28, Justin 26, Yun 1); the other 85 are community.
+- Open PRs: **141** (21 drafts). Oldest: 2020-08 (294). Newest: 2026-10-23 (1972).
+  **55 are from core maintainers** (Eoghan 28, Justin 26, Yun 1); the other 86 are community.
 - Open issues: **290**. Oldest: 2019-07 (88). Newest: 2026-10-18 (1967).
 - Upstream `main` HEAD at refresh: `009b2dd4` (shadow DOM leak fix 1958).
 - This repository also contains privacy-at-capture work that is ahead of
@@ -76,6 +76,13 @@ Seven community fixes went straight to Adopt (1938, 1950, 1956, 1962, 1964,
 iframe/teardown cluster now has two competing maintainer PRs (Eoghan 1971,
 Justin draft 1963) on top of community 1791; pick one before reviewing the
 others.
+
+**Later on 2026-10-23:** community PR 1972 (checkbox and radio masking)
+joined 1164 in Discuss. Eoghan reopened the question on issue 1315: 1771
+turns autocomplete off during replay, but the recorded attribute should still
+become `rr_autocomplete` or go. The team started adding `privacy` labels
+upstream (1609, 874, 1315), and the board now shows upstream labels and
+assignees.
 
 **Done marks:** stored in each browser under one key that no longer
 changes with the snapshot. Marks made against the 2026-09-03 board carry

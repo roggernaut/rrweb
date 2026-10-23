@@ -1,14 +1,20 @@
 #!/usr/bin/env python3
-"""Build the self-contained intake triage board from the 2026-10-23 snapshot."""
+"""Build the self-contained intake triage board from the newest snapshot.
+
+    python3 docs/triage/build_board.py                 # writes index.html
+    python3 docs/triage/build_board.py --artifact OUT  # also writes the claude.ai artifact page
+"""
 
 from __future__ import annotations
 
 import json
+import re
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-# Checked-in upstream state; README.md has the command that refreshes it.
-SNAPSHOT = ROOT / "snapshot-2026-10-23.json"
+# Checked-in upstream state, written by refresh.py. Exactly one is kept.
+SNAPSHOT = max(ROOT.glob("snapshot-*.json"))
 OUT_HTML = ROOT / "index.html"
 
 MAINTAINERS = {
@@ -225,6 +231,7 @@ pr(1927, "review", reason="Justin's draft: record drawImage on canvases inside s
 pr(1951, "review", reason="Justin's draft: rrvideo MP4 export with a controlled clock and optional compositor capture. 3,300 lines.", next_step="Wait for Justin to mark it ready.", tags=("commercial",))
 pr(1961, "review", reason="Changesets release PR (Version Packages). Ships 1928 annotations and the fixes merged since 2026-10-02.", next_step="Merge when the team wants to publish.", message="Release PR from Changesets. Merge when we want to publish; nothing to review beyond the changelog.")
 pr(1954, "cleanup", reason="Justin: public timeline-marker API on rrweb-player. CONFLICTING. Eoghan asked (2026-10-20) whether it builds on merged 1928 or is now redundant.", next_step="Justin: answer Eoghan, then rebase or close.", tags=("commercial",), message="Does this build on #1928 now that it's merged, or does #1928 cover it? If it still adds something, a rebase onto current `main` would let us review it.")
+pr(1972, "discuss", reason="Omits checkbox and radio checked state when input masking is on, at capture time, with tests. Same gap as Yun's change request on 1164.", next_step="Discuss with 1164 as part of the masking API. Pick one of the two.", tags=("strengthens-privacy", "privacy-overlap"), related=(1164,), message="Thanks, this closes a real gap: checked state still records when inputs are masked. #1164 covers the same ground, so we'll decide between the two as part of the masking discussion and come back to you here.")
 pr(1936, "discuss", reason="Justin's draft: stop the web extension forwarding cross-origin frame data to the parent page. Eoghan asked whether frames would then record separately.", next_step="Team meeting. Privacy fix against the one-stitched-recording design of the extension.", tags=("strengthens-privacy",), related=(1966, 1909))
 
 # --- Discuss ----------------------------------------------------------------
@@ -251,7 +258,7 @@ pr(1828, "discuss", reason="Next prerelease channel plan. Draft.", next_step="Te
 pr(1800, "discuss", reason="allowedIframeOrigins allowlist. This is the security model to decide.", next_step="Agenda item. Prefer this over 1679 and 1256.", tags=("strengthens-privacy",), related=(1679, 1256, 1680))
 pr(1642, "discuss", reason="blockElementFN whitelist/strict blocking. Enterprise control. Conflicts with privacy-at-capture selectors.", next_step="Discuss against the policy API. Do not land as a parallel knob.", tags=("strengthens-privacy", "commercial", "privacy-overlap"), related=(1644,))
 pr(1257, "discuss", reason="Generic maskAttributesFn. Needed by PostHog-class vendors. Overlaps SENSITIVE_ATTRIBUTES / maskAttributeFn.", next_step="Do not land a second API if privacy-at-capture goes upstream.", tags=("strengthens-privacy", "commercial", "privacy-overlap"), related=(1581,))
-pr(1164, "discuss", reason="Masks option/radio/checkbox values. Yun requested changes. Correct instinct; fold into the policy.", next_step="Author revision, then discuss as part of the masking API — not a one-off.", tags=("strengthens-privacy", "privacy-overlap", "changes-requested"))
+pr(1164, "discuss", reason="Masks option/radio/checkbox values. Yun requested changes. Correct instinct; fold into the policy. Newer 1972 covers checkbox and radio with tests.", next_step="Discuss with 1972 as part of the masking API. Pick one of the two.", tags=("strengthens-privacy", "privacy-overlap", "changes-requested"), related=(1972,))
 pr(1097, "discuss", reason="Text-masking should apply to inputs; maskInputFn skipped on full snapshot.", next_step="Discuss with 874/1385/1488. Same hole, several reports.", tags=("strengthens-privacy", "privacy-overlap"), related=(874, 1385, 1488))
 pr(1149, "discuss", reason="@rrweb/cutter + sync replayer. Huge, DIRTY, TODOs. Session clip is commercially real; this PR is not reviewable as-is.", next_step="Yun: split or close and re-file.", tags=("commercial",), related=(398, 160, 1560))
 
@@ -347,7 +354,7 @@ def issue(
 
 issue(1736, "adopt", reason="PR 1905 fixes it once Eoghan's sandbox change is in.", next_step="Close when 1905 merges.", tags=("strengthens-privacy",), related=(1905,))
 issue(1609, "adopt", reason="Hidden-input leak. Merge 1745, not 1610.", next_step="Merge PR 1745 (not 1610), then close.", tags=("strengthens-privacy",), related=(1745, 1610))
-issue(1315, "adopt", reason="Fixed by PR 1771, merged 2026-09-08.", next_step="Close.", tags=("strengthens-privacy",), message='Fixed by #1771, merged 2026-09-08. Closing.')
+issue(1315, "review", reason="PR 1771 (merged 2026-09-08) turns autocomplete off during replay. Eoghan (2026-10-23) still wants the recorded attribute renamed to rr_autocomplete or dropped.", next_step="Eoghan: pick rename or drop, then find an owner. Good first issue.", tags=("strengthens-privacy",), related=(1771,), message="#1771 stops the replayer's browser offering autofill. The remaining fix is to record `autocomplete` as `rr_autocomplete` (or drop it) so replay never sees the original attribute. Marked good first issue if anyone wants to pick it up.")
 issue(1680, "adopt", reason="Cross-origin iframe origins. Land 1800, not 1679.", next_step="Land 1800’s allowlist after the security discussion, then close.", tags=("strengthens-privacy",), related=(1800, 1679))
 issue(1675, "adopt", reason=":hover regex overflow. PR 1681.", next_step="Merge PR 1681 after changeset, then close.", related=(1681,))
 issue(1734, "adopt", reason="CSS crash handled by merged 1580/1600. Tests merged in 1906/1931, split-point fix in 1948.", next_step="Close against 1580/1600, 1906 and 1948.", related=(1692, 1735), message='Closing: the crash is handled by #1580 and #1600, regression tests landed in #1906 and #1931, and #1948 fixed the split points. Please open a new issue with a reproduction on the latest release if you still see it.')
@@ -819,6 +826,14 @@ def compose_message(kind: str, overlay: dict, who: str) -> str:
     )
 
 
+def upstream_labels(raw: dict) -> list[str]:
+    return sorted(lab if isinstance(lab, str) else lab["name"] for lab in raw.get("labels") or [])
+
+
+def upstream_assignees(raw: dict) -> list[str]:
+    return sorted(a["login"] for a in raw.get("assignees") or [])
+
+
 def assemble() -> list[dict]:
     snapshot = load_json(SNAPSHOT)
     prs = snapshot["pr"]
@@ -859,10 +874,6 @@ def assemble() -> list[dict]:
             tags.append("waiting-on-review")
         if (raw.get("updatedAt") or "").startswith("2026-06-08"):
             tags.append("bulk-updated")
-        for lab in raw.get("labels") or []:
-            name = lab if isinstance(lab, str) else lab.get("name")
-            if name and name not in tags:
-                tags.append(name)
         for t in EVIDENCE_TAGS.get(n, ()):
             tags.append(t)
         # de-dupe preserving order
@@ -899,6 +910,8 @@ def assemble() -> list[dict]:
                 "deletions": raw.get("deletions"),
                 "changedFiles": raw.get("changedFiles"),
                 "mergeable": raw.get("mergeable"),
+                "labels": upstream_labels(raw),
+                "assignees": upstream_assignees(raw),
             }
         )
 
@@ -925,10 +938,6 @@ def assemble() -> list[dict]:
         tags.append("maintainer" if who_kind == "maintainer" else "community")
         if (raw.get("updatedAt") or "").startswith("2026-06-08"):
             tags.append("bulk-updated")
-        for lab in raw.get("labels") or []:
-            name = lab if isinstance(lab, str) else lab.get("name")
-            if name and name not in tags:
-                tags.append(name)
         for t in EVIDENCE_TAGS.get(n, ()):
             tags.append(t)
         seen = set()
@@ -964,6 +973,8 @@ def assemble() -> list[dict]:
                 "deletions": None,
                 "changedFiles": None,
                 "mergeable": None,
+                "labels": upstream_labels(raw),
+                "assignees": upstream_assignees(raw),
             }
         )
 
@@ -976,7 +987,7 @@ HTML_HEAD = r"""<!DOCTYPE html>
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>rrweb intake triage — 2026-10-23</title>
+<title>rrweb intake triage — {{SNAPSHOT_DATE}}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -1073,6 +1084,7 @@ HTML_HEAD = r"""<!DOCTYPE html>
     font-size: 11px; padding: 2px 7px; border-radius: 4px; background: var(--chip);
     color: #d9d2b8; border: 1px solid #3d4233;
   }
+  .tag.upstream-label { background: transparent; border-color: var(--review); color: var(--review); }
   .tag.strengthens-privacy { color: #b8f0d4; border-color: #3d6b55; }
   .tag.impacts-privacy { color: #ffc9b8; border-color: #6b3d33; }
   .tag.posthog-backed, .tag.posthog-shipped { color: #b8e0ff; border-color: #33556b; }
@@ -1122,7 +1134,7 @@ HTML_HEAD = r"""<!DOCTYPE html>
 <header class="page">
   <h1>rrweb-io/rrweb intake triage</h1>
   <p class="lede">
-    Snapshot 2026-10-23. Numbers link upstream; vendor links go to the PR that provides the evidence.
+    Snapshot {{SNAPSHOT_DATE}}. Numbers link upstream; vendor links go to the PR that provides the evidence.
   </p>
   <div class="prefilters" id="prefilters"></div>
   <div class="toolbar">
@@ -1139,6 +1151,9 @@ HTML_HEAD = r"""<!DOCTYPE html>
         <option value="maintainer">Maintainers</option>
         <option value="community">Community</option>
       </select>
+    </label>
+    <label>Assignee
+      <select id="assignee"></select>
     </label>
     <input type="search" id="q" placeholder="Filter title, author, tags, notes…" />
     <div class="sorts" id="sorts"></div>
@@ -1227,7 +1242,7 @@ const SORTS = [
   { id: "tags", label: "Tags" },
 ];
 
-const state = { pre: "adopt", kind: "all", who: "all", q: "", sort: "recency", showDone: false };
+const state = { pre: "adopt", kind: "all", who: "all", assignee: "all", q: "", sort: "recency", showDone: false };
 
 // One key across snapshots so marks survive a refresh. Earlier builds used
 // a per-snapshot key ("rrweb-triage-done:<date>"); those are merged in once,
@@ -1368,9 +1383,11 @@ function filtered() {
     if (state.pre !== "done" && !state.showDone && isDone(item)) return false;
     if (state.kind !== "all" && item.kind !== state.kind) return false;
     if (state.who !== "all" && item.who !== state.who) return false;
+    if (!matchesAssignee(item)) return false;
     if (!q) return true;
     const hay = [
       item.id, item.title, item.author, item.authorName, item.triage,
+      ...item.labels, ...item.assignees,
       TRIAGE_LABEL[item.triage], item.next, item.reason, item.notes,
       item.downstream, item.message, ...(item.tags || []), ...(item.related || []),
       ...((item.downstreamLinks || []).map((l) => [l.label, l.note, l.url].join(" "))),
@@ -1448,7 +1465,9 @@ function downstreamCell(item) {
 }
 
 function renderRow(item) {
-  const tags = (item.tags || []).map((t) =>
+  const tags = item.labels.map((l) =>
+    `<span class="tag upstream-label" title="Label on GitHub">${esc(l)}</span>`
+  ).join("") + (item.tags || []).map((t) =>
     `<span class="tag ${esc(t)}">${esc(TAG_LABEL[t] || t)}</span>`
   ).join("");
   const rel = (item.related || []).map((id) =>
@@ -1473,7 +1492,7 @@ function renderRow(item) {
         ${msg ? `<span class="msg">${msg}</span>` : ""}
       </span>
     </div>
-    <div class="sub">${esc(item.authorName || item.author)} (@${esc(item.author)}) · ${esc(item.whoLabel)} · updated ${fmtDate(item.updatedAt)} · opened ${fmtDate(item.createdAt)}${review}</div>
+    <div class="sub">${esc(item.authorName || item.author)} (@${esc(item.author)}) · ${esc(item.whoLabel)} · updated ${fmtDate(item.updatedAt)} · opened ${fmtDate(item.createdAt)}${review} · ${item.assignees.length ? "assigned to " + item.assignees.map((a) => "@" + esc(a)).join(", ") : "unassigned"}</div>
     <div class="tags">${tags || '<span class="tag">No extra tags</span>'}</div>
     <div class="grid">
       ${downstreamCell(item)}
@@ -1485,12 +1504,19 @@ function renderRow(item) {
   </article>`;
 }
 
+function matchesAssignee(item) {
+  if (state.assignee === "all") return true;
+  if (state.assignee === "none") return item.assignees.length === 0;
+  return item.assignees.includes(state.assignee);
+}
+
 function countPre(id) {
   return ITEMS.filter((item) => {
     if (!matchesPre(item, id)) return false;
     if (id !== "done" && !state.showDone && isDone(item)) return false;
     if (state.kind !== "all" && item.kind !== state.kind) return false;
     if (state.who !== "all" && item.who !== state.who) return false;
+    if (!matchesAssignee(item)) return false;
     return true;
   }).length;
 }
@@ -1506,7 +1532,7 @@ function render() {
       `<button type="button" data-sort="${s.id}" class="${state.sort === s.id ? "active" : ""}">${esc(s.label)}</button>`
     ).join("");
   document.getElementById("meta-count").textContent =
-    `${list.length} shown · ${doneCount()} ${!sharedDone ? "done in this browser" : sharedReadOnly ? "done by the team (view only)" : "done by the team"} · snapshot 2026-10-23`;
+    `${list.length} shown · ${doneCount()} ${!sharedDone ? "done in this browser" : sharedReadOnly ? "done by the team (view only)" : "done by the team"} · snapshot {{SNAPSHOT_DATE}}`;
   document.getElementById("board").innerHTML = list.length
     ? list.map(renderRow).join("")
     : `<p class="empty-board">No rows match these filters.</p>`;
@@ -1526,6 +1552,12 @@ document.getElementById("sorts").addEventListener("click", (e) => {
 });
 document.getElementById("kind").addEventListener("change", (e) => { state.kind = e.target.value; render(); });
 document.getElementById("who").addEventListener("change", (e) => { state.who = e.target.value; render(); });
+document.getElementById("assignee").innerHTML =
+  `<option value="all">Anyone</option><option value="none">Unassigned</option>` +
+  [...new Set(ITEMS.flatMap((i) => i.assignees))].sort().map((a) =>
+    `<option value="${esc(a)}">@${esc(a)}</option>`
+  ).join("");
+document.getElementById("assignee").addEventListener("change", (e) => { state.assignee = e.target.value; render(); });
 document.getElementById("q").addEventListener("input", (e) => { state.q = e.target.value; render(); });
 document.getElementById("show-done").addEventListener("change", (e) => {
   state.showDone = e.target.checked;
@@ -1597,11 +1629,29 @@ connectShared();
 """
 
 
-def main() -> None:
-    items = assemble()
+def render_html(items: list[dict]) -> str:
+    # Escaping "</" keeps a title or message from closing the inline script.
     payload = json.dumps(items, ensure_ascii=False).replace("</", "<\\/")
     html = HTML_HEAD + f"const ITEMS = {payload};\n" + HTML_TAIL
+    return html.replace("{{SNAPSHOT_DATE}}", load_json(SNAPSHOT)["taken"])
+
+
+def artifact_html(html: str) -> str:
+    """The same page for a claude.ai artifact, which supplies its own doctype,
+    head and body, and lists pages by title."""
+    head = re.search(r"<head>(.*?)</head>", html, re.S).group(1)
+    body = re.search(r"<body[^>]*>(.*)</body>", html, re.S).group(1)
+    head = re.sub(r'<meta (charset|name="viewport")[^>]*>\s*', "", head)
+    head = re.sub(r"<title>.*?</title>", "<title>rrweb Intake Triage</title>", head)
+    return head.strip() + "\n" + body.strip() + "\n"
+
+
+def main() -> None:
+    items = assemble()
+    html = render_html(items)
     OUT_HTML.write_text(html)
+    if "--artifact" in sys.argv:
+        Path(sys.argv[sys.argv.index("--artifact") + 1]).write_text(artifact_html(html))
     prs = [i for i in items if i["kind"] == "pr"]
     issues = [i for i in items if i["kind"] == "issue"]
     print(f"Wrote {OUT_HTML} ({len(html)} bytes)")

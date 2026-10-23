@@ -3,7 +3,29 @@
  "repo": "rrweb-io/rrweb",
  "pr": [
   {
+   "additions": 212,
+   "assignees": [],
+   "author": {
+    "id": "MDQ6VXNlcjE3Mjk0NA==",
+    "is_bot": false,
+    "login": "drakonen",
+    "name": "Johan Otten"
+   },
+   "changedFiles": 11,
+   "createdAt": "2026-10-23T08:22:47Z",
+   "deletions": 299,
+   "isDraft": false,
+   "labels": [],
+   "mergeable": "MERGEABLE",
+   "number": 1972,
+   "reviewDecision": "REVIEW_REQUIRED",
+   "title": "Fix/omit checkbox radio state when masked",
+   "updatedAt": "2026-10-23T08:22:53Z",
+   "url": "https://github.com/rrweb-io/rrweb/pull/1972"
+  },
+  {
    "additions": 556,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE1Njc4MA==",
     "is_bot": false,
@@ -24,6 +46,7 @@
   },
   {
    "additions": 40,
+   "assignees": [],
    "author": {
     "id": "U_kgDOBwQymw",
     "is_bot": false,
@@ -39,11 +62,12 @@
    "number": 1970,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "fix: don't re-observe same-origin iframes on full snapshot",
-   "updatedAt": "2026-10-22T17:14:48Z",
+   "updatedAt": "2026-10-23T08:39:06Z",
    "url": "https://github.com/rrweb-io/rrweb/pull/1970"
   },
   {
    "additions": 239,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjUyNzYxNjc0",
     "is_bot": false,
@@ -64,6 +88,7 @@
   },
   {
    "additions": 131,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjgyMTIzNTY3",
     "is_bot": false,
@@ -79,11 +104,12 @@
    "number": 1965,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "fix(snapshot): skip inlining blocked images",
-   "updatedAt": "2026-10-15T23:05:29Z",
+   "updatedAt": "2026-10-23T08:39:03Z",
    "url": "https://github.com/rrweb-io/rrweb/pull/1965"
   },
   {
    "additions": 43,
+   "assignees": [],
    "author": {
     "id": "U_kgDOBgDKew",
     "is_bot": false,
@@ -99,11 +125,12 @@
    "number": 1964,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "fix(rrweb-snapshot): do not record the document of a blocked iframe",
-   "updatedAt": "2026-10-15T17:11:27Z",
+   "updatedAt": "2026-10-23T08:38:49Z",
    "url": "https://github.com/rrweb-io/rrweb/pull/1964"
   },
   {
    "additions": 291,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQxMDY=",
     "is_bot": false,
@@ -124,6 +151,7 @@
   },
   {
    "additions": 87,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjIyNTU3OTMx",
     "is_bot": false,
@@ -139,11 +167,12 @@
    "number": 1962,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "fix(network): retain status and timing without Resource Timing",
-   "updatedAt": "2026-10-14T11:46:38Z",
+   "updatedAt": "2026-10-23T08:39:34Z",
    "url": "https://github.com/rrweb-io/rrweb/pull/1962"
   },
   {
    "additions": 218,
+   "assignees": [],
    "author": {
     "is_bot": true,
     "login": "app/github-actions"
@@ -162,6 +191,7 @@
   },
   {
    "additions": 1003,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQxMDY=",
     "is_bot": false,
@@ -182,6 +212,7 @@
   },
   {
    "additions": 26,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjg0NjgxNTY1",
     "is_bot": false,
@@ -197,11 +228,12 @@
    "number": 1956,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "fix(rrweb-snapshot): don't rewrite blob: urls in css url()",
-   "updatedAt": "2026-10-07T19:13:33Z",
+   "updatedAt": "2026-10-23T08:41:39Z",
    "url": "https://github.com/rrweb-io/rrweb/pull/1956"
   },
   {
    "additions": 3393,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQxMDY=",
     "is_bot": false,
@@ -222,6 +254,7 @@
   },
   {
    "additions": 3326,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQxMDY=",
     "is_bot": false,
@@ -242,6 +275,7 @@
   },
   {
    "additions": 79,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE3MjU2MjA0",
     "is_bot": false,
@@ -257,11 +291,12 @@
    "number": 1950,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "fix(rrweb): keep the original getter in hookSetter (Firefox content scripts)",
-   "updatedAt": "2026-09-28T20:18:24Z",
+   "updatedAt": "2026-10-23T08:42:50Z",
    "url": "https://github.com/rrweb-io/rrweb/pull/1950"
   },
   {
    "additions": 395,
+   "assignees": [],
    "author": {
     "id": "U_kgDOCdVu1g",
     "is_bot": false,
@@ -282,6 +317,7 @@
   },
   {
    "additions": 42,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE2MDU2NzU5",
     "is_bot": false,
@@ -302,6 +338,7 @@
   },
   {
    "additions": 9,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQxMDY=",
     "is_bot": false,
@@ -335,6 +372,7 @@
   },
   {
    "additions": 319,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQxMDY=",
     "is_bot": false,
@@ -355,6 +393,7 @@
   },
   {
    "additions": 486,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE1Njc4MA==",
     "is_bot": false,
@@ -375,6 +414,7 @@
   },
   {
    "additions": 226,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQxMDY=",
     "is_bot": false,
@@ -395,6 +435,7 @@
   },
   {
    "additions": 147,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE2OTU1Mzg=",
     "is_bot": false,
@@ -406,7 +447,7 @@
    "deletions": 1,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1917,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "feat(rrweb): add `adaptCssInTextMutations` player config option",
@@ -415,6 +456,7 @@
   },
   {
    "additions": 5507,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE1Njc4MA==",
     "is_bot": false,
@@ -426,7 +468,7 @@
    "deletions": 2948,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1914,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Click track plugin (Heatmaps)",
@@ -435,6 +477,7 @@
   },
   {
    "additions": 79,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjM1MzAxNzAx",
     "is_bot": false,
@@ -446,7 +489,7 @@
    "deletions": 14,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1912,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Mask placeholder attributes when input masking is enabled",
@@ -455,6 +498,7 @@
   },
   {
    "additions": 3156,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQxMDY=",
     "is_bot": false,
@@ -466,7 +510,7 @@
    "deletions": 19,
    "isDraft": true,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1909,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Add configurable web-extension session uploads",
@@ -475,6 +519,7 @@
   },
   {
    "additions": 51,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE1Njc4MA==",
     "is_bot": false,
@@ -486,7 +531,7 @@
    "deletions": 26,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1907,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Replay mutation DOMException refactor",
@@ -495,6 +540,7 @@
   },
   {
    "additions": 55,
+   "assignees": [],
    "author": {
     "id": "U_kgDOCGBgHQ",
     "is_bot": false,
@@ -506,7 +552,7 @@
    "deletions": 0,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1905,
    "reviewDecision": "CHANGES_REQUESTED",
    "title": "fix(rrweb-snapshot): omit srcdoc attribute when rebuilding iframe elements",
@@ -515,6 +561,7 @@
   },
   {
    "additions": 1067,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjM4NjY2NzYz",
     "is_bot": false,
@@ -526,7 +573,7 @@
    "deletions": 0,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1900,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "feat(plugin): add window popup plugin to record popup events",
@@ -535,6 +582,7 @@
   },
   {
    "additions": 231,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQyMzIyMDc=",
     "is_bot": false,
@@ -546,7 +594,7 @@
    "deletions": 23,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1897,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "feat(rrweb-snapshot): support more user-action pseudo-classes for rebuild",
@@ -555,6 +603,7 @@
   },
   {
    "additions": 1634,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQxMDY=",
     "is_bot": false,
@@ -566,7 +615,7 @@
    "deletions": 124,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1892,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "fix: clean up plugin dependency metadata",
@@ -575,6 +624,7 @@
   },
   {
    "additions": 57,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjc0MDcxNzc=",
     "is_bot": false,
@@ -586,7 +636,7 @@
    "deletions": 9,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1879,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "fix(rrweb-player): resolve Svelte browser runtime",
@@ -595,6 +645,7 @@
   },
   {
    "additions": 43,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE1Njc4MA==",
     "is_bot": false,
@@ -606,7 +657,7 @@
    "deletions": 328,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1877,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Docs: collapse repeated empty changesets",
@@ -615,6 +666,7 @@
   },
   {
    "additions": 47,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQxMDY=",
     "is_bot": false,
@@ -626,7 +678,7 @@
    "deletions": 30,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1875,
    "reviewDecision": "CHANGES_REQUESTED",
    "title": "docs: prefer minified CDN ESM assets",
@@ -635,6 +687,7 @@
   },
   {
    "additions": 792,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQxMDY=",
     "is_bot": false,
@@ -646,7 +699,7 @@
    "deletions": 1084,
    "isDraft": true,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1874,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "[experiment] Migrate tooling to Vite+",
@@ -655,6 +708,7 @@
   },
   {
    "additions": 47,
+   "assignees": [],
    "author": {
     "id": "U_kgDOCpmdWA",
     "is_bot": false,
@@ -666,7 +720,7 @@
    "deletions": 2,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1873,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "feat(record): add `attributeFilter` option for native MutationObserver filtering",
@@ -675,6 +729,7 @@
   },
   {
    "additions": 2370,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQxMDY=",
     "is_bot": false,
@@ -686,7 +741,7 @@
    "deletions": 23,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1861,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "[browser-client] add sequence id plugin",
@@ -695,6 +750,7 @@
   },
   {
    "additions": 14,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjIyNTYyNjM0",
     "is_bot": false,
@@ -706,7 +762,7 @@
    "deletions": 0,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1856,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "docs: add tracelane and peek to \"Who's using rrweb?\"",
@@ -715,6 +771,7 @@
   },
   {
    "additions": 4922,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQxMDY=",
     "is_bot": false,
@@ -735,6 +792,7 @@
   },
   {
    "additions": 12273,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQxMDY=",
     "is_bot": false,
@@ -746,7 +804,7 @@
    "deletions": 158634,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1843,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "[codex] migrate to pnpm",
@@ -755,6 +813,7 @@
   },
   {
    "additions": 329,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQxMDY=",
     "is_bot": false,
@@ -766,7 +825,7 @@
    "deletions": 0,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1841,
    "reviewDecision": "APPROVED",
    "title": "[changelog] Backfill v2 alpha changelogs",
@@ -775,6 +834,7 @@
   },
   {
    "additions": 630,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQxMDY=",
     "is_bot": false,
@@ -786,7 +846,7 @@
    "deletions": 597,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1839,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "[codex] Split rrweb-snapshot utility implementations",
@@ -795,6 +855,7 @@
   },
   {
    "additions": 138,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE1Njc4MA==",
     "is_bot": false,
@@ -806,7 +867,7 @@
    "deletions": 13,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1830,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Fix problem where without `recordCanvas: true`, a canvas element doesn't affect layout correctly during replay",
@@ -815,6 +876,7 @@
   },
   {
    "additions": 529,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQxMDY=",
     "is_bot": false,
@@ -826,7 +888,7 @@
    "deletions": 0,
    "isDraft": true,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1828,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Draft: plan next prerelease channel",
@@ -835,6 +897,7 @@
   },
   {
    "additions": 96,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjc2OTcwNDc5",
     "is_bot": false,
@@ -846,7 +909,7 @@
    "deletions": 5,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1814,
    "reviewDecision": "CHANGES_REQUESTED",
    "title": "fix: use untainted add/remove event listener methods in on func",
@@ -855,6 +918,7 @@
   },
   {
    "additions": 225,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQxMDY=",
     "is_bot": false,
@@ -866,7 +930,7 @@
    "deletions": 865,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1811,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "[build] Validate changesets in CI",
@@ -875,6 +939,7 @@
   },
   {
    "additions": 1,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQxMDY=",
     "is_bot": false,
@@ -886,7 +951,7 @@
    "deletions": 0,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1810,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "[build] Keep annotate job green on lint findings",
@@ -895,6 +960,7 @@
   },
   {
    "additions": 14,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQxMDY=",
     "is_bot": false,
@@ -906,7 +972,7 @@
    "deletions": 4,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1809,
    "reviewDecision": "APPROVED",
    "title": "[build] Fix fork PR comment lookup",
@@ -915,6 +981,7 @@
   },
   {
    "additions": 9,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjIwMjAyMjI=",
     "is_bot": false,
@@ -926,7 +993,7 @@
    "deletions": 4,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1802,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "fix: treat querySelector/querySelectorAll as methods in untainted pro…",
@@ -935,6 +1002,7 @@
   },
   {
    "additions": 240,
+   "assignees": [],
    "author": {
     "id": "U_kgDOCbeVhw",
     "is_bot": false,
@@ -946,7 +1014,7 @@
    "deletions": 57,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1800,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Add support to allow only specific cross origins",
@@ -955,6 +1023,7 @@
   },
   {
    "additions": 4,
+   "assignees": [],
    "author": {
     "id": "U_kgDOCbeVhw",
     "is_bot": false,
@@ -966,7 +1035,7 @@
    "deletions": 1,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1798,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Fix: Ignore media interactions for unsupported media elements during replay",
@@ -975,6 +1044,7 @@
   },
   {
    "additions": 302,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjM1Mjc3OTk2",
     "is_bot": false,
@@ -995,6 +1065,7 @@
   },
   {
    "additions": 2,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQxMDY=",
     "is_bot": false,
@@ -1006,7 +1077,7 @@
    "deletions": 3,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1792,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Update prepublish task outputs in turbo.json",
@@ -1015,6 +1086,7 @@
   },
   {
    "additions": 331,
+   "assignees": [],
    "author": {
     "id": "U_kgDOCbeVhw",
     "is_bot": false,
@@ -1026,7 +1098,7 @@
    "deletions": 11,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1791,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Address Iframe memory leaks",
@@ -1035,6 +1107,7 @@
   },
   {
    "additions": 2899,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQxMDY=",
     "is_bot": false,
@@ -1046,7 +1119,7 @@
    "deletions": 12,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1790,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "docs: add privacy guides and link from main docs",
@@ -1055,6 +1128,7 @@
   },
   {
    "additions": 3,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQxMDY=",
     "is_bot": false,
@@ -1066,7 +1140,7 @@
    "deletions": 1,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1789,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "[build] Switch tsconfig base moduleResolution to bundler",
@@ -1075,6 +1149,14 @@
   },
   {
    "additions": 121,
+   "assignees": [
+    {
+     "id": "MDQ6VXNlcjQxMDY=",
+     "login": "Juice10",
+     "name": "Justin Halsall",
+     "databaseId": 4106
+    }
+   ],
    "author": {
     "id": "MDQ6VXNlcjE1Njc4MA==",
     "is_bot": false,
@@ -1086,7 +1168,7 @@
    "deletions": 9,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1784,
    "reviewDecision": "CHANGES_REQUESTED",
    "title": "Remove postcss from dist/record.js (it was only intended for replay)",
@@ -1095,6 +1177,7 @@
   },
   {
    "additions": 14,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjMwMjIxNQ==",
     "is_bot": false,
@@ -1106,7 +1189,7 @@
    "deletions": 3,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1770,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "fix: ensure iframe cleanup in getUntaintedPrototype on error or early return",
@@ -1115,6 +1198,20 @@
   },
   {
    "additions": 438,
+   "assignees": [
+    {
+     "id": "MDQ6VXNlcjQxMDY=",
+     "login": "Juice10",
+     "name": "Justin Halsall",
+     "databaseId": 4106
+    },
+    {
+     "id": "BOT_kgDOC9w8XQ",
+     "login": "Copilot",
+     "name": "",
+     "databaseId": 198982749
+    }
+   ],
    "author": {
     "is_bot": true,
     "login": "app/copilot-swe-agent"
@@ -1124,7 +1221,7 @@
    "deletions": 190,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1768,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Fix timeout calculation to account for event duration and playback speed",
@@ -1133,6 +1230,7 @@
   },
   {
    "additions": 9,
+   "assignees": [],
    "author": {
     "id": "U_kgDOBs_ZXw",
     "is_bot": false,
@@ -1144,7 +1242,7 @@
    "deletions": 2,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1766,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "feat: Add option to add CSP to the replay iframe",
@@ -1153,6 +1251,7 @@
   },
   {
    "additions": 8,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjI0Mjk2NTg1",
     "is_bot": false,
@@ -1164,7 +1263,7 @@
    "deletions": 8,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1748,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "fix: Fix broken links in README.md",
@@ -1173,6 +1272,7 @@
   },
   {
    "additions": 142,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjI1MjcxODE5",
     "is_bot": false,
@@ -1184,7 +1284,7 @@
    "deletions": 29,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1745,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Fix for [Bug]: hidden inputs are not masked when maskAllInputs is enabled #1609",
@@ -1193,6 +1293,7 @@
   },
   {
    "additions": 24,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjEyMzQzMTc4",
     "is_bot": false,
@@ -1204,7 +1305,7 @@
    "deletions": 24,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1744,
    "reviewDecision": "APPROVED",
    "title": "docs: fix broken links in documentation",
@@ -1213,6 +1314,7 @@
   },
   {
    "additions": 176,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE1Njc4MA==",
     "is_bot": false,
@@ -1224,7 +1326,7 @@
    "deletions": 24,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1740,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Fix that rebuild of CDATA sections would throw an exception",
@@ -1233,6 +1335,7 @@
   },
   {
    "additions": 175,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE1Njc4MA==",
     "is_bot": false,
@@ -1244,7 +1347,7 @@
    "deletions": 4,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1739,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Add recording of shadow DOM nodes which have been created with the { mode: 'closed' } flag",
@@ -1253,6 +1356,7 @@
   },
   {
    "additions": 1,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjczMTYxODc=",
     "is_bot": false,
@@ -1264,7 +1368,7 @@
    "deletions": 1,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1737,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "image currentSrc property can sometimes be undefined",
@@ -1273,6 +1377,7 @@
   },
   {
    "additions": 34,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjU0ODkzOTky",
     "is_bot": false,
@@ -1284,7 +1389,7 @@
    "deletions": 1,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1735,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "fix: css syntax error: 'Unclosed string'",
@@ -1293,6 +1398,7 @@
   },
   {
    "additions": 92,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE5MzgwNDc0",
     "is_bot": false,
@@ -1304,7 +1410,7 @@
    "deletions": 85,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1733,
    "reviewDecision": "CHANGES_REQUESTED",
    "title": "fix(rrweb-snapshot): absolutifyURLs function calculation error in some scenario",
@@ -1313,6 +1419,7 @@
   },
   {
    "additions": 59,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQxMDY=",
     "is_bot": false,
@@ -1324,7 +1431,7 @@
    "deletions": 0,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1732,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Give recognition to long term sponsors",
@@ -1333,6 +1440,7 @@
   },
   {
    "additions": 114,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE1Njc4MA==",
     "is_bot": false,
@@ -1353,6 +1461,7 @@
   },
   {
    "additions": 5,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE3NDM3MDA=",
     "is_bot": false,
@@ -1364,7 +1473,7 @@
    "deletions": 1,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1726,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Add emitFromIframe option to support iframe in iframe",
@@ -1373,6 +1482,7 @@
   },
   {
    "additions": 92,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjI0NjE2OTUw",
     "is_bot": false,
@@ -1384,7 +1494,7 @@
    "deletions": 18,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1722,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "refactor(rrweb/scripts/repl.js): 增强录制脚本注入的鲁棒性与安全性",
@@ -1393,6 +1503,7 @@
   },
   {
    "additions": 95,
+   "assignees": [],
    "author": {
     "id": "U_kgDOBgDKew",
     "is_bot": false,
@@ -1404,7 +1515,7 @@
    "deletions": 0,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1718,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "fix (rrdom): Fix edge case where oldChild can become detach causing the recursive function to end early",
@@ -1413,6 +1524,7 @@
   },
   {
    "additions": 111,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjExMzE5MTU0",
     "is_bot": false,
@@ -1424,7 +1536,7 @@
    "deletions": 0,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1711,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "fix(rrweb-snapshot): inserting doctype element",
@@ -1433,6 +1545,7 @@
   },
   {
    "additions": 26,
+   "assignees": [],
    "author": {
     "id": "U_kgDOBrNnqg",
     "is_bot": false,
@@ -1444,7 +1557,7 @@
    "deletions": 4,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1709,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Optimized the user guide",
@@ -1453,6 +1566,7 @@
   },
   {
    "additions": 15,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE1Njc4MA==",
     "is_bot": false,
@@ -1464,7 +1578,7 @@
    "deletions": 1,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1697,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Don't allow video autoplay to automatically unfreeze page",
@@ -1473,6 +1587,7 @@
   },
   {
    "additions": 208,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjIwMjAyMjI=",
     "is_bot": false,
@@ -1484,7 +1599,7 @@
    "deletions": 1,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1691,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "fix: skip calling setAttribute on unchanged attr in diffProps",
@@ -1493,6 +1608,7 @@
   },
   {
    "additions": 25,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjIwMjAyMjI=",
     "is_bot": false,
@@ -1504,7 +1620,7 @@
    "deletions": 9,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1688,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "fix: prevent invalid media processing",
@@ -1513,6 +1629,7 @@
   },
   {
    "additions": 6,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjc2OTcwNDc5",
     "is_bot": false,
@@ -1524,7 +1641,7 @@
    "deletions": 1,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1686,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "fix: prevent unnecessary error throwing in stringifyRule",
@@ -1533,6 +1650,7 @@
   },
   {
    "additions": 181,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjI0OTQ4MjE0",
     "is_bot": false,
@@ -1544,7 +1662,7 @@
    "deletions": 10,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1681,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "fix(postcss-hover-classes): avoid large regex overflow by filtering selectors",
@@ -1553,6 +1671,7 @@
   },
   {
    "additions": 3,
+   "assignees": [],
    "author": {
     "id": "U_kgDOBj8LRw",
     "is_bot": false,
@@ -1564,7 +1683,7 @@
    "deletions": 1,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1679,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Adds configuration of postmessage target origin for security purposes",
@@ -1573,6 +1692,7 @@
   },
   {
    "additions": 119,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE3NDM5MDAw",
     "is_bot": false,
@@ -1591,7 +1711,7 @@
      "color": "B7623F"
     }
    ],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1676,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Feat/hanlde frames",
@@ -1600,6 +1720,7 @@
   },
   {
    "additions": 22,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE1Njc4MA==",
     "is_bot": false,
@@ -1611,7 +1732,7 @@
    "deletions": 2,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1673,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Safer Media play/pause when target is not in fact a MediaElement",
@@ -1620,6 +1741,7 @@
   },
   {
    "additions": 16,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE1Njc4MA==",
     "is_bot": false,
@@ -1631,7 +1753,7 @@
    "deletions": 25,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1653,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Performance refactor to avoid 2 function calls",
@@ -1640,6 +1762,7 @@
   },
   {
    "additions": 219,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjExNzM4MDk0",
     "is_bot": false,
@@ -1651,7 +1774,7 @@
    "deletions": 25,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1642,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Allow more fine grained control over blocking elements",
@@ -1660,6 +1783,7 @@
   },
   {
    "additions": 238,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjc2OTcwNDc5",
     "is_bot": false,
@@ -1671,7 +1795,7 @@
    "deletions": 7,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1641,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "fix: preserve adopted styles from nodes being removed when virtual dom is in use",
@@ -1680,6 +1804,7 @@
   },
   {
    "additions": 24,
+   "assignees": [],
    "author": {
     "id": "U_kgDOBZwssg",
     "is_bot": false,
@@ -1700,6 +1825,7 @@
   },
   {
    "additions": 10,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjc2OTcwNDc5",
     "is_bot": false,
@@ -1711,7 +1837,7 @@
    "deletions": 4,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1635,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "fix for loading iframes with custom web components in chrome",
@@ -1720,6 +1846,7 @@
   },
   {
    "additions": 66,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjk4NDgxNw==",
     "is_bot": false,
@@ -1731,7 +1858,7 @@
    "deletions": 38,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1633,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "fix: untainted prototype access in Angular",
@@ -1740,6 +1867,7 @@
   },
   {
    "additions": 17,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE3NDM5MDAw",
     "is_bot": false,
@@ -1751,7 +1879,7 @@
    "deletions": 0,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1624,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Fix/workaround iframe parent",
@@ -1760,6 +1888,7 @@
   },
   {
    "additions": 602,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjIyMjg5NDQ1",
     "is_bot": false,
@@ -1771,7 +1900,7 @@
    "deletions": 2,
    "isDraft": true,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1616,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "feat: merge events",
@@ -1780,6 +1909,7 @@
   },
   {
    "additions": 142,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjEwNzg5NDk=",
     "is_bot": false,
@@ -1800,6 +1930,7 @@
   },
   {
    "additions": 141,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjUyODg4ODE=",
     "is_bot": false,
@@ -1811,7 +1942,7 @@
    "deletions": 4,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1586,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Fix chrome grid template",
@@ -1820,6 +1951,7 @@
   },
   {
    "additions": 37,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE1Njc4MA==",
     "is_bot": false,
@@ -1831,7 +1963,7 @@
    "deletions": 2,
    "isDraft": true,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1534,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Export `isBlocked` alongside rrweb.record",
@@ -1840,6 +1972,7 @@
   },
   {
    "additions": 1775,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE1Njc4MA==",
     "is_bot": false,
@@ -1851,7 +1984,7 @@
    "deletions": 527,
    "isDraft": true,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1483,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "improvements to <link rel=\"stylesheet\"> + mutations",
@@ -1860,6 +1993,7 @@
   },
   {
    "additions": 167,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE1Njc4MA==",
     "is_bot": false,
@@ -1871,7 +2005,7 @@
    "deletions": 1112,
    "isDraft": true,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1480,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "replay `:hover` rewrite - instead mutate stylesheets",
@@ -1880,6 +2014,7 @@
   },
   {
    "additions": 19,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE1Njc4MA==",
     "is_bot": false,
@@ -1891,7 +2026,7 @@
    "deletions": 4,
    "isDraft": true,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1477,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Pre commit auto prettier",
@@ -1900,6 +2035,7 @@
   },
   {
    "additions": 10812,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE1Njc4MA==",
     "is_bot": false,
@@ -1918,7 +2054,7 @@
      "color": "E02DD8"
     }
    ],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1475,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "assets + stylesheet assets",
@@ -1927,6 +2063,7 @@
   },
   {
    "additions": 36,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjY2ODU4NzY=",
     "is_bot": false,
@@ -1938,7 +2075,7 @@
    "deletions": 33,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1469,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "capture bitmap errors",
@@ -1947,6 +2084,7 @@
   },
   {
    "additions": 26,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE1Njc4MA==",
     "is_bot": false,
@@ -1958,7 +2096,7 @@
    "deletions": 0,
    "isDraft": true,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1466,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "window.history change testing",
@@ -1967,6 +2105,7 @@
   },
   {
    "additions": 41,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjExNjcwMjY2",
     "is_bot": false,
@@ -1985,7 +2124,7 @@
      "color": "B7623F"
     }
    ],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1465,
    "reviewDecision": "CHANGES_REQUESTED",
    "title": "rrweb sends message to cross-origin iframe to force snapshot",
@@ -1994,6 +2133,7 @@
   },
   {
    "additions": 8,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjExNjcwMjY2",
     "is_bot": false,
@@ -2005,7 +2145,7 @@
    "deletions": 0,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1463,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "toString for patched methods returns original toString",
@@ -2014,6 +2154,7 @@
   },
   {
    "additions": 7,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQxMDY=",
     "is_bot": false,
@@ -2025,7 +2166,7 @@
    "deletions": 0,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1462,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Fix media replay bug when target is not an AUDIO or VIDEO element",
@@ -2034,6 +2175,7 @@
   },
   {
    "additions": 234,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjY2ODU4NzY=",
     "is_bot": false,
@@ -2054,6 +2196,7 @@
   },
   {
    "additions": 11,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjI1NzE5MTAx",
     "is_bot": false,
@@ -2065,7 +2208,7 @@
    "deletions": 2,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1439,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "fix: solve the smooth scrolling scene, the y value obtained is the data 100ms ago",
@@ -2074,6 +2217,14 @@
   },
   {
    "additions": 1295,
+   "assignees": [
+    {
+     "id": "MDQ6VXNlcjQxMDY=",
+     "login": "Juice10",
+     "name": "Justin Halsall",
+     "databaseId": 4106
+    }
+   ],
    "author": {
     "id": "MDQ6VXNlcjI1OTY0NDUx",
     "is_bot": false,
@@ -2085,7 +2236,7 @@
    "deletions": 68,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1428,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "support recording canvas in iframe and shadow dom",
@@ -2094,6 +2245,7 @@
   },
   {
    "additions": 10,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjY0Nzg3NDU=",
     "is_bot": false,
@@ -2112,7 +2264,7 @@
      "color": "A78487"
     }
    ],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1416,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Feature/player style",
@@ -2121,6 +2273,7 @@
   },
   {
    "additions": 21,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE5NDk4OTY4",
     "is_bot": false,
@@ -2132,7 +2285,7 @@
    "deletions": 5,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1413,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "[#1412] fix Changes in the canvas within the Shadow DOM cannot be rec…",
@@ -2141,6 +2294,7 @@
   },
   {
    "additions": 6,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjU2MDM1MDM5",
     "is_bot": false,
@@ -2152,7 +2306,7 @@
    "deletions": 1,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1392,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Fixes protocol URL regex",
@@ -2161,6 +2315,7 @@
   },
   {
    "additions": 7,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjU0MTgxNA==",
     "is_bot": false,
@@ -2172,7 +2327,7 @@
    "deletions": 1,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1373,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "allow passing null to maskTextClass/blockClass",
@@ -2181,6 +2336,7 @@
   },
   {
    "additions": 358,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjUyODg4ODE=",
     "is_bot": false,
@@ -2192,7 +2348,7 @@
    "deletions": 11,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1357,
    "reviewDecision": "CHANGES_REQUESTED",
    "title": "fix: inserted styles lost when moving elements",
@@ -2201,6 +2357,7 @@
   },
   {
    "additions": 86,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjU0MTgxNA==",
     "is_bot": false,
@@ -2212,7 +2369,7 @@
    "deletions": 36,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1356,
    "reviewDecision": "CHANGES_REQUESTED",
    "title": "use native setTimeout when zone.js is present",
@@ -2221,6 +2378,7 @@
   },
   {
    "additions": 17,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjEwNzg5NDk=",
     "is_bot": false,
@@ -2232,7 +2390,7 @@
    "deletions": 4,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1336,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Enable control of compression level",
@@ -2241,6 +2399,7 @@
   },
   {
    "additions": 252,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE1Njc4MA==",
     "is_bot": false,
@@ -2261,6 +2420,7 @@
   },
   {
    "additions": 16,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE1Njc4MA==",
     "is_bot": false,
@@ -2272,7 +2432,7 @@
    "deletions": 1,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1320,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Fix a replay issue where the 500ms timeout was being hit",
@@ -2281,6 +2441,7 @@
   },
   {
    "additions": 25,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE4MjAzMjU1",
     "is_bot": false,
@@ -2292,7 +2453,7 @@
    "deletions": 2,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1313,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "[rrweb] Fix hookSetter maximum call stack exceeded",
@@ -2301,6 +2462,7 @@
   },
   {
    "additions": 7,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjIyMjg5NDQ1",
     "is_bot": false,
@@ -2312,7 +2474,7 @@
    "deletions": 1,
    "isDraft": true,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 1302,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "perf(rrweb): optimize random shuffled addList",
@@ -2321,6 +2483,7 @@
   },
   {
    "additions": 169,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjU0MTgxNA==",
     "is_bot": false,
@@ -2332,7 +2495,7 @@
    "deletions": 158,
    "isDraft": true,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1300,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "fix(perf): benchmark processMutations/addList worst case performance",
@@ -2341,6 +2504,7 @@
   },
   {
    "additions": 31,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjI1NzE5MTAx",
     "is_bot": false,
@@ -2352,7 +2516,7 @@
    "deletions": 6,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1290,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "[rrvideo] feat:  support config chrome launch options",
@@ -2361,6 +2525,7 @@
   },
   {
    "additions": 3,
+   "assignees": [],
    "author": {
     "is_bot": true,
     "login": "app/dependabot"
@@ -2377,7 +2542,7 @@
      "color": "0366d6"
     }
    ],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1259,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "chore(deps): bump word-wrap from 1.2.3 to 1.2.4",
@@ -2386,6 +2551,7 @@
   },
   {
    "additions": 920,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjc5Njg0",
     "is_bot": false,
@@ -2397,7 +2563,7 @@
    "deletions": 50,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1257,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "feat: Allow for masking of attributes",
@@ -2406,6 +2572,7 @@
   },
   {
    "additions": 12,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE0OTAwODA2",
     "is_bot": false,
@@ -2417,7 +2584,7 @@
    "deletions": 3,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1256,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "feat: add safeCrossOrigin option",
@@ -2426,6 +2593,7 @@
   },
   {
    "additions": 11,
+   "assignees": [],
    "author": {
     "is_bot": true,
     "login": "app/dependabot"
@@ -2442,7 +2610,7 @@
      "color": "0366d6"
     }
    ],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1255,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "chore(deps): bump semver from 5.7.1 to 5.7.2",
@@ -2451,6 +2619,7 @@
   },
   {
    "additions": 8,
+   "assignees": [],
    "author": {
     "is_bot": true,
     "login": "app/dependabot"
@@ -2467,7 +2636,7 @@
      "color": "0366d6"
     }
    ],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1238,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "chore(deps-dev): bump vite from 3.1.8 to 3.2.7",
@@ -2476,6 +2645,7 @@
   },
   {
    "additions": 74,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjc0Mjk4OQ==",
     "is_bot": false,
@@ -2487,7 +2657,7 @@
    "deletions": 25,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1235,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Fix iframe shadowdomed canvas not being captured bug.",
@@ -2496,6 +2666,7 @@
   },
   {
    "additions": 126,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE1MDIwODgy",
     "is_bot": false,
@@ -2507,7 +2678,7 @@
    "deletions": 14,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1212,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Feat/improve custom mask text selector and mask text fn",
@@ -2516,6 +2687,7 @@
   },
   {
    "additions": 1167,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjI0MTEzNDM=",
     "is_bot": false,
@@ -2536,6 +2708,7 @@
   },
   {
    "additions": 8793,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjI3NTMzOTEw",
     "is_bot": false,
@@ -2547,7 +2720,7 @@
    "deletions": 3974,
    "isDraft": true,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1149,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "add @rrweb/cutter and a Sync Replayer",
@@ -2556,6 +2729,7 @@
   },
   {
    "additions": 511,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE1Njc4MA==",
     "is_bot": false,
@@ -2567,7 +2741,7 @@
    "deletions": 59,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1140,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Render full snapshot on scrub to zero",
@@ -2576,6 +2750,7 @@
   },
   {
    "additions": 742,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjU0MTgxNA==",
     "is_bot": false,
@@ -2587,7 +2762,7 @@
    "deletions": 4,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1097,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "text masking settings apply to inputs",
@@ -2596,6 +2771,14 @@
   },
   {
    "additions": 7365,
+   "assignees": [
+    {
+     "id": "MDQ6VXNlcjQxMDY=",
+     "login": "Juice10",
+     "name": "Justin Halsall",
+     "databaseId": 4106
+    }
+   ],
    "author": {
     "id": "MDQ6VXNlcjQxMDY=",
     "is_bot": false,
@@ -2607,7 +2790,7 @@
    "deletions": 968,
    "isDraft": true,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1046,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Feat: Streaming video elements via webrtc",
@@ -2616,6 +2799,14 @@
   },
   {
    "additions": 319,
+   "assignees": [
+    {
+     "id": "MDQ6VXNlcjE1Njc4MA==",
+     "login": "eoghanmurray",
+     "name": "Eoghan Murray",
+     "databaseId": 156780
+    }
+   ],
    "author": {
     "id": "MDQ6VXNlcjI5NTEyODU=",
     "is_bot": false,
@@ -2627,7 +2818,7 @@
    "deletions": 40,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1023,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Use a custom Window object (aka: allow injection of rrweb from an iframe)",
@@ -2636,6 +2827,14 @@
   },
   {
    "additions": 174,
+   "assignees": [
+    {
+     "id": "MDQ6VXNlcjE1Njc4MA==",
+     "login": "eoghanmurray",
+     "name": "Eoghan Murray",
+     "databaseId": 156780
+    }
+   ],
    "author": {
     "id": "MDQ6VXNlcjE1Njc4MA==",
     "is_bot": false,
@@ -2647,7 +2846,7 @@
    "deletions": 92,
    "isDraft": true,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 1015,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Separate out window monkeypatching into an optional rrweb-init.js ",
@@ -2656,6 +2855,7 @@
   },
   {
    "additions": 4,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjEzNjUxMzg5",
     "is_bot": false,
@@ -2667,7 +2867,7 @@
    "deletions": 1,
    "isDraft": true,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 960,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "add custom event into the counting of checkout",
@@ -2676,6 +2876,7 @@
   },
   {
    "additions": 235,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE3NDgzMTc=",
     "is_bot": false,
@@ -2687,7 +2888,7 @@
    "deletions": 5,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 863,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Added scripts for saving and viewing snapshots",
@@ -2696,6 +2897,7 @@
   },
   {
    "additions": 32,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjEwOTU1MjY0",
     "is_bot": false,
@@ -2714,7 +2916,7 @@
      "color": "B7623F"
     }
    ],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 815,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Add skipActivity on setConfig",
@@ -2723,6 +2925,14 @@
   },
   {
    "additions": 332,
+   "assignees": [
+    {
+     "id": "MDQ6VXNlcjE1Njc4MA==",
+     "login": "eoghanmurray",
+     "name": "Eoghan Murray",
+     "databaseId": 156780
+    }
+   ],
    "author": {
     "id": "MDQ6VXNlcjczMTYwMDY=",
     "is_bot": false,
@@ -2734,7 +2944,7 @@
    "deletions": 1,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 768,
    "reviewDecision": "CHANGES_REQUESTED",
    "title": "fix: The URL involved in the dynamic modification element inline style is not converted to an absolute path",
@@ -2743,6 +2953,7 @@
   },
   {
    "additions": 11,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE1Njc4MA==",
     "is_bot": false,
@@ -2754,7 +2965,7 @@
    "deletions": 5,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "MERGEABLE",
    "number": 724,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Preserve iframe node id through loading callback",
@@ -2763,6 +2974,7 @@
   },
   {
    "additions": 78,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE1Njc4MA==",
     "is_bot": false,
@@ -2781,7 +2993,7 @@
      "color": "FE214A"
     }
    ],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 661,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Rename `packages/rrweb-player` to `packages/rrweb-playback-ui`",
@@ -2790,6 +3002,7 @@
   },
   {
    "additions": 238,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE1Njc4MA==",
     "is_bot": false,
@@ -2801,7 +3014,7 @@
    "deletions": 36,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 558,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Ascending timestamps",
@@ -2810,6 +3023,7 @@
   },
   {
    "additions": 79,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjc5OTg4NjA=",
     "is_bot": false,
@@ -2828,7 +3042,7 @@
      "color": "A78487"
     }
    ],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 549,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Subscribe to MetaData change",
@@ -2837,6 +3051,7 @@
   },
   {
    "additions": 15,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE1Njc4MA==",
     "is_bot": false,
@@ -2848,7 +3063,7 @@
    "deletions": 2,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 389,
    "reviewDecision": "APPROVED",
    "title": "Make destructor/stopper function explicit and add option to clean up DOM",
@@ -2857,6 +3072,7 @@
   },
   {
    "additions": 309,
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE1Njc4MA==",
     "is_bot": false,
@@ -2868,7 +3084,7 @@
    "deletions": 35,
    "isDraft": false,
    "labels": [],
-   "mergeable": "UNKNOWN",
+   "mergeable": "CONFLICTING",
    "number": 294,
    "reviewDecision": "REVIEW_REQUIRED",
    "title": "Use window.top and window.top.document",
@@ -2878,6 +3094,7 @@
  ],
  "issue": [
   {
+   "assignees": [],
    "author": {
     "id": "U_kgDOEu_0sg",
     "is_bot": false,
@@ -2892,6 +3109,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1967"
   },
   {
+   "assignees": [],
    "author": {
     "id": "U_kgDOE5dU7A",
     "is_bot": false,
@@ -2906,6 +3124,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1959"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjg0NjgxNTY1",
     "is_bot": false,
@@ -2920,6 +3139,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1955"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjI4MjE0NjQx",
     "is_bot": false,
@@ -2934,6 +3154,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1942"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE2MDU2NzU5",
     "is_bot": false,
@@ -2948,6 +3169,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1937"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQxMDY=",
     "is_bot": false,
@@ -2962,6 +3184,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1925"
   },
   {
+   "assignees": [],
    "author": {
     "id": "U_kgDOD4mniw",
     "is_bot": false,
@@ -2976,6 +3199,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1919"
   },
   {
+   "assignees": [],
    "author": {
     "id": "U_kgDOD4mniw",
     "is_bot": false,
@@ -2990,6 +3214,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1918"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjIzNDc0NTEz",
     "is_bot": false,
@@ -3004,6 +3229,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1913"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjExOTY0MTQ1",
     "is_bot": false,
@@ -3025,6 +3251,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1899"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQyMzIyMDc=",
     "is_bot": false,
@@ -3046,6 +3273,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1896"
   },
   {
+   "assignees": [],
    "author": {
     "is_bot": true,
     "login": "app/"
@@ -3065,6 +3293,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1881"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE0OTkyMzYw",
     "is_bot": false,
@@ -3086,6 +3315,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1880"
   },
   {
+   "assignees": [],
    "author": {
     "is_bot": true,
     "login": "app/"
@@ -3105,6 +3335,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1878"
   },
   {
+   "assignees": [],
    "author": {
     "id": "U_kgDODG7DCw",
     "is_bot": false,
@@ -3126,6 +3357,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1824"
   },
   {
+   "assignees": [],
    "author": {
     "id": "U_kgDOBq2VIQ",
     "is_bot": false,
@@ -3140,6 +3372,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1816"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjIyMDA1Mjcz",
     "is_bot": false,
@@ -3161,6 +3394,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1801"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQxMDY=",
     "is_bot": false,
@@ -3175,6 +3409,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1786"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjExOTY0MTQ1",
     "is_bot": false,
@@ -3189,6 +3424,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1785"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE3NDQ2Nzgy",
     "is_bot": false,
@@ -3203,6 +3439,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1778"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQ0Nzc2NzY4",
     "is_bot": false,
@@ -3224,6 +3461,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1773"
   },
   {
+   "assignees": [],
    "author": {
     "id": "U_kgDOCG7BWA",
     "is_bot": false,
@@ -3245,6 +3483,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1752"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE1Njc4MA==",
     "is_bot": false,
@@ -3272,6 +3511,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1742"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjExMTU0OTg=",
     "is_bot": false,
@@ -3293,6 +3533,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1736"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjU0ODkzOTky",
     "is_bot": false,
@@ -3314,6 +3555,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1734"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE4MTIwOTM=",
     "is_bot": false,
@@ -3328,6 +3570,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1728"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQ0Nzc2NzY4",
     "is_bot": false,
@@ -3342,6 +3585,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1727"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE3NDQ2Nzgy",
     "is_bot": false,
@@ -3356,6 +3600,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1725"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQ1ODIyMA==",
     "is_bot": false,
@@ -3377,6 +3622,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1724"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE1ODQyOTY=",
     "is_bot": false,
@@ -3391,6 +3637,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1723"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjIzNDA1ODY5",
     "is_bot": false,
@@ -3412,6 +3659,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1720"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjUzODU5OTc3",
     "is_bot": false,
@@ -3433,6 +3681,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1717"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjI1NzE5MTAx",
     "is_bot": false,
@@ -3454,6 +3703,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1716"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjIwNTQ5NzE0",
     "is_bot": false,
@@ -3475,6 +3725,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1713"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjEzNjI0OTg0",
     "is_bot": false,
@@ -3496,6 +3747,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1710"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjYxNjE5Mw==",
     "is_bot": false,
@@ -3517,6 +3769,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1707"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjY1NjUzMQ==",
     "is_bot": false,
@@ -3538,6 +3791,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1706"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjY3ODUxNTg5",
     "is_bot": false,
@@ -3559,6 +3813,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1703"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjIzNjYzODI1",
     "is_bot": false,
@@ -3580,6 +3835,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1701"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE0MTYyMjI0",
     "is_bot": false,
@@ -3601,6 +3857,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1699"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjI5ODM5Njk=",
     "is_bot": false,
@@ -3622,6 +3879,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1698"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjM4MTk0ODg4",
     "is_bot": false,
@@ -3643,6 +3901,14 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1693"
   },
   {
+   "assignees": [
+    {
+     "id": "MDQ6VXNlcjE1Njc4MA==",
+     "login": "eoghanmurray",
+     "name": "Eoghan Murray",
+     "databaseId": 156780
+    }
+   ],
    "author": {
     "id": "U_kgDOBtQkPQ",
     "is_bot": false,
@@ -3670,6 +3936,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1692"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjM1MzAxNzAx",
     "is_bot": false,
@@ -3691,6 +3958,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1690"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjk5NzY5Nw==",
     "is_bot": false,
@@ -3705,6 +3973,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1684"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjIyMjU1MDI1",
     "is_bot": false,
@@ -3719,6 +3988,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1682"
   },
   {
+   "assignees": [],
    "author": {
     "id": "U_kgDOBj8LRw",
     "is_bot": false,
@@ -3740,6 +4010,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1680"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjI0OTQ4MjE0",
     "is_bot": false,
@@ -3761,6 +4032,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1675"
   },
   {
+   "assignees": [],
    "author": {
     "id": "U_kgDOBYZw_g",
     "is_bot": false,
@@ -3775,6 +4047,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1672"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQ5MjQyODUw",
     "is_bot": false,
@@ -3789,6 +4062,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1671"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjIzMzgwMzYx",
     "is_bot": false,
@@ -3803,6 +4077,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1668"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjc2OTcwNDc5",
     "is_bot": false,
@@ -3824,6 +4099,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1667"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjMxMjM0MzI1",
     "is_bot": false,
@@ -3845,6 +4121,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1665"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjExNjQ5MzAx",
     "is_bot": false,
@@ -3859,6 +4136,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1664"
   },
   {
+   "assignees": [],
    "author": {
     "id": "U_kgDOB0mZgQ",
     "is_bot": false,
@@ -3873,6 +4151,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1663"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjMwNTA0MTg=",
     "is_bot": false,
@@ -3894,6 +4173,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1662"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE0MTU5Mzk2",
     "is_bot": false,
@@ -3908,6 +4188,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1661"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQ3MDk5MTU0",
     "is_bot": false,
@@ -3922,6 +4203,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1659"
   },
   {
+   "assignees": [],
    "author": {
     "id": "U_kgDOCMjOtg",
     "is_bot": false,
@@ -3936,6 +4218,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1658"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjUxNzcxNTQx",
     "is_bot": false,
@@ -3957,6 +4240,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1655"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE3MjYyNjEz",
     "is_bot": false,
@@ -3978,6 +4262,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1650"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjExNzM4MDk0",
     "is_bot": false,
@@ -3999,6 +4284,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1644"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjMyODA4ODE2",
     "is_bot": false,
@@ -4020,6 +4306,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1628"
   },
   {
+   "assignees": [],
    "author": {
     "id": "U_kgDOBsIlKQ",
     "is_bot": false,
@@ -4041,6 +4328,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1627"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQ1MDQ3OA==",
     "is_bot": false,
@@ -4062,6 +4350,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1626"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjEyOTc0NDcz",
     "is_bot": false,
@@ -4083,6 +4372,20 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1622"
   },
   {
+   "assignees": [
+    {
+     "id": "MDQ6VXNlcjQxMDY=",
+     "login": "Juice10",
+     "name": "Justin Halsall",
+     "databaseId": 4106
+    },
+    {
+     "id": "MDQ6VXNlcjI3NTMzOTEw",
+     "login": "YunFeng0817",
+     "name": "Yun Feng",
+     "databaseId": 27533910
+    }
+   ],
    "author": {
     "id": "MDQ6VXNlcjE1Njc4MA==",
     "is_bot": false,
@@ -4104,6 +4407,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1620"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjU2OTg4Mjgx",
     "is_bot": false,
@@ -4125,6 +4429,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1619"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE3ODc1MTY1",
     "is_bot": false,
@@ -4146,6 +4451,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1612"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjEwNzg5NDk=",
     "is_bot": false,
@@ -4167,6 +4473,14 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1611"
   },
   {
+   "assignees": [
+    {
+     "id": "MDQ6VXNlcjE3Mjk0NA==",
+     "login": "drakonen",
+     "name": "Johan Otten",
+     "databaseId": 172944
+    }
+   ],
    "author": {
     "id": "MDQ6VXNlcjEwNzg5NDk=",
     "is_bot": false,
@@ -4180,14 +4494,21 @@
      "name": "bug",
      "description": "Something isn't working",
      "color": "d73a4a"
+    },
+    {
+     "id": "LA_kwDOCQzxts8AAAAC-z3pvg",
+     "name": "privacy",
+     "description": "",
+     "color": "aaaaaa"
     }
    ],
    "number": 1609,
    "title": "[Bug]: hidden inputs are not masked when maskAllInputs is enabled",
-   "updatedAt": "2025-09-17T23:30:00Z",
+   "updatedAt": "2026-10-23T08:48:19Z",
    "url": "https://github.com/rrweb-io/rrweb/issues/1609"
   },
   {
+   "assignees": [],
    "author": {
     "id": "U_kgDOC0nzMA",
     "is_bot": false,
@@ -4209,6 +4530,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1608"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjU2MzY0NDU=",
     "is_bot": false,
@@ -4230,6 +4552,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1607"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjkxNjIzMTk=",
     "is_bot": false,
@@ -4251,6 +4574,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1606"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQxMTExNjU4",
     "is_bot": false,
@@ -4272,6 +4596,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1604"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE0MTA3NjI0",
     "is_bot": false,
@@ -4293,6 +4618,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1598"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE2NTcyODgy",
     "is_bot": false,
@@ -4314,6 +4640,14 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1595"
   },
   {
+   "assignees": [
+    {
+     "id": "MDQ6VXNlcjQxMDY=",
+     "login": "Juice10",
+     "name": "Justin Halsall",
+     "databaseId": 4106
+    }
+   ],
    "author": {
     "id": "MDQ6VXNlcjI1MjcxODE5",
     "is_bot": false,
@@ -4341,6 +4675,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1592"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjI2MTIxMTU4",
     "is_bot": false,
@@ -4362,6 +4697,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1591"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjU1OTM3MzU2",
     "is_bot": false,
@@ -4383,6 +4719,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1590"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE0OTAwODA2",
     "is_bot": false,
@@ -4404,6 +4741,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1585"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjY3MDk0MDA=",
     "is_bot": false,
@@ -4425,6 +4763,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1584"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjk4NDgxNw==",
     "is_bot": false,
@@ -4446,6 +4785,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1581"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjEyNTg5OTQ0",
     "is_bot": false,
@@ -4467,6 +4807,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1579"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjEwMDg4Mzk=",
     "is_bot": false,
@@ -4488,6 +4829,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1577"
   },
   {
+   "assignees": [],
    "author": {
     "id": "U_kgDOCAVing",
     "is_bot": false,
@@ -4502,6 +4844,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1576"
   },
   {
+   "assignees": [],
    "author": {
     "id": "U_kgDOB9w3rw",
     "is_bot": false,
@@ -4516,6 +4859,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1571"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE1NzM0NTIx",
     "is_bot": false,
@@ -4537,6 +4881,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1570"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjY2MzYzNTM=",
     "is_bot": false,
@@ -4558,6 +4903,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1569"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjU4NzUxNDk=",
     "is_bot": false,
@@ -4579,6 +4925,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1567"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjI2MTIxMTU4",
     "is_bot": false,
@@ -4600,6 +4947,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1564"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjU1OTM3MzU2",
     "is_bot": false,
@@ -4621,6 +4969,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1563"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjIwMzc4NDk4",
     "is_bot": false,
@@ -4642,6 +4991,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1562"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjIzNDc0NTEz",
     "is_bot": false,
@@ -4663,6 +5013,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1560"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE0OTMyMjk4",
     "is_bot": false,
@@ -4684,6 +5035,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1559"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjM5MTg3MDEw",
     "is_bot": false,
@@ -4705,6 +5057,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1558"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQ0NDM1ODAy",
     "is_bot": false,
@@ -4726,6 +5079,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1557"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjYxMTAzNTU=",
     "is_bot": false,
@@ -4747,6 +5101,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1555"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjEwMzcxMDAz",
     "is_bot": false,
@@ -4768,6 +5123,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1553"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE3NzUwNQ==",
     "is_bot": false,
@@ -4789,6 +5145,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1549"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjMxNzY3MQ==",
     "is_bot": false,
@@ -4810,6 +5167,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1547"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjIzNDQzNw==",
     "is_bot": false,
@@ -4824,6 +5182,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1528"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjYyMzIxODc5",
     "is_bot": false,
@@ -4845,6 +5204,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1524"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjU2OTE4ODM0",
     "is_bot": false,
@@ -4866,6 +5226,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1518"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjIwMTE4ODU5",
     "is_bot": false,
@@ -4887,6 +5248,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1514"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjM2NDYxNDc=",
     "is_bot": false,
@@ -4908,6 +5270,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1505"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjUxMjYxMDA2",
     "is_bot": false,
@@ -4935,6 +5298,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1491"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjEzMjQ0NDEx",
     "is_bot": false,
@@ -4956,6 +5320,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1488"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjM5Nzc=",
     "is_bot": false,
@@ -4977,6 +5342,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1487"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQ4OTc0ODg0",
     "is_bot": false,
@@ -4998,6 +5364,14 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1486"
   },
   {
+   "assignees": [
+    {
+     "id": "MDQ6VXNlcjQxMDY=",
+     "login": "Juice10",
+     "name": "Justin Halsall",
+     "databaseId": 4106
+    }
+   ],
    "author": {
     "id": "MDQ6VXNlcjE1MjI5MjU1",
     "is_bot": false,
@@ -5019,6 +5393,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1479"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjI2NDAyMTA4",
     "is_bot": false,
@@ -5040,6 +5415,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1473"
   },
   {
+   "assignees": [],
    "author": {
     "id": "U_kgDOCgG2Nw",
     "is_bot": false,
@@ -5061,6 +5437,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1472"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQ1MjMzNjk2",
     "is_bot": false,
@@ -5082,6 +5459,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1470"
   },
   {
+   "assignees": [],
    "author": {
     "is_bot": true,
     "login": "app/"
@@ -5101,6 +5479,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1456"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE1OTk5NDQy",
     "is_bot": false,
@@ -5122,6 +5501,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1454"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjU2OTg4Mjgx",
     "is_bot": false,
@@ -5143,6 +5523,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1449"
   },
   {
+   "assignees": [],
    "author": {
     "id": "U_kgDOBp1CJw",
     "is_bot": false,
@@ -5164,6 +5545,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1447"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjIyODc0NzA=",
     "is_bot": false,
@@ -5185,6 +5567,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1438"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjU1OTM3MzU2",
     "is_bot": false,
@@ -5206,6 +5589,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1435"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjk2ODUy",
     "is_bot": false,
@@ -5227,6 +5611,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1430"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjI1OTY0NDUx",
     "is_bot": false,
@@ -5248,6 +5633,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1427"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQ5MjQyODUw",
     "is_bot": false,
@@ -5269,6 +5655,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1420"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjY4MDg4OTAx",
     "is_bot": false,
@@ -5290,6 +5677,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1419"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjM2MjEyNjQ4",
     "is_bot": false,
@@ -5311,6 +5699,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1418"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQwMTI2Mw==",
     "is_bot": false,
@@ -5332,6 +5721,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1414"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE5NDk4OTY4",
     "is_bot": false,
@@ -5353,6 +5743,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1412"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjUwNjUzMzI4",
     "is_bot": false,
@@ -5374,6 +5765,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1411"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjEyMDYxMDE2",
     "is_bot": false,
@@ -5395,6 +5787,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1410"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjkwMTc2Nzc4",
     "is_bot": false,
@@ -5416,6 +5809,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1409"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQwMTI2Mw==",
     "is_bot": false,
@@ -5437,6 +5831,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1407"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjU2MDM1MDM5",
     "is_bot": false,
@@ -5458,6 +5853,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1399"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjc0MTk5ODAy",
     "is_bot": false,
@@ -5479,6 +5875,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1397"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjk4NDgxNw==",
     "is_bot": false,
@@ -5500,6 +5897,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1395"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjU2MDM1MDM5",
     "is_bot": false,
@@ -5521,6 +5919,14 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1391"
   },
   {
+   "assignees": [
+    {
+     "id": "MDQ6VXNlcjE1Njc4MA==",
+     "login": "eoghanmurray",
+     "name": "Eoghan Murray",
+     "databaseId": 156780
+    }
+   ],
    "author": {
     "id": "MDQ6VXNlcjEwNzg5NDk=",
     "is_bot": false,
@@ -5542,6 +5948,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1385"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjI0MTEzNDM=",
     "is_bot": false,
@@ -5563,6 +5970,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1384"
   },
   {
+   "assignees": [],
    "author": {
     "id": "U_kgDOBy9l6A",
     "is_bot": false,
@@ -5584,6 +5992,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1382"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjIyMzc1ODY5",
     "is_bot": false,
@@ -5605,6 +6014,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1378"
   },
   {
+   "assignees": [],
    "author": {
     "id": "U_kgDOB3u7MQ",
     "is_bot": false,
@@ -5626,6 +6036,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1377"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjI0MTEzNDM=",
     "is_bot": false,
@@ -5647,6 +6058,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1376"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQ1ODQ3MzQw",
     "is_bot": false,
@@ -5668,6 +6080,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1372"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjMxNzAwOTAw",
     "is_bot": false,
@@ -5689,6 +6102,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1370"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjMxNzAwOTAw",
     "is_bot": false,
@@ -5710,6 +6124,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1367"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjg2MTMyMDM3",
     "is_bot": false,
@@ -5731,6 +6146,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1364"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjg2MTMyMDM3",
     "is_bot": false,
@@ -5752,6 +6168,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1363"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjg2Nzg3Nzk3",
     "is_bot": false,
@@ -5773,6 +6190,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1361"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjI1NzE5MTAx",
     "is_bot": false,
@@ -5800,6 +6218,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1358"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjc5Njg0",
     "is_bot": false,
@@ -5814,6 +6233,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1350"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjM5MzEyMjI1",
     "is_bot": false,
@@ -5835,6 +6255,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1345"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjUyODg4ODE=",
     "is_bot": false,
@@ -5856,6 +6277,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1344"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjI0MTEzNDM=",
     "is_bot": false,
@@ -5877,6 +6299,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1342"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjEwNzg5NDk=",
     "is_bot": false,
@@ -5898,6 +6321,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1337"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjEwNzg5NDk=",
     "is_bot": false,
@@ -5919,6 +6343,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1335"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjY0ODgxMzY3",
     "is_bot": false,
@@ -5933,6 +6358,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1325"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjgyMzU1MTU=",
     "is_bot": false,
@@ -5954,6 +6380,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1323"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjk1OTMwMA==",
     "is_bot": false,
@@ -5975,6 +6402,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1319"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjY1OTUzNjky",
     "is_bot": false,
@@ -5996,6 +6424,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1316"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjI2MTIxMTU4",
     "is_bot": false,
@@ -6005,18 +6434,37 @@
    "createdAt": "2023-09-29T13:53:58Z",
    "labels": [
     {
+     "id": "MDU6TGFiZWwxMDgxNDcxNTUw",
+     "name": "good first issue",
+     "description": "Good for newcomers",
+     "color": "7057ff"
+    },
+    {
      "id": "MDU6TGFiZWwxMjAyOTE5ODgy",
      "name": "feature request",
      "description": "Things want to be added",
      "color": "6f88f7"
+    },
+    {
+     "id": "LA_kwDOCQzxts8AAAAC-z3pvg",
+     "name": "privacy",
+     "description": "",
+     "color": "aaaaaa"
+    },
+    {
+     "id": "LA_kwDOCQzxts8AAAAC-z8TbA",
+     "name": "replay",
+     "description": "to do with replay side of things (not the same as rrweb-player)",
+     "color": "ffdd92"
     }
    ],
    "number": 1315,
    "title": "[Feature Request]: Option to disable autocomplete for input fileds inside the iframe",
-   "updatedAt": "2024-08-20T05:43:10Z",
+   "updatedAt": "2026-10-23T08:47:36Z",
    "url": "https://github.com/rrweb-io/rrweb/issues/1315"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQwMTI2Mw==",
     "is_bot": false,
@@ -6038,6 +6486,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1314"
   },
   {
+   "assignees": [],
    "author": {
     "id": "U_kgDOCF9d6w",
     "is_bot": false,
@@ -6059,6 +6508,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1312"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjMzNDk0MzY=",
     "is_bot": false,
@@ -6080,6 +6530,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1308"
   },
   {
+   "assignees": [],
    "author": {
     "id": "U_kgDOBj8LRw",
     "is_bot": false,
@@ -6101,6 +6552,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1305"
   },
   {
+   "assignees": [],
    "author": {
     "id": "U_kgDOBj8LRw",
     "is_bot": false,
@@ -6122,6 +6574,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1304"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjEwNzg5NDk=",
     "is_bot": false,
@@ -6143,6 +6596,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1303"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjgzNDMwNjY3",
     "is_bot": false,
@@ -6164,6 +6618,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1297"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjI1NzE5MTAx",
     "is_bot": false,
@@ -6185,6 +6640,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1289"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjIyNTI0Mjc3",
     "is_bot": false,
@@ -6206,6 +6662,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1285"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjI0NDAwOTc1",
     "is_bot": false,
@@ -6220,6 +6677,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1284"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjM2MjEyNjQ4",
     "is_bot": false,
@@ -6234,6 +6692,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1283"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjU2MDIxOTM3",
     "is_bot": false,
@@ -6255,6 +6714,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1281"
   },
   {
+   "assignees": [],
    "author": {
     "id": "U_kgDOBmd6AQ",
     "is_bot": false,
@@ -6276,6 +6736,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1270"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQ3MDk5MTU0",
     "is_bot": false,
@@ -6303,6 +6764,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1266"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjU2NzkzNzg1",
     "is_bot": false,
@@ -6324,6 +6786,14 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1260"
   },
   {
+   "assignees": [
+    {
+     "id": "MDQ6VXNlcjE1Njc4MA==",
+     "login": "eoghanmurray",
+     "name": "Eoghan Murray",
+     "databaseId": 156780
+    }
+   ],
    "author": {
     "id": "MDQ6VXNlcjk4NDgxNw==",
     "is_bot": false,
@@ -6345,6 +6815,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1249"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjI1MDIyODQ1",
     "is_bot": false,
@@ -6372,6 +6843,14 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1242"
   },
   {
+   "assignees": [
+    {
+     "id": "MDQ6VXNlcjI3NTMzOTEw",
+     "login": "YunFeng0817",
+     "name": "Yun Feng",
+     "databaseId": 27533910
+    }
+   ],
    "author": {
     "id": "MDQ6VXNlcjMyODI1MzI0",
     "is_bot": false,
@@ -6393,6 +6872,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1241"
   },
   {
+   "assignees": [],
    "author": {
     "id": "U_kgDOBZObCg",
     "is_bot": false,
@@ -6414,6 +6894,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1236"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjg5MzcwMTYw",
     "is_bot": false,
@@ -6441,6 +6922,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1232"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjUwNTI4Mjc2",
     "is_bot": false,
@@ -6462,6 +6944,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1231"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE3NzQ0MTc0",
     "is_bot": false,
@@ -6483,6 +6966,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1230"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQ4MDU4NTUw",
     "is_bot": false,
@@ -6504,6 +6988,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1228"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjIwNDcwNjU0",
     "is_bot": false,
@@ -6525,6 +7010,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1226"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjI2MzQwMzU4",
     "is_bot": false,
@@ -6546,6 +7032,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1224"
   },
   {
+   "assignees": [],
    "author": {
     "id": "U_kgDOBmd6AQ",
     "is_bot": false,
@@ -6567,6 +7054,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1219"
   },
   {
+   "assignees": [],
    "author": {
     "id": "U_kgDOBj8LRw",
     "is_bot": false,
@@ -6588,6 +7076,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1218"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjM3MTExNDM1",
     "is_bot": false,
@@ -6609,6 +7098,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1211"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE3MTA2ODQ0",
     "is_bot": false,
@@ -6630,6 +7120,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1202"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjI2MTU1OTYw",
     "is_bot": false,
@@ -6651,6 +7142,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1192"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE0OTAwODA2",
     "is_bot": false,
@@ -6672,6 +7164,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1190"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjM4MjcxOTk1",
     "is_bot": false,
@@ -6699,6 +7192,14 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1189"
   },
   {
+   "assignees": [
+    {
+     "id": "MDQ6VXNlcjI3NTMzOTEw",
+     "login": "YunFeng0817",
+     "name": "Yun Feng",
+     "databaseId": 27533910
+    }
+   ],
    "author": {
     "id": "MDQ6VXNlcjc5Njg0",
     "is_bot": false,
@@ -6720,6 +7221,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1185"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjExMDI3MTI5",
     "is_bot": false,
@@ -6741,6 +7243,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1180"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjUwNDQ0MzM0",
     "is_bot": false,
@@ -6762,6 +7265,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1176"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjY4MzMyODc=",
     "is_bot": false,
@@ -6783,6 +7287,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1171"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjEwNzAyNzMx",
     "is_bot": false,
@@ -6804,6 +7309,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1167"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjY4NDUzODUw",
     "is_bot": false,
@@ -6825,6 +7331,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1166"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjI0NzI5NDEz",
     "is_bot": false,
@@ -6839,6 +7346,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1162"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjgzMzU0MDIy",
     "is_bot": false,
@@ -6860,6 +7368,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1161"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjMwNDUzMzEz",
     "is_bot": false,
@@ -6874,6 +7383,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1158"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE3ODE1MTc5",
     "is_bot": false,
@@ -6888,6 +7398,14 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1153"
   },
   {
+   "assignees": [
+    {
+     "id": "MDQ6VXNlcjI3NTMzOTEw",
+     "login": "YunFeng0817",
+     "name": "Yun Feng",
+     "databaseId": 27533910
+    }
+   ],
    "author": {
     "id": "MDQ6VXNlcjQ4ODMwMzI=",
     "is_bot": false,
@@ -6909,6 +7427,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1143"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjU0ODI1NTQ1",
     "is_bot": false,
@@ -6923,6 +7442,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1116"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjIyMzg4Njg2",
     "is_bot": false,
@@ -6944,6 +7464,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1110"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjU0ODI1NTQ1",
     "is_bot": false,
@@ -6958,6 +7479,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1103"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjU0MTgxNA==",
     "is_bot": false,
@@ -6985,6 +7507,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1096"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE3MTA2ODQ0",
     "is_bot": false,
@@ -6999,6 +7522,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1094"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjEyNTU4NDMz",
     "is_bot": false,
@@ -7020,6 +7544,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1081"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjIyMTUxMTQ0",
     "is_bot": false,
@@ -7041,6 +7566,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1080"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQyNDIyMzYw",
     "is_bot": false,
@@ -7062,6 +7588,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1075"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQxNTYzMDU4",
     "is_bot": false,
@@ -7076,6 +7603,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1070"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjIxMjM3Nw==",
     "is_bot": false,
@@ -7090,6 +7618,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1069"
   },
   {
+   "assignees": [],
    "author": {
     "id": "U_kgDOBdx0aw",
     "is_bot": false,
@@ -7111,6 +7640,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1062"
   },
   {
+   "assignees": [],
    "author": {
     "id": "U_kgDOBmN-qw",
     "is_bot": false,
@@ -7132,6 +7662,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1055"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjIzNjMwNDQ1",
     "is_bot": false,
@@ -7153,6 +7684,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1048"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjM2MTc3MzUy",
     "is_bot": false,
@@ -7167,6 +7699,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1040"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQ0OTYwODIz",
     "is_bot": false,
@@ -7181,6 +7714,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1036"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjMwNjgzNTQz",
     "is_bot": false,
@@ -7214,6 +7748,14 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1021"
   },
   {
+   "assignees": [
+    {
+     "id": "MDQ6VXNlcjQxMDY=",
+     "login": "Juice10",
+     "name": "Justin Halsall",
+     "databaseId": 4106
+    }
+   ],
    "author": {
     "id": "MDQ6VXNlcjgxMjkzNjk0",
     "is_bot": false,
@@ -7228,6 +7770,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1018"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjEzMjQyMzky",
     "is_bot": false,
@@ -7249,6 +7792,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1005"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQxMDY=",
     "is_bot": false,
@@ -7270,6 +7814,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/1004"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQwMTUyNTY4",
     "is_bot": false,
@@ -7291,6 +7836,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/987"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQ3MzU2NzA0",
     "is_bot": false,
@@ -7312,6 +7858,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/986"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjgyOTQ0OTQw",
     "is_bot": false,
@@ -7333,6 +7880,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/985"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjI3MDY5NQ==",
     "is_bot": false,
@@ -7354,6 +7902,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/958"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjc5Njg0",
     "is_bot": false,
@@ -7375,6 +7924,14 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/955"
   },
   {
+   "assignees": [
+    {
+     "id": "MDQ6VXNlcjQxMDY=",
+     "login": "Juice10",
+     "name": "Justin Halsall",
+     "databaseId": 4106
+    }
+   ],
    "author": {
     "id": "MDQ6VXNlcjM2MjEyNjQ4",
     "is_bot": false,
@@ -7396,6 +7953,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/954"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjI1NjAxMjI1",
     "is_bot": false,
@@ -7417,6 +7975,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/951"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjg2MjI5Ng==",
     "is_bot": false,
@@ -7438,6 +7997,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/928"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjM1MzYwODk5",
     "is_bot": false,
@@ -7459,6 +8019,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/924"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjU0NDY0MDg1",
     "is_bot": false,
@@ -7480,6 +8041,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/919"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjcxMDk5NDI=",
     "is_bot": false,
@@ -7501,6 +8063,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/917"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjM1NTI5MzAz",
     "is_bot": false,
@@ -7515,6 +8078,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/898"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjI1NjAxMjI1",
     "is_bot": false,
@@ -7529,6 +8093,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/896"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjEzMTU3NDk5",
     "is_bot": false,
@@ -7550,6 +8115,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/884"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE3NDgzMTc=",
     "is_bot": false,
@@ -7564,6 +8130,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/878"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjY0OTk5Mg==",
     "is_bot": false,
@@ -7585,6 +8152,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/876"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjI0NjkxNzIz",
     "is_bot": false,
@@ -7599,6 +8167,14 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/875"
   },
   {
+   "assignees": [
+    {
+     "id": "MDQ6VXNlcjE3Mjk0NA==",
+     "login": "drakonen",
+     "name": "Johan Otten",
+     "databaseId": 172944
+    }
+   ],
    "author": {
     "id": "MDQ6VXNlcjI3NzMzNTMy",
     "is_bot": false,
@@ -7618,14 +8194,21 @@
      "name": "has PR",
      "description": "already has pull request for it",
      "color": "edb29e"
+    },
+    {
+     "id": "LA_kwDOCQzxts8AAAAC-z3pvg",
+     "name": "privacy",
+     "description": "",
+     "color": "aaaaaa"
     }
    ],
    "number": 874,
    "title": "maskTextClass and maskTextSelector not working",
-   "updatedAt": "2025-01-09T17:41:29Z",
+   "updatedAt": "2026-10-23T08:42:11Z",
    "url": "https://github.com/rrweb-io/rrweb/issues/874"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjY0OTk5Mg==",
     "is_bot": false,
@@ -7640,6 +8223,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/873"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQxMDY=",
     "is_bot": false,
@@ -7654,6 +8238,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/860"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQxODI0NzUw",
     "is_bot": false,
@@ -7668,6 +8253,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/857"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE1Njc4MA==",
     "is_bot": false,
@@ -7682,6 +8268,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/833"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjU0ODMzMDE1",
     "is_bot": false,
@@ -7696,6 +8283,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/821"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjcyMTM3Mg==",
     "is_bot": false,
@@ -7710,6 +8298,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/816"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjM4MzYwMTMz",
     "is_bot": false,
@@ -7724,6 +8313,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/793"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjExMzc3MzEw",
     "is_bot": false,
@@ -7738,6 +8328,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/791"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjEyMDYwMjk1",
     "is_bot": false,
@@ -7752,6 +8343,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/769"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE3MTc0NTIz",
     "is_bot": false,
@@ -7766,6 +8358,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/767"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjY0OTAxNTE4",
     "is_bot": false,
@@ -7780,6 +8373,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/766"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjMzODU1NDkz",
     "is_bot": false,
@@ -7794,6 +8388,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/763"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjEzMTQ4OTg4",
     "is_bot": false,
@@ -7808,6 +8403,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/753"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQxMDY=",
     "is_bot": false,
@@ -7822,6 +8418,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/752"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjY0MDkwMTE=",
     "is_bot": false,
@@ -7843,6 +8440,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/749"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE3Mjc0Mjc=",
     "is_bot": false,
@@ -7857,6 +8455,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/744"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQxMDY=",
     "is_bot": false,
@@ -7878,6 +8477,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/742"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjMzNTI2MTM=",
     "is_bot": false,
@@ -7892,6 +8492,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/731"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE1Njc4MA==",
     "is_bot": false,
@@ -7906,6 +8507,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/726"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjMzNTI2MTM=",
     "is_bot": false,
@@ -7920,6 +8522,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/708"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjIwOTM1NTQw",
     "is_bot": false,
@@ -7934,6 +8537,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/702"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjMzNTI2MTM=",
     "is_bot": false,
@@ -7948,6 +8552,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/691"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjM4NTEzODIy",
     "is_bot": false,
@@ -7962,6 +8567,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/678"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjIxMDcyNTg5",
     "is_bot": false,
@@ -7976,6 +8582,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/668"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjc1ODUwMTYx",
     "is_bot": false,
@@ -7990,6 +8597,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/657"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjUyMDE4NTQy",
     "is_bot": false,
@@ -8004,6 +8612,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/654"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE1Njc4MA==",
     "is_bot": false,
@@ -8018,6 +8627,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/645"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQxMDY=",
     "is_bot": false,
@@ -8032,6 +8642,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/622"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjEwNTk5NTI5",
     "is_bot": false,
@@ -8046,6 +8657,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/609"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE0OTMyMzY=",
     "is_bot": false,
@@ -8060,6 +8672,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/596"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjEyODQwODQz",
     "is_bot": false,
@@ -8074,6 +8687,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/584"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjc1ODUwMTYx",
     "is_bot": false,
@@ -8088,6 +8702,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/581"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQxOTIxOTE2",
     "is_bot": false,
@@ -8102,6 +8717,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/560"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE1Njc4MA==",
     "is_bot": false,
@@ -8116,6 +8732,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/503"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjM4MjExMjU5",
     "is_bot": false,
@@ -8130,6 +8747,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/474"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE1Njc4MA==",
     "is_bot": false,
@@ -8144,6 +8762,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/471"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE1Njc4MA==",
     "is_bot": false,
@@ -8165,6 +8784,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/457"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE1Njc4MA==",
     "is_bot": false,
@@ -8179,6 +8799,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/456"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjIzNjEw",
     "is_bot": false,
@@ -8193,6 +8814,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/443"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjI3MDAxNDM=",
     "is_bot": false,
@@ -8207,6 +8829,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/423"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjEzNjUxMzg5",
     "is_bot": false,
@@ -8221,6 +8844,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/419"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQyNTM0Mzk3",
     "is_bot": false,
@@ -8242,6 +8866,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/398"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjUyNjQyNzk=",
     "is_bot": false,
@@ -8256,6 +8881,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/394"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjUxNzcxNTQx",
     "is_bot": false,
@@ -8270,6 +8896,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/377"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE1Njc4MA==",
     "is_bot": false,
@@ -8284,6 +8911,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/292"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjQxMDY=",
     "is_bot": false,
@@ -8298,6 +8926,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/258"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE1Njc4MA==",
     "is_bot": false,
@@ -8312,6 +8941,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/195"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjEzMzI2Nzk=",
     "is_bot": false,
@@ -8326,6 +8956,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/160"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjk0MzAzNg==",
     "is_bot": false,
@@ -8347,6 +8978,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/125"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjE4MjAzMjU1",
     "is_bot": false,
@@ -8361,6 +8993,7 @@
    "url": "https://github.com/rrweb-io/rrweb/issues/111"
   },
   {
+   "assignees": [],
    "author": {
     "id": "MDQ6VXNlcjczNzA4Njc=",
     "is_bot": false,
