@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the self-contained intake triage board from the 2026-09-03 snapshot."""
+"""Build the self-contained intake triage board from the 2026-10-23 snapshot."""
 
 from __future__ import annotations
 
@@ -68,90 +68,24 @@ def pr(
 
 
 # --- Merge now --------------------------------------------------------------
-pr(
-    1712,
-    "merge-now",
-    reason="console.log → warn. Two-line change. Justin and Eoghan both APPROVED.",
-    next_step="Merge now. Review gate is already clear.",
-    notes="Still open only because nobody pressed the button.",
-    tags=("approved", "posthog-backed"),
-    downstream="In PostHog production. Their own two-line warn fix (posthog-js 3765).",
-)
-pr(
-    1656,
-    "merge-now",
-    reason="Vitest 1.6.1 CVE pin. Justin APPROVED; Eoghan earlier dismissed. DIRTY vs current tree.",
-    next_step="Decide today: merge if the pin is still the intent, otherwise close and rebump vitest in a new PR.",
-    notes="Request-clean-up substance, but it is one of two already-approved PRs.",
-    tags=("approved",),
-    downstream="No PostHog signal.",
-)
+# 1712 merged and 1656 closed on 2026-09-04 / 09-08. Nothing new qualifies.
 
 # --- Community adopt --------------------------------------------------------
 pr(
-    1921,
-    "adopt",
-    reason="ignoreAttribute tagName case. Tests + changeset. Fixes 1916.",
-    next_step="Approve + merge after rebase and green CI.",
-    tags=("waiting-on-review",),
-    related=(1916,),
-)
-pr(
-    1906,
-    "adopt",
-    reason="Regression tests only for CSS crash 1734/1692. Keep this; close 1735.",
-    next_step="Approve + merge after rebase and green CI.",
-    tags=("waiting-on-review",),
-    related=(1734, 1692, 1735, 1920),
-)
-pr(
     1905,
-    "adopt",
-    reason="Omit iframe srcdoc on rebuild. Fixes a race and stops the browser parsing attacker HTML into the iframe. rrdom already omits srcdoc.",
-    next_step="Approve + merge after rebase and green CI.",
-    tags=("strengthens-privacy", "waiting-on-review"),
+    "cleanup",
+    reason="Omit iframe srcdoc on rebuild. Eoghan requested changes 2026-09-08: a sandboxed iframe without allow-same-origin has no contentDocument, so srcdoc is the only copy.",
+    next_step="Author: only drop srcdoc when sandbox is absent or allows same-origin. Eoghan also suggests blanking srcdoc at record time to avoid storing the document twice.",
+    tags=("strengthens-privacy",),
     related=(1736,),
-)
-pr(
-    1904,
-    "adopt",
-    reason="Console plugin this binding. Fixes Chrome extension crash 1772.",
-    next_step="Approve + merge after rebase and green CI.",
-    tags=("waiting-on-review",),
-    related=(1772,),
-)
-pr(
-    1903,
-    "adopt",
-    reason="repository.directory so npm README links resolve. Fixes 1738.",
-    next_step="Approve + merge after rebase and green CI.",
-    tags=("waiting-on-review",),
-    related=(1738,),
+    message="Thanks for picking this up. Eoghan's note above is the blocker: a sandboxed iframe without `allow-same-origin` has no `contentDocument`, so `srcdoc` is the only copy we have. Could you only drop `srcdoc` when `sandbox` is absent or includes `allow-same-origin`? Blanking it at record time, as Eoghan suggests, would also save storing the document twice.",
 )
 pr(
     1856,
     "adopt",
-    reason="Who's using rrweb? logos. Verify the two names, then merge.",
-    next_step="Spot-check the two new names, then approve + merge.",
-    tags=("waiting-on-review",),
-)
-pr(
-    1771,
-    "adopt",
-    reason="autocomplete=off during replay so the reviewer's browser does not prompt-fill passwords.",
-    next_step="Approve + merge after rebase and green CI.",
-    tags=("strengthens-privacy", "waiting-on-review", "posthog-backed"),
-    downstream="In PostHog fork. High-trust heathdutton patch listed as PostHog-adjacent.",
-    related=(1315,),
-)
-pr(
-    1769,
-    "adopt",
-    reason="One-line: emit custom events when seeking. Fixes 1666.",
-    next_step="Approve + merge after rebase and green CI.",
-    tags=("waiting-on-review", "posthog-backed"),
-    downstream="In PostHog fork. High-trust; they listed it as PostHog-adjacent.",
-    related=(1666,),
+    reason="Who's using rrweb? logos. Justin asked for a wordmark logo on 2026-09-08; the square mark looks oversized.",
+    next_step="Author: swap the logo, then merge.",
+    message='Thanks for adding these. Could you swap in a wordmark logo, as Justin mentioned? The square mark renders much larger than the others. Then this can merge.',
 )
 pr(
     1737,
@@ -177,12 +111,6 @@ pr(
     reason="Safer media play/pause. Pair with community 1688; close Justin 1462.",
     next_step="Eoghan: rebase, green CI, merge.",
     related=(1688, 1462, 1798),
-)
-pr(
-    1891,
-    "adopt",
-    reason="master → main leftover refs. Mechanical.",
-    next_step="Justin: merge.",
 )
 pr(
     1732,
@@ -235,14 +163,6 @@ pr(
     downstream="Already in PostHog's fork.",
 )
 pr(
-    1812,
-    "adopt",
-    reason="Always use native Proxy.",
-    next_step="Approve + merge after rebase and green CI.",
-    tags=("posthog-backed",),
-    downstream="Next on PostHog batch-2 list after the July ports. Never executed as a later port; still in their fork.",
-)
-pr(
     1633,
     "adopt",
     reason="Untainted prototype access in Angular. Paul's own PR.",
@@ -253,16 +173,16 @@ pr(
 pr(
     1814,
     "adopt",
-    reason="Untainted add/removeEventListener.",
-    next_step="Nudge/merge. Already running in PostHog.",
+    reason="Untainted add/removeEventListener. Justin requested minor test-setup tweaks on 2026-09-08 and called it ready otherwise.",
+    next_step="Author: make the test-setup tweaks, then merge.",
     tags=("posthog-backed",),
     downstream="PostHog's own PR. In their fork.",
+    message="This is close. Justin's test-setup tweaks are the only thing left; once they're in we can merge.",
 )
 
 # --- Community review -------------------------------------------------------
-pr(1920, "review", reason="Split _cssText on rule boundaries, not the middle of a rule. Related to 1692.", next_step="Assign one reviewer. Related to the CSS crash cluster; keep 1906 tests.", related=(1692, 1906))
-pr(1917, "review", reason="adaptCssInTextMutations player option. Hover rewrite on style text mutations.", next_step="Assign one reviewer. Do not land together with 1897 and Eoghan 1480 — pick one hover approach.", notes="Hover / pseudo-class cluster.", related=(1897, 1480))
-pr(1897, "review", reason="More pseudo-classes on rebuild. Replay quality buyers notice.", next_step="Assign one reviewer. Team still picks 1897 / 1917 / 1480.", tags=("commercial",), related=(1896, 1917, 1480))
+pr(1917, "review", reason="adaptCssInTextMutations player option. Hover rewrite on style text mutations.", next_step="Assign one reviewer. Do not land together with 1897 and Eoghan 1480. Pick one hover approach.", notes="Hover / pseudo-class cluster.", related=(1897, 1480))
+pr(1897, "review", reason="More pseudo-classes on rebuild. Justin (2026-09-16): rrweb-snapshot only, so it needs a forward-compatible path into rrweb before merge. The authors are exploring rrweb.", next_step="Waiting on the author's rrweb version. Team still picks 1897 / 1917 / 1480.", tags=("commercial",), related=(1896, 1917, 1480))
 pr(1796, "review", reason="Preserve class attribute text in hoverElements for [class=\"…\"] selectors.", next_step="Assign one reviewer.")
 pr(1733, "review", reason="absolutifyURLs edge cases. DIRTY. Eoghan requested changes.", next_step="Author owes the perf/implementation fix. Do not re-review from scratch.", tags=("changes-requested",))
 pr(1718, "review", reason="rrdom oldChild detach.", next_step="Assign one reviewer.")
@@ -272,38 +192,53 @@ pr(1638, "review", reason="Parent missing during record/playback. Also listed un
 pr(1635, "review", reason="Iframes + custom elements in Chrome.", next_step="Needs a browser regression test. PostHog nudge, not a free merge.", tags=("posthog-nudge",), downstream="On PostHog's own open-PR nudge list.")
 pr(1586, "review", reason="Chrome grid-template inlining (1395).", next_step="Assign one reviewer. Amplitude independently wrote a grid-template-areas serializer for the same mobile-overlap hole.", related=(1395,), downstream="Amplitude rrweb 126 (unmerged) serializes grid-template-areas faithfully.")
 pr(1357, "review", reason="Inserted styles lost when moving elements. Eoghan requested changes.", next_step="Author: isolate the fix; drop the innerText reflow cost.", tags=("changes-requested",))
-pr(1814, "adopt", reason="Untainted add/removeEventListener.", next_step="Nudge/merge. Already running in PostHog.", tags=("posthog-backed",), downstream="PostHog's own PR. In their fork.")
-pr(1755, "review", reason="Clear mutation buffer on iframe pagehide.", next_step="Review with 1791 as one iframe-lifecycle change. PostHog wants them folded together. Grafana already has a stop-path MutationBuffer reset open.", tags=("posthog-nudge",), downstream="PostHog: fold into a combined iframe-lifecycle PR with 1791. Grafana rrweb 32 resets mutationBuffers on stop.", related=(1791, 1770))
-pr(1791, "review", reason="Iframe memory leaks. DIRTY. Related 1585/1628.", next_step="Review this branch, or fold with 1755. Mixpanel already shipped this PR plus a follow-up; Grafana has an independent IframeManager.reset(). Do not adopt from the PostHog fork — they solved it differently.", tags=("posthog-in-fork",), downstream="Mixpanel shipped this PR (mixpanel/rrweb 8 + 12). Grafana has the same leak class open. PostHog has it in-fork but solved the leak differently.", related=(1585, 1628, 1755, 1770))
+pr(1791, "review", reason="Iframe memory leaks. DIRTY. Related 1585/1628. Since the snapshot, 1755 (iframe pagehide) and 1958 (shadow teardown) merged, and Eoghan's 1971 replaces both helpers.", next_step="Check what 1971 leaves uncovered, then rebase the remainder or close. Do not adopt from the PostHog fork; they solved it differently.", tags=("posthog-in-fork",), downstream="Mixpanel shipped this PR (mixpanel/rrweb 8 + 12). Grafana has the same leak class open. PostHog has it in-fork but solved the leak differently.", related=(1585, 1628, 1971, 1963, 1770))
 pr(1356, "review", reason="Native setTimeout under zone.js. Justin requested changes.", next_step="Author owes the revision. Do not promote on PostHog's review — they declined.", tags=("changes-requested", "posthog-declined", "impacts-privacy"), downstream="PostHog declined: they have their own Zone path.")
 pr(1463, "review", reason="Patched toString returns original. Detection-adjacent; still a correctness fix for apps that inspect native code.", next_step="Assign one reviewer. Weak stealth adjacency — read the privacy note.", tags=("impacts-privacy",), downstream="On PostHog planned batch-2 list; never executed.")
-pr(1873, "review", reason="Native attributeFilter on MutationObserver. Can drop sensitive attribute mutations or drop the mutations masking depends on.", next_step="Privacy review required even though PostHog shipped a port. Fold in shadow bypassOptions + treat [] as unset.", tags=("impacts-privacy", "posthog-shipped"), downstream="Shipped posthog-js 4129. At port time: shadow roots were not filtered; empty [] observed no attributes. No later attributeFilter bugfix.")
+pr(1873, "reject", reason="Native attributeFilter on MutationObserver. Eoghan is leaning wontfix (2026-09-21): a filter hides newly added attributes, which is hard to document safely.", next_step="Close as wontfix once the author has tried 1933's per-element throttling for CPU. Eoghan asked them to test it.", tags=("impacts-privacy", "posthog-shipped"), related=(1933,), downstream="Shipped posthog-js 4129. At port time: shadow roots were not filtered; empty [] observed no attributes. No later attributeFilter bugfix.", message="Thanks for the detailed numbers. We're leaning towards not adding attributeFilter as a record option: any filter stops us seeing newly added attributes, and that gap is hard to document safely. Could you try #1933's per-element throttling on your noisiest site and share CPU numbers? If that covers your case we'll close this one.")
 pr(1373, "review", reason="Allow maskTextClass/blockClass: null to skip default class matching. Perf opt-out that disables a privacy default.", next_step="Privacy read required. Tiny and mergeable, but do not promote on PostHog's review — they declined.", tags=("impacts-privacy", "posthog-declined"), downstream="PostHog declined: unreachable under their hard-coded classes.")
 pr(1726, "review", reason="emitFromIframe for nested iframes. More collection surface.", next_step="Assign one reviewer. Collection-surface change.", tags=("impacts-privacy",))
 pr(1336, "review", reason="Packer compression level. Storage cost.", next_step="Assign one reviewer.", tags=("commercial",))
 pr(1469, "review", reason="Wrap canvas bitmap errors in callbackWrapper.", next_step="Confirm it is still wanted; was on PostHog 3765 adopt-high. Needs tests or a cluster decision.", tags=("posthog-nudge",), downstream="On PostHog 3765 adopt-high; confirm still open and still wanted.")
-pr(1907, "review", reason="Replay mutation DOMException / rrdom swallow.", next_step="Eoghan: review the replay cluster (1907, 1740, 1697, 1320, 1830, 1784, 1694).", related=(88,))
+pr(1907, "review", reason="Replay mutation DOMException / rrdom swallow.", next_step="Eoghan: review the replay cluster (1907, 1740, 1697, 1320, 1830, 1784).", related=(88,))
 pr(1830, "review", reason="Canvas without recordCanvas must still affect layout. DIRTY.", next_step="Eoghan: review in the replay cluster.")
 pr(1784, "review", reason="Strip postcss from record.js. Bundle-size win. Justin requested changes on Eoghan.", next_step="Maintainer-on-maintainer. Finish the thread.", tags=("commercial", "changes-requested"))
 pr(1740, "review", reason="CDATA rebuild throw.", next_step="Eoghan: review in the replay cluster.")
-pr(1694, "review", reason="Mutation emission throttle. Smaller than 1652.", next_step="Review independently. Do not promote on PostHog's review — they declined.", tags=("commercial", "posthog-declined"), downstream="PostHog declined: they already have SDK MutationThrottler; upstream wraps the same emit() checkout uses.")
 pr(1320, "review", reason="500ms stylesheet timeout.", next_step="Eoghan: review in the replay cluster.")
+
+# --- New since 2026-09-03 ---------------------------------------------------
+pr(1970, "adopt", reason="Same-origin iframes re-observed on every full snapshot, so mutations emit N+1 times. 40 lines with a test. Fixes 1967.", next_step="Approve + merge after green CI. Check it still applies if Eoghan's 1971 lands first; both touch the iframe observer path.", related=(1967, 1971))
+pr(1965, "adopt", reason="Skip inlining blocked images. Stops encoding bytes the site asked to block. Tests + changeset. Fixes 1919.", next_step="Approve + merge after green CI.", tags=("strengthens-privacy",), related=(1919, 1964))
+pr(1964, "adopt", reason="A blocked iframe's document was still serialized and observed on load. Small fix.", next_step="Approve + merge after green CI. Same block-means-block theme as 1965.", tags=("strengthens-privacy",), related=(1965, 1919))
+pr(1962, "adopt", reason="Network plugin fallback keeps HTTP status and timing when Resource Timing is unavailable. Fixes 1942.", next_step="Approve + merge after green CI.", related=(1942,))
+pr(1956, "adopt", reason="blob: urls in CSS url() were rewritten into broken relative paths. Tiny fix with a test. Fixes 1955.", next_step="Approve + merge after green CI.", related=(1955,))
+pr(1938, "adopt", reason="rebuild() dropped every attribute on an <img> with srcset and rr_dataURL. One-condition fix with a test. Fixes 1937.", next_step="Approve + merge after green CI. Independent of the 1475 image rework.", related=(1937, 1475))
+pr(1950, "adopt", reason="hookSetter drops the getter in Firefox content scripts, so recorded inputs have no text. Has a test.", next_step="Approve + merge after green CI. Read alongside hookSetter recursion 1313.", related=(1313,))
+pr(1971, "review", reason="Eoghan lands CodingFabian's 1968 on main: releases observers, buffers and listeners the recorder no longer needs. Replaces helpers from merged 1755 and 1958. 12 files.", next_step="Justin: review. Pick between this and Justin's draft 1963 for the stop/teardown path.", tags=("commercial",), related=(1963, 1791, 1970, 1585, 1628))
+pr(1963, "review", reason="Justin's draft: release mutation buffers and snapshots after record()/stop cycles (56.9 MB to 0.35 MB in his test). CONFLICTING.", next_step="Overlaps 1971. Decide which lands, then rebase or close.", tags=("commercial",), related=(1971,))
+pr(1966, "review", reason="Re-send cross-origin iframe snapshots after the parent's full snapshot, and remove the stale message listeners. Fixes 1720.", next_step="Assign one reviewer. Cross-origin message path.", tags=("impacts-privacy",), related=(1720, 1936))
+pr(1949, "review", reason="rrweb-snapshot captures and rebuilds adoptedStyleSheets for direct snapshot() users. 395 lines. Fixes 1567.", next_step="Assign one reviewer. Check it does not double up with rrweb's incremental adopted-style events.", related=(1567, 1626, 1641))
+pr(1934, "review", reason="Justin's native Proxy recovery through the shared iframe lookup. Carries community 1812 forward; 1812 closed 2026-09-08.", next_step="Eoghan: review, then merge.", tags=("posthog-backed",), downstream="PostHog listed 1812 on their batch-2 list; this carries that fix forward.")
+pr(1933, "review", reason="Eoghan: collapse repeated text/attribute mutations while throttled, plus per-element throttling taken from closed 1694. CONFLICTING.", next_step="Rebase. Eoghan asked the 1873 author for CPU numbers before merge.", tags=("commercial",), related=(1873, 1337, 1547))
+pr(1957, "review", reason="Justin: browser-client upload recovery after WebSocket disconnects, bounded retries, Retry-After. 1,000 lines.", next_step="Eoghan: review.", tags=("commercial",), related=(1848,))
+pr(1927, "review", reason="Justin's draft: record drawImage on canvases inside same-origin iframes. More pixels captured. Fixes 1881. CONFLICTING.", next_step="Wait for Justin to mark it ready.", tags=("impacts-privacy",), related=(1881, 1428))
+pr(1951, "review", reason="Justin's draft: rrvideo MP4 export with a controlled clock and optional compositor capture. 3,300 lines.", next_step="Wait for Justin to mark it ready.", tags=("commercial",))
+pr(1961, "review", reason="Changesets release PR (Version Packages). Ships 1928 annotations and the fixes merged since 2026-10-02.", next_step="Merge when the team wants to publish.", message="Release PR from Changesets. Merge when we want to publish; nothing to review beyond the changelog.")
+pr(1954, "cleanup", reason="Justin: public timeline-marker API on rrweb-player. CONFLICTING. Eoghan asked (2026-10-20) whether it builds on merged 1928 or is now redundant.", next_step="Justin: answer Eoghan, then rebase or close.", tags=("commercial",), message="Does this build on #1928 now that it's merged, or does #1928 cover it? If it still adds something, a rebase onto current `main` would let us review it.")
+pr(1936, "discuss", reason="Justin's draft: stop the web extension forwarding cross-origin frame data to the parent page. Eoghan asked whether frames would then record separately.", next_step="Team meeting. Privacy fix against the one-stitched-recording design of the extension.", tags=("strengthens-privacy",), related=(1966, 1909))
 
 # --- Discuss ----------------------------------------------------------------
 pr(1914, "discuss", reason="Heatmap / click-track plugin. Extra semantic click payload (selector/text). PII in button labels.", next_step="Team meeting. Do not merge from the thread.", tags=("impacts-privacy", "commercial"))
 pr(1900, "discuss", reason="Records alert/confirm/prompt. prompt() is often credentials or PII.", next_step="Team meeting. Completeness vs PII.", tags=("impacts-privacy", "commercial"))
-pr(1909, "discuss", reason="Extension upload to api.rrweb.com with a stored bearer token. Data leaves the machine. Draft.", next_step="Team meeting with 1908. Close unless Cloud upload is a 2.x goal.", tags=("impacts-privacy", "commercial"), related=(1908,))
-pr(1908, "discuss", reason="Chrome Web Store publish recovery. Pairs with 1909.", next_step="Team meeting with 1909.", tags=("commercial",), related=(1909,))
+pr(1909, "discuss", reason="Extension upload to api.rrweb.com with a stored bearer token. Data leaves the machine. Draft. Its pair 1908 merged 2026-09-04.", next_step="Team meeting. Close unless Cloud upload is a 2.x goal.", tags=("impacts-privacy", "commercial"), related=(1936,))
 pr(1861, "discuss", reason="Cloud-bound sequence IDs / browser-client defaults.", next_step="Team meeting. Product + privacy defaults (maskAllInputs: true already in this repository).", tags=("impacts-privacy", "commercial"), related=(1848,))
-pr(1848, "discuss", reason="Browser-client next release + assets. UNSTABLE draft.", next_step="Team meeting with 1475/1861. Do not land as-is.", tags=("impacts-privacy", "commercial"), related=(1475, 1861, 1239))
-pr(1475, "discuss", reason="Asset events capture image/media bytes. Retention and PII-in-images. Successor to Justin 1239.", next_step="Team meeting. Close Justin draft 1239.", tags=("impacts-privacy", "commercial"), related=(1239, 1848, 860))
+pr(1848, "discuss", reason="Browser-client next release + assets. UNSTABLE draft.", next_step="Team meeting with 1475/1861. Do not land as-is.", tags=("impacts-privacy", "commercial"), related=(1475, 1861, 1957))
+pr(1475, "discuss", reason="Asset events capture image/media bytes. Retention and PII-in-images. Justin's 1239 closed 2026-09-04 in its favor; Justin called this one final-stage on 2026-09-09.", next_step="Team meeting before merge. Justin expects it to cover image bug 1937 too.", tags=("impacts-privacy", "commercial"), related=(1848, 860, 1937))
 pr(1046, "discuss", reason="WebRTC streaming of <video>. Live biometric / meeting content. Draft, stale.", next_step="Close unless live video is a 2.x goal. Also a maintainer-close candidate.", tags=("impacts-privacy", "commercial", "maintainer-close"))
 pr(1465, "discuss", reason="Parent forces a snapshot in a cross-origin iframe via postMessage. Eoghan requested changes.", next_step="Author + testcase needed. Security-origin discussion.", tags=("impacts-privacy", "changes-requested"))
 pr(1023, "discuss", reason="Inject recorder from another frame / custom Window. Changes the security origin story.", next_step="Team meeting. Preferable to Eoghan 294 if this is needed at all.", tags=("impacts-privacy",), related=(294,))
 pr(1739, "discuss", reason="Records attachShadow({mode:'closed'}). Closed shadow was an isolation boundary.", next_step="Team meeting. High replay-fidelity win, real privacy/ToS issue. Amplitude and Highlight both needed this in production.", tags=("impacts-privacy", "commercial"), downstream="Amplitude opened a closed-shadow mutation port (amplitude/rrweb 102, unmerged). Highlight has a Salesforce LWC / closed-shadow PR (highlight/rrweb 118).")
 pr(1877, "discuss", reason="Changeset compress. Process, not product.", next_step="Agenda: process decision, not a code review.")
-pr(1871, "discuss", reason="inlineStylesheet / inlineImages not deprecated. Ties to assets. Draft.", next_step="Discuss with the assets decision (1475).", tags=("impacts-privacy",), related=(1475,))
-pr(1652, "discuss", reason="Large mutation-ordering refactor. Tests are good; blast radius is not a solo review.", next_step="Team meeting. Fold 1653/1300/1302 into this or land 1302 separately.", tags=("commercial",), related=(1653, 1300, 1302))
 pr(1483, "discuss", reason="<link rel=stylesheet> + mutations. Collides with 1917/1897. Draft.", next_step="Team picks one hover/stylesheet approach.", related=(1917, 1897, 1480))
 pr(1480, "discuss", reason="Hover rewrite via stylesheet mutation. Same collision. Draft.", next_step="Team picks 1897 / 1917 / 1480.", related=(1897, 1917, 1483))
 pr(1015, "discuss", reason="Split monkeypatching into rrweb-init.js. Draft. Also a close-if-abandoned candidate.", next_step="Discuss isolation model, or close the stale draft.", tags=("impacts-privacy", "maintainer-close"))
@@ -341,14 +276,14 @@ pr(1428, "cleanup", reason="Canvas inside iframe/shadow. More pixels. Best of th
 pr(1392, "cleanup", reason="Protocol URL regex. DIRTY, tiny.", next_step="Rebase the one-liner or close and re-file.")
 pr(1212, "cleanup", reason="Custom mask selector / maskTextFn improvements. Stale, DIRTY.", next_step="Rebase onto the privacy discussion. Do not land as a parallel knob.", tags=("strengthens-privacy", "privacy-overlap"))
 pr(815, "cleanup", reason="skipActivity on setConfig.", next_step="Testcase needed.")
-pr(1302, "cleanup", reason="addList perf / addedSet order. Draft. 7-line fix PostHog already shipped.", next_step="Optional same-day: land this instead of waiting on 1652. Keep has→delete→add. Also take PostHog 4697 empty-payload reset (still missing in this tree).", tags=("posthog-shipped",), downstream="Shipped posthog-js 4130. They almost diverged to Set.delete; reverted to upstream has→delete→add. Later 4697: empty-payload early return skips addedSet/droppedSet reset — still present here.", related=(1652, 1300))
-pr(1300, "cleanup", reason="addList perf sibling of 1302. Draft. Fold into 1652.", next_step="Fold into 1652 or close in favor of 1302.", related=(1652, 1302))
+pr(1302, "cleanup", reason="addList perf / addedSet order. Draft. 7-line fix PostHog already shipped. 1652 merged 2026-09-17 and rewrote mutation processing.", next_step="Check whether 1652 already covers it; close if so. Also check PostHog 4697's empty-payload reset against the new code.", tags=("posthog-shipped",), downstream="Shipped posthog-js 4130. They almost diverged to Set.delete; reverted to upstream has→delete→add. Later 4697: empty-payload early return skips addedSet/droppedSet reset — still present here.", related=(1300,))
+pr(1300, "cleanup", reason="addList perf sibling of 1302. Draft. 1652 merged 2026-09-17.", next_step="Close if 1652 covers it; otherwise close in favor of 1302.", related=(1302,))
 pr(1290, "cleanup", reason="rrvideo Chrome launch options.", next_step="Ask for rebase + why, or close.")
 pr(960, "cleanup", reason="Custom event in checkout count. Draft, 4 lines, 2022.", next_step="Land the four lines or close as abandoned.")
 pr(863, "cleanup", reason="Save/view snapshot scripts. Better as a recipe than a package dump.", next_step="Move to a recipe or close.")
 pr(768, "cleanup", reason="Dynamic inline-style URLs. Eoghan requested changes. Very stale.", next_step="Author: rebase onto current transform utilities. Very stale — close if silent.", tags=("changes-requested",))
 pr(1730, "cleanup", reason="rrdom-to-html trim. Rare CLEAN status; still needs a why.", next_step="Eoghan: add the why or close.")
-pr(1653, "cleanup", reason="Micro perf. Fold into 1652 or drop.", next_step="Fold into 1652 or close.", related=(1652,))
+pr(1653, "cleanup", reason="Micro perf on top of 1652, which merged 2026-09-17.", next_step="Rebase onto main if it still helps; otherwise close.")
 pr(1534, "cleanup", reason="Export isBlocked. Lets hosts implement their own policy; easy to misuse. Draft.", next_step="Decide whether exporting the predicate is the API, then rebase.", tags=("impacts-privacy",))
 pr(1466, "cleanup", reason="History-change tests only. Draft.", next_step="Land if they pass.")
 pr(1322, "cleanup", reason="Failing CSS shorthand test. Draft.", next_step="Make it an issue, not a red PR.")
@@ -365,7 +300,7 @@ pr(1790, "cleanup", reason="Privacy recipe docs. Author notes they were not veri
 # --- Reject -----------------------------------------------------------------
 pr(1610, "reject", reason="Exact older duplicate of 1745.", next_step="Close in favor of 1745. The hidden-input bug remains.", tags=("strengthens-privacy",), related=(1745, 1609), notes="Keep 1745.")
 pr(1798, "reject", reason="Weaker duplicate of 1688.", next_step="Close in favor of 1688 + Eoghan 1673. Mixpanel already shipped this weaker variant.", related=(1688, 1673), downstream="Mixpanel rrweb 10 cites this PR as the upstream they shipped.")
-pr(1735, "reject", reason="Crash already handled by merged 1580 / 1600. Keep regression-only 1906.", next_step="Close. Point at 1906 and split-point 1920.", related=(1906, 1920, 1734, 1692))
+pr(1735, "reject", reason="Crash already handled by merged 1580 / 1600. Regression tests merged in 1906/1931 and the split-point fix in 1948.", next_step="Close. Point at 1906 and 1948.", related=(1734, 1692), message='Closing: the crash is handled by #1580 and #1600, the regression tests landed in #1906 and #1931, and the split-point fix landed in #1948. Thanks for the report and the patch.')
 pr(1679, "reject", reason="Sender-origin is not validated; narrower than 1800.", next_step="Close in favor of the 1800 allowlist if that is the chosen model.", tags=("strengthens-privacy",), related=(1800, 1256, 1680))
 pr(1256, "reject", reason="Earlier safeCrossOrigin sketch. Superseded by 1800.", next_step="Close in favor of 1800.", related=(1800, 1679))
 pr(1413, "reject", reason="Superseded by 1428.", next_step="Close in favor of 1428.", tags=("posthog-in-fork",), downstream="In PostHog fork — do not adopt from that fact.", related=(1428, 1235))
@@ -377,11 +312,10 @@ pr(1416, "reject", reason="waiting-for-more-info, no author follow-up.", next_st
 pr(549, "reject", reason="No info since 2021.", next_step="Close as abandoned.")
 pr(1477, "reject", reason="Stale pre-commit prettier. Close; re-file repo-wide if wanted.", next_step="Eoghan: close.", tags=("maintainer-close",))
 pr(724, "reject", reason="__sn / iframe id; unreproducible, mirror replaced it.", next_step="Eoghan: close.", tags=("maintainer-close", "posthog-in-fork"), downstream="In PostHog fork — do not adopt from that fact. We already reject.")
-pr(558, "reject", reason="Timestamp ordering; no reliable tests, later pipelines ate it.", next_step="Eoghan: close.", tags=("maintainer-close",), downstream="On PostHog planned batch-2; do not adopt. We already reject.")
+pr(558, "review", reason="Ascending timestamps. Eoghan revived it on 2026-09-21 with a changeset and a corpus analysis: about 54% more mousemove events, same positions, negligible extra bytes.", next_step="Second maintainer review, then merge.", downstream="On PostHog planned batch-2.", message="Eoghan's corpus analysis answers the open question from 2021: about 54% more mousemove events, same positions, negligible extra bytes. Needs a second maintainer review, then it can merge.")
 pr(389, "reject", reason="Destructor against the old snapshot repo. Redesign if still needed.", next_step="Eoghan: close.", tags=("maintainer-close",))
 pr(294, "reject", reason="window.top / window.top.document. Cross-frame privilege grab. Six years stale.", next_step="Eoghan: close.", tags=("maintainer-close", "impacts-privacy"))
 pr(1462, "reject", reason="Media-target bug; superseded by Eoghan 1673 + community 1688.", next_step="Justin: close.", tags=("maintainer-close", "posthog-in-fork"), downstream="In PostHog fork — do not adopt from that fact.", related=(1673, 1688))
-pr(1239, "reject", reason="Asset events v1. Eoghan already pointed review at 1475.", next_step="Justin: close in favor of Eoghan 1475.", tags=("maintainer-close", "impacts-privacy", "commercial", "changes-requested"), related=(1475,))
 
 
 ISSUE: dict[int, dict] = {}
@@ -411,35 +345,38 @@ def issue(
     }
 
 
-issue(1916, "adopt", reason="Fixed by PR 1921.", next_step="Merge PR 1921, then close.", related=(1921,))
-issue(1772, "adopt", reason="Fixed by PR 1904.", next_step="Merge PR 1904, then close.", related=(1904,))
-issue(1738, "adopt", reason="Fixed by PR 1903.", next_step="Merge PR 1903, then close.", related=(1903,))
-issue(1736, "adopt", reason="Fixed by PR 1905.", next_step="Merge PR 1905, then close.", tags=("strengthens-privacy",), related=(1905,))
-issue(1666, "adopt", reason="Fixed by PR 1769.", next_step="Merge PR 1769, then close.", related=(1769,))
+issue(1736, "adopt", reason="PR 1905 fixes it once Eoghan's sandbox change is in.", next_step="Close when 1905 merges.", tags=("strengthens-privacy",), related=(1905,))
 issue(1609, "adopt", reason="Hidden-input leak. Merge 1745, not 1610.", next_step="Merge PR 1745 (not 1610), then close.", tags=("strengthens-privacy",), related=(1745, 1610))
-issue(1315, "adopt", reason="Fixed by PR 1771.", next_step="Merge PR 1771, then close.", tags=("strengthens-privacy",), related=(1771,))
+issue(1315, "adopt", reason="Fixed by PR 1771, merged 2026-09-08.", next_step="Close.", tags=("strengthens-privacy",), message='Fixed by #1771, merged 2026-09-08. Closing.')
 issue(1680, "adopt", reason="Cross-origin iframe origins. Land 1800, not 1679.", next_step="Land 1800’s allowlist after the security discussion, then close.", tags=("strengthens-privacy",), related=(1800, 1679))
 issue(1675, "adopt", reason=":hover regex overflow. PR 1681.", next_step="Merge PR 1681 after changeset, then close.", related=(1681,))
-issue(1734, "adopt", reason="CSS crash already handled by merged 1580/1600.", next_step="Close against merged 1580/1600; keep tests 1906 and split-point PR 1920.", related=(1692, 1906, 1920, 1735))
-issue(1692, "adopt", reason="CSS crash already handled by merged 1580/1600.", next_step="Close against merged 1580/1600; keep tests 1906 and split-point PR 1920.", related=(1734, 1906, 1920, 1735))
+issue(1734, "adopt", reason="CSS crash handled by merged 1580/1600. Tests merged in 1906/1931, split-point fix in 1948.", next_step="Close against 1580/1600, 1906 and 1948.", related=(1692, 1735), message='Closing: the crash is handled by #1580 and #1600, regression tests landed in #1906 and #1931, and #1948 fixed the split points. Please open a new issue with a reproduction on the latest release if you still see it.')
+issue(1692, "adopt", reason="CSS crash handled by merged 1580/1600. Tests merged in 1906/1931, split-point fix in 1948.", next_step="Close against 1580/1600, 1906 and 1948.", related=(1734, 1735), message='Closing: the crash is handled by #1580 and #1600, regression tests landed in #1906 and #1931, and #1948 fixed the split points. Please open a new issue with a reproduction on the latest release if you still see it.')
 issue(874, "adopt", reason="Has PR 1097. Same masking hole as 1385/1488.", next_step="Do not close until the masking discussion lands.", tags=("strengthens-privacy",), related=(1097, 1385, 1488))
 
-issue(1919, "review", reason="Blocked <img> still pays the full inlineImages encode. Block is a privacy control; encoding the bytes anyway is a leak plus a perf bug.", next_step="Assign an owner. Privacy + commercial.", tags=("strengthens-privacy", "commercial"))
-issue(1881, "review", reason="Canvas mutations in same-origin iframes.", next_step="Assign an owner.", tags=("impacts-privacy", "commercial"))
+issue(1967, "adopt", reason="Same-origin iframe re-observed on every full snapshot; mutations emitted N+1 times. PR 1970.", next_step="Merge PR 1970, then close.", related=(1970, 1971))
+issue(1959, "adopt", reason="Detached shadow trees retained. Same author's PR 1958 merged 2026-10-22 but did not auto-close this.", next_step="Close against 1958.", message='Fixed by #1958, merged 2026-10-22. Thanks for both the report and the fix. Closing.')
+issue(1955, "adopt", reason="blob: urls in CSS url() recorded as broken relative paths. PR 1956.", next_step="Merge PR 1956, then close.", related=(1956,))
+issue(1942, "adopt", reason="Network fallback drops status and timing. PR 1962.", next_step="Merge PR 1962, then close.", related=(1962,))
+issue(1937, "adopt", reason="rebuild() strips attributes from <img> with srcset. PR 1938. Justin expects the 1475 image rework to cover it too.", next_step="Merge PR 1938, then close.", related=(1938, 1475))
+issue(1925, "review", reason="Justin's plan for browser-ready preview assets on preview.cdn.rrweb.com. 1926 already ships npm previews via pkg.pr.new.", next_step="Justin owns it. No intake action.", tags=("maintainer",), message="Tracking issue for preview assets. Justin owns it; no intake action needed.")
+
+issue(1919, "adopt", reason="Blocked <img> still pays the full inlineImages encode. Block is a privacy control; encoding the bytes anyway is a leak plus a perf bug.", next_step="Merge PR 1965, then close.", tags=("strengthens-privacy", "commercial"), related=(1965, 1964))
+issue(1881, "review", reason="Canvas mutations in same-origin iframes. Justin has draft PR 1927.", next_step="Close when 1927 merges.", related=(1927,), tags=("impacts-privacy", "commercial"))
 issue(1816, "review", reason="<select> wrong during forward play, right on seek.", next_step="Assign an owner. Repro-able replay bug.")
 issue(1786, "review", reason="UMD global inconsistency.", next_step="Assign an owner.", tags=("commercial",))
 issue(1785, "review", reason="Record bundle size.", next_step="Assign an owner.", tags=("commercial",), related=(1742,))
 issue(1742, "review", reason="Record bundle size.", next_step="Assign an owner.", tags=("commercial",), related=(1785,))
 issue(1724, "review", reason="Web-extension broken.", next_step="Assign an owner.", tags=("commercial",))
-issue(1720, "review", reason="Cross-origin iframe blanks after parent fullSnapshot.", next_step="Assign an owner.")
+issue(1720, "review", reason="Cross-origin iframe blanks after parent fullSnapshot. PR 1966 fixes it.", next_step="Review PR 1966.", related=(1966,))
 issue(1707, "review", reason="Memory/CPU on rel=preload links.", next_step="Assign an owner. PostHog and Sprig already shipped a production fix for the endless preload-as-style poll.", downstream="PostHog posthog-js 3667 shipped. Sprig/UserLeap rrweb 2 cites this issue and that port.")
 issue(1701, "review", reason="Popover API. Modern UI fidelity.", next_step="Assign an owner.", tags=("commercial",))
 issue(1690, "review", reason="Mobile DOM order.", next_step="Assign an owner.")
 issue(1667, "review", reason="background shorthand expands empty. Related CSSOM bugs.", next_step="Assign an owner.")
-issue(1628, "review", reason="Stop-recording / iframe leaks. Pair with PR 1791/1770.", next_step="Pair with PR 1791/1770.", related=(1585, 1791, 1770))
-issue(1585, "review", reason="Iframe leaks. Pair with PR 1791/1770.", next_step="Pair with PR 1791/1770.", related=(1628, 1791, 1770))
+issue(1628, "review", reason="Stop-recording / iframe leaks. 1755 and 1958 merged; 1971 and 1963 target the rest.", next_step="Re-test after 1971 or 1963 lands, then close.", related=(1585, 1971, 1963, 1791))
+issue(1585, "review", reason="Iframe leaks. 1755 and 1958 merged; 1971 and 1963 target the rest.", next_step="Re-test after 1971 or 1963 lands, then close.", related=(1628, 1971, 1963, 1791))
 issue(1626, "review", reason="Adopted stylesheets missing from first full snapshot.", next_step="Assign an owner. Amplitude already ships the full-snapshot inline.", related=(1567,), downstream="Amplitude rrweb 101.")
-issue(1567, "review", reason="Adopted stylesheets missing from first full snapshot.", next_step="Assign an owner. Amplitude already ships the full-snapshot inline.", related=(1626,), downstream="Amplitude rrweb 101.")
+issue(1567, "review", reason="Adopted stylesheets missing from first full snapshot. PR 1949 covers the rrweb-snapshot side.", next_step="Review PR 1949. Amplitude already ships the full-snapshot inline.", related=(1626, 1949), downstream="Amplitude rrweb 101.")
 issue(1577, "review", reason="Duplicate cross-origin message listeners.", next_step="Assign an owner.", tags=("impacts-privacy",), related=(1590,))
 issue(1590, "review", reason="Duplicate cross-origin message listeners.", next_step="Assign an owner.", tags=("impacts-privacy",), related=(1577,))
 issue(1564, "review", reason="Table alignment in replay.", next_step="Assign an owner.")
@@ -453,13 +390,12 @@ issue(1699, "review", reason="Inline/blob workers vs CSP.", next_step="Keep open
 issue(88, "review", reason="removeChild DOMException. Ancient, 17 comments; may already be PR 1907.", next_step="Check whether PR 1907 covers it before closing.", related=(1907,))
 
 issue(1918, "discuss", reason="inlineImages encodes full natural resolution with no cap. Retention cost and high-res PII.", next_step="Team meeting.", tags=("impacts-privacy", "commercial"))
-issue(1913, "discuss", reason="UNSAFE_replayCanvas adds allow-scripts. Documented unsafe, still a footgun.", next_step="Answer with the sandbox ADR, then close or turn into implement-the-ADR.", tags=("impacts-privacy",), related=(1817,))
+issue(1913, "discuss", reason="UNSAFE_replayCanvas adds allow-scripts. Documented unsafe, still a footgun.", next_step="Answer with the sandbox ADR, then close or turn into implement-the-ADR.", tags=("impacts-privacy",), related=())
 issue(1899, "discuss", reason="Replay pre-process plugins.", next_step="Team meeting.", tags=("commercial",))
-issue(1896, "discuss", reason="More pseudo-classes. PR 1897.", next_step="Decide with PR 1897.", tags=("commercial",), related=(1897,))
+issue(1896, "discuss", reason="More pseudo-classes. PR 1897. Justin replied 2026-09-16; the authors are exploring an rrweb-level version.", next_step="Decide with PR 1897.", tags=("commercial",), related=(1897,))
 issue(1880, "discuss", reason="Record a subtree only. Can strengthen privacy (less capture) and is commercially useful for widgets.", next_step="Team meeting with 1659 / 111.", tags=("impacts-privacy", "commercial"), related=(1659, 111))
 issue(1659, "discuss", reason="Record a subtree only.", next_step="Team meeting with 1880 / 111.", tags=("impacts-privacy", "commercial"), related=(1880, 111))
 issue(111, "discuss", reason="Record a subtree only.", next_step="Team meeting with 1880 / 1659.", tags=("impacts-privacy", "commercial"), related=(1880, 1659))
-issue(1817, "discuss", reason="Rebuild may execute scripts. This repo already has the sandboxed-rebuild ADR.", next_step="Answer with the sandbox ADR.", tags=("impacts-privacy",), related=(1913,))
 issue(1773, "discuss", reason="Remote control / MITM. Recommend reject, but confirm the product line.", next_step="Confirm out of scope, then close with 987.", tags=("commercial", "impacts-privacy"), related=(987,))
 issue(987, "discuss", reason="Remote control / MITM. Recommend reject.", next_step="Confirm out of scope, then close with 1773.", tags=("commercial", "impacts-privacy"), related=(1773,))
 issue(1671, "discuss", reason="When is 2.0? Trust and adoption.", next_step="Write one public status, then close 1664/1778/1420 as answered here.", tags=("commercial",), related=(1664, 1778, 1420))
@@ -474,8 +410,8 @@ issue(398, "discuss", reason="Session cutter / clip.", next_step="Team meeting w
 issue(160, "discuss", reason="Session cutter / clip.", next_step="Team meeting with 1149 / 1560 / 398.", tags=("commercial",), related=(1149, 1560, 398))
 issue(1528, "discuss", reason="Sanitization vs sandbox. Same debate as the ADR.", next_step="Answer with the sandbox ADR.", tags=("impacts-privacy",))
 issue(1491, "discuss", reason="CSS animation currentTime.", next_step="Team meeting.", tags=("commercial",))
-issue(1337, "discuss", reason="Full snapshot perf.", next_step="Team meeting. Related to 1694 / 1547.", tags=("commercial",), related=(1694, 1547))
-issue(1547, "discuss", reason="Snapshot / mutation perf. Related to PR 1694.", next_step="Review with PR 1694.", tags=("commercial",), related=(1694, 1337))
+issue(1337, "discuss", reason="Full snapshot perf.", next_step="Team meeting. Related to 1933 / 1547.", tags=("commercial",), related=(1933, 1547))
+issue(1547, "discuss", reason="Snapshot / mutation perf. 1652 merged 2026-09-17; 1933 carries the throttling from closed 1694.", next_step="Re-measure after 1933, then close or keep.", tags=("commercial",), related=(1933, 1337))
 issue(1143, "discuss", reason="Web Animations API.", next_step="Team meeting.", tags=("commercial",))
 issue(419, "discuss", reason="rrdom as an analytics engine. Strategic, not a bug.", next_step="Keep until the matching discussion happens.", tags=("commercial",))
 issue(860, "discuss", reason="Deferred / asset events. The assets PRs.", next_step="Discuss with 1475 / 1848.", tags=("impacts-privacy", "commercial"), related=(1475, 1848))
@@ -599,9 +535,6 @@ PH_NUDGE = ev(
 # Links to the vendor PR/issue that provides the evidence. Only rows we
 # actually opened. Datadog is an in-tree fork that has diverged.
 EVIDENCE: dict[int, list[dict]] = {
-    1712: [ev("PostHog/posthog-js#3765", f"{PH}/issues/3765", "Their own two-line warn fix; listed as already in the fork / APPROVED upstream.")],
-    1771: [PH_ADOPT],
-    1769: [PH_ADOPT],
     1737: [PH_ADOPT],
     1802: [PH_ALREADY],
     1688: [
@@ -614,7 +547,6 @@ EVIDENCE: dict[int, list[dict]] = {
     ],
     1711: [PH_ALREADY],
     1770: [PH_ALREADY],
-    1812: [PH_ADOPT],
     1633: [
         PH_ALREADY,
         ev("amplitude/rrweb#61", f"{AMP}/pull/61", "Shipped better Angular zone / unpatched-prototype detection."),
@@ -622,6 +554,7 @@ EVIDENCE: dict[int, list[dict]] = {
     ],
     1814: [PH_ADOPT],
     1697: [ev("PostHog/posthog-js#4131", f"{PH}/pull/4131", "Shipped adopt of this PR (plus a Set hoist). Checkout timers can still unfreeze.")],
+    1934: [PH_ADOPT],
     1873: [ev("PostHog/posthog-js#4129", f"{PH}/pull/4129", "Shipped adopt. At port time: shadow roots were not filtered; empty [] observed no attributes.")],
     1302: [
         ev("PostHog/posthog-js#4130", f"{PH}/pull/4130", "Shipped adopt. They kept has→delete→add."),
@@ -649,10 +582,6 @@ EVIDENCE: dict[int, list[dict]] = {
         ev("mixpanel/rrweb#8", f"{MX}/pull/8", "Explicit port of this PR. Shipped iframe teardown + removeNodeFromMapPermanently."),
         ev("mixpanel/rrweb#12", f"{MX}/pull/12", "Follow-up: recurse iframe contentDocument children so the mirror does not pin GC."),
         ev("grafana/rrweb#41", f"{GF}/pull/41", "Same leak class: IframeManager.reset() on stop. Independent, still open on their fork."),
-    ],
-    1755: [
-        PH_NUDGE,
-        ev("grafana/rrweb#32", f"{GF}/pull/32", "Same stop-path: reset all MutationBuffer collections and empty the mutationBuffers registry. Open on their fork."),
     ],
     1739: [
         ev("amplitude/rrweb#102", f"{AMP}/pull/102", "Closed-mode shadow mutation capture (patchAttachShadow used element.shadowRoot which is null for closed roots). Open, not merged."),
@@ -697,7 +626,6 @@ EVIDENCE: dict[int, list[dict]] = {
     1257: [PH_ADOPT],
     1356: [PH_DECLINE],
     1373: [PH_DECLINE],
-    1694: [PH_DECLINE],
     1313: [PH_ADOPT],
     1463: [PH_ADOPT],
     1428: [PH_ADOPT],
@@ -724,7 +652,6 @@ EVIDENCE_TAGS: dict[int, tuple[str, ...]] = {
     1791: ("mixpanel-backed", "grafana-backed"),
     1633: ("amplitude-backed", "newrelic-backed"),
     1691: ("grafana-backed",),
-    1755: ("grafana-backed",),
     1739: ("amplitude-backed", "highlight-backed"),
     1586: ("amplitude-backed",),
     1395: ("amplitude-backed",),
@@ -897,7 +824,7 @@ def assemble() -> list[dict]:
             missing_prs.append(n)
             overlay = {
                 "triage": "review",
-                "reason": "Open at snapshot; not given a dedicated row in the first-pass tables.",
+                "reason": "Open at snapshot; not given a dedicated row.",
                 "notes": "",
                 "next": "Skim title and files; then bucket.",
                 "tags": [],
@@ -1040,7 +967,7 @@ HTML_HEAD = r"""<!DOCTYPE html>
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>rrweb intake triage — 2026-09-03</title>
+<title>rrweb intake triage — 2026-10-23</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -1185,7 +1112,7 @@ HTML_HEAD = r"""<!DOCTYPE html>
 <header class="page">
   <h1>rrweb-io/rrweb intake triage</h1>
   <p class="lede">
-    Snapshot 2026-09-03. Numbers link upstream; vendor links go to the PR that provides the evidence.
+    Snapshot 2026-10-23. Numbers link upstream; vendor links go to the PR that provides the evidence.
   </p>
   <div class="prefilters" id="prefilters"></div>
   <div class="toolbar">
@@ -1292,7 +1219,7 @@ const SORTS = [
 
 const state = { pre: "merge-now", kind: "all", who: "all", q: "", sort: "recency", showDone: false };
 
-const DONE_KEY = "rrweb-triage-done:2026-09-03";
+const DONE_KEY = "rrweb-triage-done:2026-10-23";
 
 function itemKey(item) {
   return item.kind + ":" + item.id;
@@ -1494,7 +1421,7 @@ function render() {
       `<button type="button" data-sort="${s.id}" class="${state.sort === s.id ? "active" : ""}">${esc(s.label)}</button>`
     ).join("");
   document.getElementById("meta-count").textContent =
-    `${list.length} shown · ${doneCount()} done in this browser · snapshot 2026-09-03`;
+    `${list.length} shown · ${doneCount()} done in this browser · snapshot 2026-10-23`;
   document.getElementById("board").innerHTML = list.length
     ? list.map(renderRow).join("")
     : `<p class="empty-board">No rows match these filters.</p>`;

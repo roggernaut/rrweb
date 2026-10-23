@@ -5,7 +5,10 @@ Open that file in a browser for filters, sorts, tags, downstream evidence,
 and links. This markdown is the research notes behind the board.
 
 A snapshot proposal for restarting pull-request and issue intake on
-rrweb-io/rrweb. Taken 2026-09-03 from public GitHub read-only APIs.
+rrweb-io/rrweb. First taken 2026-09-03 and refreshed 2026-10-23 from public
+GitHub read-only APIs. The board reflects 2026-10-23. Sections below the
+changelog are the original 2026-09-03 research; where they disagree with the
+board, the board wins.
 This is a working document, not a decision log: buckets can change after
 maintainer review.
 
@@ -14,26 +17,67 @@ written as plain numbers, not tracker URLs, so this file does not create
 GitHub cross-references. Look them up under the project's Pull requests
 or Issues tabs.
 
-- Open PRs: **138** (19 drafts). Oldest: 2020-08 (294). Newest: 2026-09-02 (1921).
-  **52 are from core maintainers** (Eoghan 29, Justin 22, Yun 1); the other 86 are community.
-- Open issues: **289**. Oldest: 2019-07 (88). Newest: 2026-09-01 (1919).
-- Upstream `main` HEAD at snapshot: `37a946a5` (docs 1910).
+- Open PRs: **140** (21 drafts). Oldest: 2020-08 (294). Newest: 2026-10-22 (1971).
+  **55 are from core maintainers** (Eoghan 28, Justin 26, Yun 1); the other 85 are community.
+- Open issues: **290**. Oldest: 2019-07 (88). Newest: 2026-10-18 (1967).
+- Upstream `main` HEAD at refresh: `009b2dd4` (shadow DOM leak fix 1958).
 - This repository also contains privacy-at-capture work that is ahead of
   upstream `main`. Several open masking PRs overlap that work; they should
   not be merged as parallel APIs.
 - A second pass over 62 older PRs tightened duplicates and already-fixed
   patches (CSS crash 1735, media-target cluster, asset draft 1239, etc.).
 - Most of the queue is waiting on review, not on authors. GitHub
-  `reviewDecision` on 2026-09-03: **125 REVIEW_REQUIRED**, 9
-  CHANGES_REQUESTED, 2 APPROVED and still open, 2 with no decision.
-  Branch protection requires a human review. 107 PRs share an `updatedAt`
-  of 2026-06-08 (a bulk touch, not a review pass).
+  `reviewDecision` on 2026-10-23: **124 REVIEW_REQUIRED**, 10
+  CHANGES_REQUESTED, 4 APPROVED and still open, 2 with no decision.
+  Branch protection requires a human review. 97 PRs still share an
+  `updatedAt` of 2026-06-08 (a bulk touch, not a review pass).
 
 The queue is years of un-triaged patches plus bugs that never got a
 reproduction. A practical restart is to **accept a small high-confidence
 slice, discuss a handful of product and privacy forks, and close or
 bounce the rest with a short explanation**. The two already-approved PRs
 can merge as soon as someone presses the button.
+
+---
+
+## Since 2026-09-03
+
+The review session on 2026-09-08 cleared most of the merge-now and adopt
+slice. Resolved items are off the board.
+
+**Merged:** 1712 (09-04), 1908 (09-04), 1769, 1771, 1891, 1903, 1904, 1906,
+1921 (all 09-08), 1652 (09-17), 1755 (10-22). Maintainers also merged new
+work that was never on the board: 1931 (CSS crash tests), 1948 (splitCssText
+fix, replacing 1920), 1928 (annotation events), 1958 (shadow DOM leaks), plus
+browser-client and CI fixes.
+
+**Closed without merge:** 1239 (in favor of 1475), 1656, 1694 (throttling
+carried into 1933), 1812 (carried into 1934), 1871, 1920.
+
+**Issues closed:** 1666, 1738, 1772, 1817, 1916.
+
+**Decisions moved by maintainer activity:**
+
+- 1873 attributeFilter: Eoghan is leaning wontfix and pointed the author at
+  1933. Moved to Reject.
+- 558 ascending timestamps: Eoghan revived it with a changeset and corpus
+  analysis. Moved from Reject to Review.
+- 1905 iframe srcdoc: Eoghan requested a sandbox check. Moved to Clean-up.
+- 1814 untainted listeners: Justin requested minor test tweaks; still Adopt.
+- 1856 logos: Justin asked for a wordmark; still Adopt.
+- 1897 pseudo-classes: Justin wants an rrweb-level path before merge.
+- 1954 timeline markers: Eoghan asked whether merged 1928 makes it redundant.
+- 1300, 1302, 1653: 1652 merged, so these need a check against main.
+- Issue 1959 is fixed by merged 1958 but still open.
+
+**New since the snapshot:** 19 PRs and 6 issues, all bucketed on the board.
+Seven community fixes went straight to Adopt (1938, 1950, 1956, 1962, 1964,
+1965, 1970), each with a test and most closing a fresh issue. The
+iframe/teardown cluster now has two competing maintainer PRs (Eoghan 1971,
+Justin draft 1963) on top of community 1791; pick one before reviewing the
+others.
+
+**Done marks:** the board's local Done list restarts with this snapshot.
 
 ---
 
