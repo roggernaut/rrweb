@@ -2341,10 +2341,11 @@ export class Replayer {
         const { x: lx, y: ly, t: lt } = this.lastCursor;
         if (t > lt) {
           const v = Math.hypot(x - lx, y - ly) / (t - lt) || 0;
-          this.cursorSpeed += (v - this.cursorSpeed) * 0.25;
+          this.cursorSpeed +=
+            (v - this.cursorSpeed) * (v < this.cursorSpeed ? 0.5 : 0.3);
           this.mouse.style.setProperty(
             '--rr-cursor-scale',
-            Math.max(0.25, 1 / (1 + this.cursorSpeed)).toFixed(2),
+            Math.max(0.2, 1 / (1 + 3 * this.cursorSpeed)).toFixed(2),
           );
         }
         if (x !== lx || y !== ly) {
