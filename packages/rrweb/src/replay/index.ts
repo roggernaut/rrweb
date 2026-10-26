@@ -148,6 +148,7 @@ export class Replayer {
   private desiredScroll = new Map<number, { x: number; y: number }>();
   private smoothRaf: number | null = null;
   private lastScrollGuard = 0;
+  private lastCursor = { x: NaN, y: NaN };
 
   private emitter: Emitter = mitt();
 
@@ -2334,8 +2335,13 @@ export class Replayer {
       const target = p && this.mirror.getNode(p.id);
       if (p && target) {
         const base = getBaseDimension(target, this.iframe);
-        this.mouse.style.left = `${p.x * base.absoluteScale + base.x}px`;
-        this.mouse.style.top = `${p.y * base.absoluteScale + base.y}px`;
+        const x = p.x * base.absoluteScale + base.x;
+        const y = p.y * base.absoluteScale + base.y;
+        if (x !== this.lastCursor.x || y !== this.lastCursor.y) {
+          this.lastCursor = { x, y };
+          this.mouse.style.left = `${x}px`;
+          this.mouse.style.top = `${y}px`;
+        }
       }
     }
     if (this.config.smoothScroll) {
