@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { EventType, IncrementalSource, type eventWithTime } from '@rrweb/types';
 import {
   cursorAt,
+  drawTaperedTrail,
   findNextScroll,
   glideAt,
   REST_GAP_MS,
@@ -70,5 +71,25 @@ describe('findNextScroll', () => {
     expect(findNextScroll(events, events[0], 1)).toBe(events[2]);
     expect(findNextScroll(events, events[2], 1)).toBeNull();
     expect(findNextScroll(events, events[1], 2)).toBeNull();
+  });
+});
+
+describe('drawTaperedTrail', () => {
+  it('widens each segment linearly up to the head width', () => {
+    const widths: number[] = [];
+    const ctx = {
+      lineWidth: 0,
+      beginPath() {},
+      moveTo() {},
+      lineTo() {},
+      stroke() {
+        widths.push(this.lineWidth);
+      },
+    };
+    drawTaperedTrail(ctx, [s(0, 0), s(1, 1), s(2, 2), s(3, 3)], 3.9);
+    expect(widths).toEqual([1.3, 2.6, 3.9]);
+    widths.length = 0;
+    drawTaperedTrail(ctx, [s(0, 0)], 3.9);
+    expect(widths).toEqual([]);
   });
 });

@@ -32,8 +32,10 @@ import { polyfill as smoothscrollPolyfill } from './smoothscroll';
 import { Timer } from './timer';
 import {
   cursorAt,
+  drawTaperedTrail,
   findNextScroll,
   glideAt,
+  TRAIL_HEAD_SCALE,
   type CursorSample,
   type ScrollGlide,
 } from './smooth';
@@ -2264,17 +2266,11 @@ export class Replayer {
       ctx.lineCap = lineCap;
       ctx.strokeStyle = strokeStyle;
       if (this.config.smoothCursor) {
-        // Taper from 0 at the oldest point to a slightly thicker head.
-        const pts = this.tailPositions;
-        this.mouseTail.style.opacity = '0.7';
-        for (let i = 1; i < pts.length; i++) {
-          ctx.beginPath();
-          ctx.lineWidth = (lineWidth * 1.3 * i) / (pts.length - 1);
-          ctx.moveTo(pts[i - 1].x, pts[i - 1].y);
-          ctx.lineTo(pts[i].x, pts[i].y);
-          ctx.stroke();
-        }
-        return;
+        return drawTaperedTrail(
+          ctx,
+          this.tailPositions,
+          lineWidth * TRAIL_HEAD_SCALE,
+        );
       }
       ctx.beginPath();
       ctx.lineWidth = lineWidth;

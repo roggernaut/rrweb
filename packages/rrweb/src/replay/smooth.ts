@@ -14,6 +14,8 @@ export type ScrollGlide = {
 export const REST_GAP_MS = 250;
 export const TRAVEL_MS = 140;
 export const SCROLL_GLIDE_MAX_GAP_MS = 400;
+/** Trail width at the cursor, relative to the configured mouseTail lineWidth. */
+export const TRAIL_HEAD_SCALE = 1.3;
 
 const catmullRom = (
   p0: number,
@@ -96,4 +98,23 @@ export function findNextScroll(
       return n as eventWithTime & { data: scrollData };
   }
   return null;
+}
+
+/** Strokes pts as segments whose width grows from 0 at pts[0] to headWidth at the last point. */
+export function drawTaperedTrail(
+  ctx: Pick<
+    CanvasRenderingContext2D,
+    'beginPath' | 'moveTo' | 'lineTo' | 'stroke'
+  > & { lineWidth: number },
+  pts: Array<{ x: number; y: number }>,
+  headWidth: number,
+) {
+  const last = pts.length - 1;
+  for (let i = 1; i <= last; i++) {
+    ctx.beginPath();
+    ctx.lineWidth = (headWidth * i) / last;
+    ctx.moveTo(pts[i - 1].x, pts[i - 1].y);
+    ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.stroke();
+  }
 }
