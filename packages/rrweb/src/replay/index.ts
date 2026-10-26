@@ -31,6 +31,13 @@ import * as mittProxy from 'mitt';
 import { polyfill as smoothscrollPolyfill } from './smoothscroll';
 import { Timer } from './timer';
 import {
+  cursorAt,
+  findNextScroll,
+  glideAt,
+  type CursorSample,
+  type ScrollGlide,
+} from './smooth';
+import {
   createPlayerService,
   createSpeedService,
   type PlayerMachineState,
@@ -58,6 +65,7 @@ import type {
   metaEvent,
   mutationData,
   scrollData,
+  mousemoveData,
   inputData,
   canvasMutationData,
   styleValueWithPriority,
@@ -135,6 +143,11 @@ export class Replayer {
   private mouse: HTMLDivElement;
   private mouseTail: HTMLCanvasElement | null = null;
   private tailPositions: Array<{ x: number; y: number }> = [];
+  private cursorSamples: CursorSample[] = [];
+  private scrollGlides = new Map<number, ScrollGlide>();
+  private desiredScroll = new Map<number, { x: number; y: number }>();
+  private smoothRaf: number | null = null;
+  private lastScrollGuard = 0;
 
   private emitter: Emitter = mitt();
 
@@ -201,6 +214,8 @@ export class Replayer {
       triggerFocus: true,
       UNSAFE_replayCanvas: false,
       pauseAnimation: true,
+      smoothCursor: false,
+      smoothScroll: false,
       mouseTail: defaultMouseTailConfig,
       useVirtualDom: true, // Virtual-dom optimization is enabled by default.
       logger: console,
@@ -211,6 +226,11 @@ export class Replayer {
     this.getCastFn = this.getCastFn.bind(this);
     this.applyEventsSynchronously = this.applyEventsSynchronously.bind(this);
     this.emitter.on(ReplayerEvents.Resize, this.handleResize as Handler);
+    if (this.config.smoothCursor || this.config.smoothScroll) {
+      this.emitter.on(ReplayerEvents.Start, () => this.startSmoothLoop());
+      this.emitter.on(ReplayerEvents.Pause, () => this.stopSmoothLoop());
+      this.emitter.on(ReplayerEvents.Finish, () => this.stopSmoothLoop());
+    }
 
     this.setupDom();
 
@@ -518,6 +538,8 @@ export class Replayer {
    * @param timeOffset - number
    */
   public play(timeOffset = 0) {
+    this.cursorSamples.length = 0;
+    this.scrollGlides.clear();
     if (this.service.state.matches('paused')) {
       this.service.send({ type: 'PLAY', payload: { timeOffset } });
     } else {
@@ -606,6 +628,7 @@ export class Replayer {
 
     this.mouse = document.createElement('div');
     this.mouse.classList.add('replayer-mouse');
+    if (this.config.smoothCursor) this.mouse.classList.add('smooth');
     this.wrapper.appendChild(this.mouse);
 
     if (this.config.mouseTail !== false) {
@@ -709,8 +732,18 @@ export class Replayer {
           }
           this.mediaManager.reset();
           this.styleMirror.reset();
+          this.scrollGlides.clear();
+          this.desiredScroll.clear();
           this.rebuildFullSnapshot(event, isSync);
           this.iframe.contentWindow?.scrollTo(event.data.initialOffset);
+          if (this.config.smoothScroll && this.iframe.contentDocument)
+            this.desiredScroll.set(
+              this.mirror.getId(this.iframe.contentDocument),
+              {
+                x: event.data.initialOffset.left,
+                y: event.data.initialOffset.top,
+              },
+            );
         };
         break;
       case EventType.IncrementalSnapshot:
@@ -1158,6 +1191,7 @@ export class Replayer {
             };
             this.timer.addAction(action);
           });
+          if (this.config.smoothCursor) this.addCursorSamples(e, d);
           // add a dummy action to keep timer alive
           this.timer.addAction({
             doAction() {
@@ -1268,6 +1302,7 @@ export class Replayer {
         if (d.id === -1) {
           break;
         }
+        if (this.config.smoothScroll) this.trackScroll(e, d, isSync);
         if (this.usingVirtualDom) {
           const target = this.virtualDom.mirror.getNode(d.id) as RRElement;
           if (!target) {
@@ -1903,26 +1938,19 @@ export class Replayer {
       return this.debugNodeNotFound(d, d.id);
     }
     const sn = this.mirror.getMeta(target);
+    const behavior = isSync || this.config.smoothScroll ? 'auto' : 'smooth';
     if (target === this.iframe.contentDocument) {
-      this.iframe.contentWindow?.scrollTo({
-        top: d.y,
-        left: d.x,
-        behavior: isSync ? 'auto' : 'smooth',
-      });
+      this.iframe.contentWindow?.scrollTo({ top: d.y, left: d.x, behavior });
     } else if (sn?.type === NodeType.Document) {
       // nest iframe content document
       (target as Document).defaultView?.scrollTo({
         top: d.y,
         left: d.x,
-        behavior: isSync ? 'auto' : 'smooth',
+        behavior,
       });
     } else {
       try {
-        (target as Element).scrollTo({
-          top: d.y,
-          left: d.x,
-          behavior: isSync ? 'auto' : 'smooth',
-        });
+        (target as Element).scrollTo({ top: d.y, left: d.x, behavior });
       } catch (error) {
         /**
          * Seldomly we may found scroll target was removed before
@@ -2247,6 +2275,89 @@ export class Replayer {
       draw();
     }, duration / this.speedService.state.context.timer.speed);
   }
+
+  private addCursorSamples(e: eventWithTime, d: mousemoveData) {
+    const s = this.cursorSamples;
+    const last = s[s.length - 1];
+    for (const p of d.positions)
+      s.push({ t: e.timestamp + p.timeOffset, x: p.x, y: p.y, id: p.id });
+    if (last && last.t > s[s.length - 1].t) s.sort((a, b) => a.t - b.t);
+  }
+
+  private trackScroll(e: eventWithTime, d: scrollData, isSync: boolean) {
+    this.desiredScroll.set(d.id, { x: d.x, y: d.y });
+    const next = isSync
+      ? null
+      : findNextScroll(this.service.state.context.events, e, d.id);
+    if (next)
+      this.scrollGlides.set(d.id, {
+        fx: d.x,
+        fy: d.y,
+        tx: next.data.x,
+        ty: next.data.y,
+        t0: e.timestamp,
+        t1: next.timestamp,
+      });
+    else this.scrollGlides.delete(d.id);
+  }
+
+  private getScroll(id: number) {
+    const target = this.mirror.getNode(id) as Document | Element | null;
+    if (!target) return null;
+    const win = (target as Document).defaultView;
+    return win
+      ? { x: win.scrollX, y: win.scrollY }
+      : { x: (target as Element).scrollLeft, y: (target as Element).scrollTop };
+  }
+
+  private setScroll(id: number, x: number, y: number) {
+    this.applyScroll({ source: IncrementalSource.Scroll, id, x, y }, true);
+  }
+
+  private startSmoothLoop() {
+    this.stopSmoothLoop();
+    this.smoothRaf = requestAnimationFrame(this.smoothFrame);
+  }
+
+  private stopSmoothLoop() {
+    if (this.smoothRaf) cancelAnimationFrame(this.smoothRaf);
+    this.smoothRaf = null;
+  }
+
+  private smoothFrame = () => {
+    this.smoothRaf = requestAnimationFrame(this.smoothFrame);
+    const t = this.service.state.context.baselineTime + this.timer.timeOffset;
+    if (this.config.smoothCursor) {
+      const s = this.cursorSamples;
+      while (s.length > 2 && s[2].t <= t) s.shift();
+      const p = cursorAt(s, t);
+      const target = p && this.mirror.getNode(p.id);
+      if (p && target) {
+        const base = getBaseDimension(target, this.iframe);
+        this.mouse.style.left = `${p.x * base.absoluteScale + base.x}px`;
+        this.mouse.style.top = `${p.y * base.absoluteScale + base.y}px`;
+      }
+    }
+    if (this.config.smoothScroll) {
+      for (const [id, g] of this.scrollGlides) {
+        const { x, y, done } = glideAt(g, t);
+        this.setScroll(id, x, y);
+        if (done) this.scrollGlides.delete(id);
+      }
+      const now = performance.now();
+      if (now - this.lastScrollGuard < 200) return;
+      this.lastScrollGuard = now;
+      for (const [id, want] of this.desiredScroll) {
+        if (this.scrollGlides.has(id)) continue;
+        const cur = this.getScroll(id);
+        if (
+          cur &&
+          (Math.abs(cur.x - want.x) > 1 || Math.abs(cur.y - want.y) > 1)
+        )
+          this.setScroll(id, want.x, want.y);
+      }
+    }
+  };
 
   private hoverElements(el: Element) {
     (this.lastHoveredRootNode || this.iframe.contentDocument)
