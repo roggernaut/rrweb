@@ -2266,7 +2266,7 @@ export class Replayer {
       if (this.config.smoothCursor) {
         // Taper from 0 at the oldest point to a slightly thicker head.
         const pts = this.tailPositions;
-        ctx.globalAlpha = 0.7;
+        this.mouseTail.style.opacity = '0.7';
         for (let i = 1; i < pts.length; i++) {
           ctx.beginPath();
           ctx.lineWidth = (lineWidth * 1.3 * i) / (pts.length - 1);
@@ -2274,7 +2274,6 @@ export class Replayer {
           ctx.lineTo(pts[i].x, pts[i].y);
           ctx.stroke();
         }
-        ctx.globalAlpha = 1;
         return;
       }
       ctx.beginPath();
