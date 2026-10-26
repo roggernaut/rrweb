@@ -2236,7 +2236,7 @@ export class Replayer {
 
     this.mouse.style.left = `${_x}px`;
     this.mouse.style.top = `${_y}px`;
-    if (!isSync) {
+    if (!isSync && !this.config.smoothCursor) {
       this.drawMouseTail({ x: _x, y: _y });
     }
     this.hoverElements(target as Element);
@@ -2261,10 +2261,24 @@ export class Replayer {
         return;
       }
       ctx.clearRect(0, 0, this.mouseTail.width, this.mouseTail.height);
-      ctx.beginPath();
-      ctx.lineWidth = lineWidth;
       ctx.lineCap = lineCap;
       ctx.strokeStyle = strokeStyle;
+      if (this.config.smoothCursor) {
+        // Taper from 0 at the oldest point to a slightly thicker head.
+        const pts = this.tailPositions;
+        ctx.globalAlpha = 0.7;
+        for (let i = 1; i < pts.length; i++) {
+          ctx.beginPath();
+          ctx.lineWidth = (lineWidth * 1.3 * i) / (pts.length - 1);
+          ctx.moveTo(pts[i - 1].x, pts[i - 1].y);
+          ctx.lineTo(pts[i].x, pts[i].y);
+          ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+        return;
+      }
+      ctx.beginPath();
+      ctx.lineWidth = lineWidth;
       ctx.moveTo(this.tailPositions[0].x, this.tailPositions[0].y);
       this.tailPositions.forEach((p) => ctx.lineTo(p.x, p.y));
       ctx.stroke();
@@ -2351,6 +2365,7 @@ export class Replayer {
         if (x !== lx || y !== ly) {
           this.mouse.style.left = `${x}px`;
           this.mouse.style.top = `${y}px`;
+          this.drawMouseTail({ x, y });
         }
         this.lastCursor = { x, y, t };
       }
