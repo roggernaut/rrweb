@@ -40,9 +40,16 @@ rrvideo 配置文件可参考[示例](./rrvideo.config.example.json)。
 Playwright 的 `recordVideo`（`.webm` 默认路径）走的是 CDP screencast，
 帧率大约只有 10–25fps，编码器也只能写出 VP8 WebM。
 
-ffmpeg 后端**不会**按墙钟时间录屏。它按输出帧时间 `goto` rrweb-player，
-截取 JPEG，再把帧管道送给 ffmpeg（`libx264`）。
-因此 60fps、120fps 是精确的，即使截图比实时更慢。
+ffmpeg 后端**不会**按墙钟时间录屏。它把播放页里的 `performance.now`、
+`requestAnimationFrame`、`setTimeout`、`setInterval` 换成虚拟时钟，
+正常播放回放，每截一帧只把时钟推进一个帧间隔，再把 JPEG 帧管道送给
+ffmpeg（`libx264`）。播放器看不到墙钟时间，所以 CPU 繁忙时不会跳帧，
+成片时长也不受负载影响。因此 60fps、120fps 是精确的，即使截图比实时更慢。
+
+在 Linux 无头模式下使用 Chrome 的 `HeadlessExperimental.beginFrame` 出帧，
+CSS 动画也跟随同一个虚拟时钟。macOS 和 Windows 不支持 BeginFrame，
+会退回普通截图（CSS 动画按墙钟时间运行）。可用 `"beginFrame": true | false`
+手动指定。
 
 ```shell
 rrvideo --input PATH_TO_YOUR_RRWEB_EVENTS_FILE --output session.mp4 --fps 60

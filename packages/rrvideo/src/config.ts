@@ -16,6 +16,7 @@ export const defaultConfig: ResolvedRRvideoConfig = {
   crf: 18,
   x264Preset: 'veryfast',
   pixelRatio: 1,
+  beginFrame: 'auto',
   ffmpegPath: 'ffmpeg',
   onProgressUpdate: () => {
     //
@@ -53,6 +54,7 @@ export function resolveConfig(options: RRvideoConfig): ResolvedRRvideoConfig {
     crf: options.crf ?? defaultConfig.crf,
     x264Preset: options.x264Preset ?? defaultConfig.x264Preset,
     pixelRatio: options.pixelRatio ?? defaultConfig.pixelRatio,
+    beginFrame: options.beginFrame ?? defaultConfig.beginFrame,
     ffmpegPath: options.ffmpegPath ?? defaultConfig.ffmpegPath,
     onProgressUpdate:
       options.onProgressUpdate ?? defaultConfig.onProgressUpdate,
@@ -65,4 +67,10 @@ export function resolveConfig(options: RRvideoConfig): ResolvedRRvideoConfig {
     ? config.output
     : path.resolve(process.cwd(), config.output);
   return config;
+}
+
+/** BeginFrame is only implemented by headless Chromium on Linux. */
+export function shouldUseBeginFrame(config: ResolvedRRvideoConfig): boolean {
+  if (config.beginFrame !== 'auto') return config.beginFrame;
+  return process.platform === 'linux' && config.headless;
 }

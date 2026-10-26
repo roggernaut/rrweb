@@ -1,4 +1,8 @@
-import { resolveCapture } from '../src/config';
+import {
+  resolveCapture,
+  resolveConfig,
+  shouldUseBeginFrame,
+} from '../src/config';
 
 describe('resolveCapture', () => {
   it('keeps Playwright video as the default for webm output', () => {
@@ -20,5 +24,30 @@ describe('resolveCapture', () => {
         capture: 'ffmpeg',
       }),
     ).toBe('ffmpeg');
+  });
+});
+
+describe('shouldUseBeginFrame', () => {
+  const platform = process.platform;
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: platform });
+  });
+
+  it('defaults to BeginFrame only for headless Linux', () => {
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+    const config = resolveConfig({ input: 'a.json', output: 'out.mp4' });
+    expect(config.beginFrame).toBe('auto');
+    expect(shouldUseBeginFrame(config)).toBe(true);
+    expect(shouldUseBeginFrame({ ...config, headless: false })).toBe(false);
+
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+    expect(shouldUseBeginFrame(config)).toBe(false);
+  });
+
+  it('respects an explicit setting', () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+    const config = resolveConfig({ input: 'a.json', beginFrame: true });
+    expect(shouldUseBeginFrame(config)).toBe(true);
+    expect(shouldUseBeginFrame({ ...config, beginFrame: false })).toBe(false);
   });
 });

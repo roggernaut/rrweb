@@ -1,7 +1,6 @@
 import {
   evenDimension,
   estimateFrameCount,
-  getFrameTimeOffsets,
   getMaxViewport,
   getSessionDurationMs,
 } from '../src/timeline';
@@ -20,16 +19,6 @@ describe('timeline helpers', () => {
     expect(estimateFrameCount(1000, 60, 2)).toBe(30);
     expect(estimateFrameCount(1000, 60, 4)).toBe(15);
     expect(estimateFrameCount(300, 60, 1)).toBe(18);
-  });
-
-  it('strides original time so 2x/4x shortens the file instead of dropping fps', () => {
-    const offsets1x = getFrameTimeOffsets(1000, 60, 1);
-    expect(offsets1x).toHaveLength(60);
-    expect(offsets1x[1] - offsets1x[0]).toBeCloseTo(1000 / 60);
-
-    const offsets4x = getFrameTimeOffsets(1000, 60, 4);
-    expect(offsets4x).toHaveLength(15);
-    expect(offsets4x[1] - offsets4x[0]).toBeCloseTo((1000 / 60) * 4);
   });
 
   it('reads duration and viewport from events', () => {

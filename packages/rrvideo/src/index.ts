@@ -13,10 +13,13 @@ import type {
 } from './types';
 
 export type { RRvideoConfig, CaptureBackend } from './types';
-export { getFrameTimeOffsets, estimateFrameCount } from './timeline';
+export { estimateFrameCount } from './timeline';
 export { buildFfmpegArgs } from './ffmpeg';
-export { CHROMIUM_LAUNCH_ARGS } from './ffmpeg-capture';
-export { resolveCapture } from './config';
+export {
+  CHROMIUM_LAUNCH_ARGS,
+  BEGIN_FRAME_LAUNCH_ARGS,
+} from './ffmpeg-capture';
+export { resolveCapture, shouldUseBeginFrame } from './config';
 
 function viewportForCapture(
   events: eventWithTime[],

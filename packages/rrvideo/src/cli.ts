@@ -21,6 +21,7 @@ const CAPTURE_KEYS = new Set([
   'crf',
   'x264Preset',
   'pixelRatio',
+  'beginFrame',
   'headless',
   'resolutionRatio',
   'ffmpegPath',
@@ -67,6 +68,9 @@ if (argv.capture !== undefined)
 if (argv.quality !== undefined) options.quality = Number(argv.quality);
 if (argv.crf !== undefined) options.crf = Number(argv.crf);
 if (argv.pixelRatio !== undefined) options.pixelRatio = Number(argv.pixelRatio);
+if (argv.beginFrame !== undefined)
+  options.beginFrame =
+    argv.beginFrame === 'auto' ? 'auto' : String(argv.beginFrame) !== 'false';
 
 transformToVideo(options)
   .then((file) => {

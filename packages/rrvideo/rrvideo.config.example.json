@@ -9,6 +9,7 @@
   "crf": 18,
   "x264Preset": "veryfast",
   "pixelRatio": 1,
+  "beginFrame": "auto",
   "mouseTail": {
     "strokeStyle": "green",
     "lineWidth": 2

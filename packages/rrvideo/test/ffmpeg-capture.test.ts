@@ -52,7 +52,7 @@ function probeFps(file: string): { fps: number; nbFrames: number } {
     await fs.remove(generated);
   });
 
-  it('writes a 60fps mp4 by seeking the replayer instead of Playwright screencast', () => {
+  it('writes a 60fps mp4 on a virtual clock instead of Playwright screencast', () => {
     const output = path.join(generated, 'sixty.mp4');
     execSync(
       `node ./build/cli.js --input ${path.join(

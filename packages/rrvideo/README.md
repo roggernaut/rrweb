@@ -45,10 +45,21 @@ Playwright `recordVideo` (the default for `.webm` output) is CDP
 screencast. Chromium typically delivers ~10–25fps and Playwright's
 bundled encoder writes VP8 WebM, so this path cannot do high-fps MP4.
 
-The ffmpeg backend does **not** record the page in real time. It seeks
-`rrweb-player` to each output-frame timestamp, takes a JPEG screenshot,
-and pipes the stills into ffmpeg (`libx264`). Output fps is exact (60,
-120, …) even when capture is slower than real time.
+The ffmpeg backend does **not** record the page in real time. It replaces
+`performance.now`, `requestAnimationFrame`, `setTimeout` and `setInterval`
+in the player page with a virtual clock, plays the session normally, and
+moves the clock forward exactly one frame interval per captured frame.
+The player never sees wall-clock time, so a slow frame cannot make it skip
+ahead and the output length does not depend on CPU load. Frames are piped
+into ffmpeg (`libx264`) as JPEGs. Output fps is exact (60, 120, …) even
+when capture is slower than real time.
+
+On headless Linux, frames come from Chrome's
+`HeadlessExperimental.beginFrame`: Chrome draws only when asked, and CSS
+animations and transitions follow the same virtual clock. On macOS and
+Windows (where BeginFrame is not implemented) it falls back to
+screenshots, and CSS animations run on wall-clock time. Set
+`"beginFrame": true | false` to override the automatic choice.
 
 ```shell
 # 60fps MP4. Requires ffmpeg on PATH.
@@ -64,16 +75,19 @@ does not drop the encoded frame rate.
 
 For many sessions, use `transformMany(jobs, { concurrency })`. Each job
 is its own Chromium + ffmpeg process. Keep concurrency around CPU cores;
-1080p/60fps screenshotting is CPU-bound. Splitting **one** long session
-across workers is not supported yet.
+1080p/60fps capture is CPU-bound. Splitting **one** long session across
+workers is not supported yet.
 
 `pixelRatio: 2` screenshots at 2× CSS pixels for sharper output.
 `width` / `height` in the config file set the viewport.
 
-Seeking with `goto` applies mouse-move batches synchronously, so the
-cursor jumps to the last position in each recorded event rather than
-interpolating every 16ms. DOM mutations still land on the correct
-frame. That is an rrweb seek limitation, not an fps cap.
+`skipInactive` works as in the player: idle stretches are fast-forwarded,
+so the file is shorter than the session.
+
+Images and web fonts in the first snapshot are awaited (up to 5s) before
+the first frame. Assets that load later arrive in real time while the
+clock is paused, so they may appear a frame or two later than in a live
+replay.
 
 The [Browserless Playwright recorder](https://github.com/browserless/examples/tree/main/examples/record-browser-session/frameworks/playwright)
 is also a real-time screencast (`Browserless.startRecording` → WebM).

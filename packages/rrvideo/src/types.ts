@@ -19,8 +19,9 @@ export type RRvideoConfig = {
   /**
    * How to capture frames.
    *
-   * - `ffmpeg`: seek the replayer per output frame, screenshot, pipe JPEGs to
-   *   ffmpeg. Use this for high fps / high resolution / MP4.
+   * - `ffmpeg`: play the replayer on a virtual clock that advances one frame
+   *   interval per captured frame, pipe JPEGs to ffmpeg. Use this for high
+   *   fps / high resolution / MP4.
    * - `playwright`: Playwright `recordVideo` (CDP screencast). Caps around
    *   25fps and writes WebM. Kept for compatibility.
    */
@@ -38,6 +39,13 @@ export type RRvideoConfig = {
    * Only used by the ffmpeg backend. Default: 1.
    */
   pixelRatio?: number;
+  /**
+   * Drive Chrome's compositor with `HeadlessExperimental.beginFrame`, so CSS
+   * animations follow the virtual clock too. Needs headless Chromium on Linux.
+   * `auto` enables it there and falls back to screenshots elsewhere.
+   * Only used by the ffmpeg backend. Default: `auto`.
+   */
+  beginFrame?: boolean | 'auto';
   /** ffmpeg binary. Default: ffmpeg on PATH. */
   ffmpegPath?: string;
   onProgressUpdate?: (percent: number) => void;
@@ -57,6 +65,7 @@ export type ResolvedRRvideoConfig = Required<
     | 'crf'
     | 'x264Preset'
     | 'pixelRatio'
+    | 'beginFrame'
     | 'ffmpegPath'
     | 'onProgressUpdate'
     | 'rrwebPlayer'

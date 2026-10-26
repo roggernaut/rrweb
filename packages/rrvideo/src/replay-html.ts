@@ -2,6 +2,7 @@ import * as fs from 'fs-extra';
 import * as path from 'path';
 import type { eventWithTime } from '@rrweb/types';
 import type { RRvideoConfig } from './types';
+import { installVirtualClock } from './virtual-clock';
 
 export const PLAYWRIGHT_MAX_SCALE = 2.5;
 
@@ -21,11 +22,15 @@ export function loadPlayerAssets(): { script: string; style: string } {
 export function getHtml(
   events: Array<eventWithTime>,
   config?: RRvideoConfig,
-  options?: { scale?: number; startPlayback?: boolean },
+  options?: { scale?: number; startPlayback?: boolean; virtualClock?: boolean },
 ): string {
   const { script, style } = loadPlayerAssets();
   const scale = options?.scale ?? 1;
   const startPlayback = options?.startPlayback ?? false;
+  // Must run before the player script so every timer it creates is virtual.
+  const clockScript = options?.virtualClock
+    ? `<script>(${installVirtualClock.toString()})();</script>`
+    : '';
 
   return `
 <html>
@@ -34,6 +39,7 @@ export function getHtml(
   <style>html, body {padding: 0; border: none; margin: 0; background: #fff;}</style>
   </head>
   <body>
+    ${clockScript}
     <script>
       ${script};
       /*<!--*/
@@ -58,6 +64,7 @@ export function getHtml(
           },
         });
         window.replayer.addEventListener('finish', () => {
+          window.__rrvideoFinished = true;
           if (window.onReplayFinish) window.onReplayFinish();
         });
         window.replayer.addEventListener('ui-update-progress', (payload) => {
