@@ -5,7 +5,9 @@ import {
   drawTaperedTrail,
   findNextScroll,
   glideAt,
+  haloScale,
   REST_GAP_MS,
+  smoothSpeed,
   TRAVEL_MS,
 } from '../../src/replay/smooth';
 
@@ -91,5 +93,18 @@ describe('drawTaperedTrail', () => {
     widths.length = 0;
     drawTaperedTrail(ctx, [s(0, 0)], 3.9);
     expect(widths).toEqual([]);
+  });
+});
+
+describe('halo', () => {
+  it('is full at rest and shrinks with speed, floored at 0.2', () => {
+    expect(haloScale(0)).toBe('1.00');
+    expect(haloScale(1)).toBe('0.25');
+    expect(haloScale(10)).toBe('0.20');
+  });
+
+  it('smooths speed, recovering faster than it rises', () => {
+    expect(smoothSpeed(0, 1)).toBe(0.3);
+    expect(smoothSpeed(1, 0)).toBe(0.5);
   });
 });

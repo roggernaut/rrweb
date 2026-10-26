@@ -14,8 +14,18 @@ export type ScrollGlide = {
 export const REST_GAP_MS = 250;
 export const TRAVEL_MS = 140;
 export const SCROLL_GLIDE_MAX_GAP_MS = 400;
+/** How often drifted scroll positions are re-applied. */
+export const SCROLL_GUARD_MS = 200;
 /** Trail width at the cursor, relative to the configured mouseTail lineWidth. */
 export const TRAIL_HEAD_SCALE = 1.3;
+
+/** Smoothed cursor speed; falls faster than it rises so the halo recovers quickly. */
+export const smoothSpeed = (prev: number, v: number) =>
+  prev + (v - prev) * (v < prev ? 0.5 : 0.3);
+
+/** Cursor halo scale for a speed in px/ms: 1 at rest, shrinking towards 0.2. */
+export const haloScale = (v: number) =>
+  Math.max(0.2, 1 / (1 + 3 * v)).toFixed(2);
 
 const catmullRom = (
   p0: number,

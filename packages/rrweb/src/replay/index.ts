@@ -35,6 +35,9 @@ import {
   drawTaperedTrail,
   findNextScroll,
   glideAt,
+  haloScale,
+  SCROLL_GUARD_MS,
+  smoothSpeed,
   TRAIL_HEAD_SCALE,
   type CursorSample,
   type ScrollGlide,
@@ -230,11 +233,9 @@ export class Replayer {
     this.getCastFn = this.getCastFn.bind(this);
     this.applyEventsSynchronously = this.applyEventsSynchronously.bind(this);
     this.emitter.on(ReplayerEvents.Resize, this.handleResize as Handler);
-    if (this.config.smoothCursor || this.config.smoothScroll) {
-      this.emitter.on(ReplayerEvents.Start, () => this.startSmoothLoop());
-      this.emitter.on(ReplayerEvents.Pause, () => this.stopSmoothLoop());
-      this.emitter.on(ReplayerEvents.Finish, () => this.stopSmoothLoop());
-    }
+    this.emitter.on(ReplayerEvents.Start, () => this.startSmoothLoop());
+    this.emitter.on(ReplayerEvents.Pause, () => this.stopSmoothLoop());
+    this.emitter.on(ReplayerEvents.Finish, () => this.stopSmoothLoop());
 
     this.setupDom();
 
@@ -468,6 +469,8 @@ export class Replayer {
         key as keyof playerConfig
       ] = config[key as keyof playerConfig];
     });
+    this.mouse.classList.toggle('smooth', this.config.smoothCursor);
+    if (!this.service.state.matches('paused')) this.startSmoothLoop();
     if (!this.config.skipInactive) {
       this.backToNormal();
     }
@@ -593,6 +596,7 @@ export class Replayer {
 
   public startLive(baselineTime?: number) {
     this.service.send({ type: 'TO_LIVE', payload: { baselineTime } });
+    this.startSmoothLoop();
   }
 
   public addEvent(rawEvent: eventWithTime | string) {
@@ -736,21 +740,13 @@ export class Replayer {
           }
           this.mediaManager.reset();
           this.styleMirror.reset();
-          this.scrollGlides.clear();
-          this.desiredScroll.clear();
           this.rebuildFullSnapshot(event, isSync);
           this.iframe.contentWindow?.scrollTo(event.data.initialOffset);
-          if (this.config.smoothScroll && this.iframe.contentDocument)
-            this.desiredScroll.set(
-              this.mirror.getId(this.iframe.contentDocument),
-              {
-                x: event.data.initialOffset.left,
-                y: event.data.initialOffset.top,
-              },
-            );
         };
         break;
       case EventType.IncrementalSnapshot:
+        if (!isSync && this.config.smoothCursor && 'positions' in event.data)
+          this.addCursorSamples(event, event.data);
         castFn = () => {
           this.applyIncremental(event, isSync);
           if (isSync) {
@@ -845,6 +841,15 @@ export class Replayer {
   ) {
     if (!this.iframe.contentDocument) {
       return this.warn('Looks like your replayer has been destroyed.');
+    }
+    this.scrollGlides.clear();
+    this.desiredScroll.clear();
+    if (this.config.smoothScroll) {
+      const { left: x, top: y } = event.data.initialOffset;
+      this.desiredScroll.set(this.mirror.getId(this.iframe.contentDocument), {
+        x,
+        y,
+      });
     }
     if (Object.keys(this.legacy_missingNodeRetryMap).length) {
       this.warn(
@@ -1195,7 +1200,6 @@ export class Replayer {
             };
             this.timer.addAction(action);
           });
-          if (this.config.smoothCursor) this.addCursorSamples(e, d);
           // add a dummy action to keep timer alive
           this.timer.addAction({
             doAction() {
@@ -2327,7 +2331,8 @@ export class Replayer {
 
   private startSmoothLoop() {
     this.stopSmoothLoop();
-    this.smoothRaf = requestAnimationFrame(this.smoothFrame);
+    if (this.config.smoothCursor || this.config.smoothScroll)
+      this.smoothRaf = requestAnimationFrame(this.smoothFrame);
   }
 
   private stopSmoothLoop() {
@@ -2338,53 +2343,51 @@ export class Replayer {
   private smoothFrame = () => {
     this.smoothRaf = requestAnimationFrame(this.smoothFrame);
     const t = this.service.state.context.baselineTime + this.timer.timeOffset;
-    if (this.config.smoothCursor) {
-      const s = this.cursorSamples;
-      while (s.length > 2 && s[2].t <= t) s.shift();
-      const p = cursorAt(s, t);
-      const target = p && this.mirror.getNode(p.id);
-      if (p && target) {
-        const base = getBaseDimension(target, this.iframe);
-        const x = p.x * base.absoluteScale + base.x;
-        const y = p.y * base.absoluteScale + base.y;
-        const { x: lx, y: ly, t: lt } = this.lastCursor;
-        if (t > lt) {
-          const v = Math.hypot(x - lx, y - ly) / (t - lt) || 0;
-          this.cursorSpeed +=
-            (v - this.cursorSpeed) * (v < this.cursorSpeed ? 0.5 : 0.3);
-          this.mouse.style.setProperty(
-            '--rr-cursor-scale',
-            Math.max(0.2, 1 / (1 + 3 * this.cursorSpeed)).toFixed(2),
-          );
-        }
-        if (x !== lx || y !== ly) {
-          this.mouse.style.left = `${x}px`;
-          this.mouse.style.top = `${y}px`;
-          this.drawMouseTail({ x, y });
-        }
-        this.lastCursor = { x, y, t };
-      }
-    }
-    if (this.config.smoothScroll) {
-      for (const [id, g] of this.scrollGlides) {
-        const { x, y, done } = glideAt(g, t);
-        this.setScroll(id, x, y);
-        if (done) this.scrollGlides.delete(id);
-      }
-      const now = performance.now();
-      if (now - this.lastScrollGuard < 200) return;
-      this.lastScrollGuard = now;
-      for (const [id, want] of this.desiredScroll) {
-        if (this.scrollGlides.has(id)) continue;
-        const cur = this.getScroll(id);
-        if (
-          cur &&
-          (Math.abs(cur.x - want.x) > 1 || Math.abs(cur.y - want.y) > 1)
-        )
-          this.setScroll(id, want.x, want.y);
-      }
-    }
+    if (this.config.smoothCursor) this.stepCursor(t);
+    if (this.config.smoothScroll) this.stepScroll(t);
   };
+
+  private stepCursor(t: number) {
+    const s = this.cursorSamples;
+    while (s.length > 2 && s[2].t <= t) s.shift();
+    const p = cursorAt(s, t);
+    const target = p && this.mirror.getNode(p.id);
+    if (!p || !target) return;
+    const base = getBaseDimension(target, this.iframe);
+    const x = p.x * base.absoluteScale + base.x;
+    const y = p.y * base.absoluteScale + base.y;
+    const last = this.lastCursor;
+    if (t > last.t) {
+      const v = Math.hypot(x - last.x, y - last.y) / (t - last.t);
+      this.cursorSpeed = smoothSpeed(this.cursorSpeed, v);
+      this.mouse.style.setProperty(
+        '--rr-cursor-scale',
+        haloScale(this.cursorSpeed),
+      );
+    }
+    if (x !== last.x || y !== last.y) {
+      this.mouse.style.left = `${x}px`;
+      this.mouse.style.top = `${y}px`;
+      this.drawMouseTail({ x, y });
+    }
+    this.lastCursor = { x, y, t };
+  }
+
+  private stepScroll(t: number) {
+    for (const [id, g] of this.scrollGlides) {
+      const { x, y, done } = glideAt(g, t);
+      this.setScroll(id, x, y);
+      if (done) this.scrollGlides.delete(id);
+    }
+    const now = performance.now();
+    if (now - this.lastScrollGuard < SCROLL_GUARD_MS) return;
+    this.lastScrollGuard = now;
+    for (const [id, want] of this.desiredScroll) {
+      const cur = this.scrollGlides.has(id) ? null : this.getScroll(id);
+      if (cur && (Math.abs(cur.x - want.x) > 1 || Math.abs(cur.y - want.y) > 1))
+        this.setScroll(id, want.x, want.y);
+    }
+  }
 
   private hoverElements(el: Element) {
     (this.lastHoveredRootNode || this.iframe.contentDocument)
