@@ -172,6 +172,11 @@ export type mousemoveData = {
     | IncrementalSource.TouchMove
     | IncrementalSource.Drag;
   positions: mousePosition[];
+  /**
+   * Identifies the finger these positions belong to (Touch.identifier).
+   * Absent for mouse/drag, and for recordings made before multi-touch support.
+   */
+  pointerId?: number;
 };
 
 export type mouseInteractionData = {
@@ -425,6 +430,7 @@ export type mousemoveCallBack = (
     | IncrementalSource.MouseMove
     | IncrementalSource.TouchMove
     | IncrementalSource.Drag,
+  pointerId?: number,
 ) => void;
 
 export type mousePosition = {
@@ -511,6 +517,11 @@ type mouseInteractionParam = {
   x?: number;
   y?: number;
   pointerType?: PointerTypes;
+  /**
+   * Identifies the finger for TouchStart/TouchEnd/TouchCancel (Touch.identifier).
+   * Only unique among fingers that are currently down; may be reused afterwards.
+   */
+  pointerId?: number;
 };
 
 export type mouseInteractionCallBack = (d: mouseInteractionParam) => void;

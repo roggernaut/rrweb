@@ -114,6 +114,7 @@ function initMoveObserver({
   sampling,
   doc,
   mirror,
+  recordMultiTouch,
 }: observerParam): listenerHandler {
   if (sampling.mousemove === false) {
     return () => {
@@ -128,7 +129,8 @@ function initMoveObserver({
       ? sampling.mousemoveCallback
       : 500;
 
-  let positions: mousePosition[] = [];
+  // one buffer per finger (keyed by Touch.identifier); mouse and drag share the `undefined` key
+  const positions = new Map<number | undefined, mousePosition[]>();
   let timeBaseline: number | null;
   const wrappedCb = throttle(
     callbackWrapper(
@@ -139,36 +141,61 @@ function initMoveObserver({
           | IncrementalSource.Drag,
       ) => {
         const totalOffset = Date.now() - timeBaseline!;
-        mousemoveCb(
-          positions.map((p) => {
-            p.timeOffset -= totalOffset;
-            return p;
-          }),
-          source,
-        );
-        positions = [];
+        positions.forEach((pointerPositions, pointerId) => {
+          mousemoveCb(
+            pointerPositions.map((p) => {
+              p.timeOffset -= totalOffset;
+              return p;
+            }),
+            source,
+            pointerId,
+          );
+        });
+        positions.clear();
         timeBaseline = null;
       },
     ),
     callbackThreshold,
   );
+  // without recordMultiTouch, keep following one finger so that a single
+  // replay indicator doesn't jump between fingers during a multi-touch gesture
+  let trackedTouchId: number | null = null;
+  const touchesToRecord = (evt: TouchEvent): Touch[] => {
+    const changed = Array.from(evt.changedTouches);
+    if (recordMultiTouch) {
+      return changed;
+    }
+    const active = Array.from(evt.touches);
+    if (!active.some((t) => t.identifier === trackedTouchId)) {
+      trackedTouchId = active.length ? active[0].identifier : null;
+    }
+    return changed.filter((t) => t.identifier === trackedTouchId);
+  };
   const updatePosition = callbackWrapper(
     throttle<MouseEvent | TouchEvent | DragEvent>(
       callbackWrapper((evt) => {
         const target = getEventTarget(evt);
         // 'legacy' here as we could switch to https://developer.mozilla.org/en-US/docs/Web/API/Element/pointermove_event
-        const { clientX, clientY } = legacy_isTouchEvent(evt)
-          ? evt.changedTouches[0]
-          : evt;
+        const points: Array<Touch | MouseEvent | DragEvent> =
+          legacy_isTouchEvent(evt) ? touchesToRecord(evt) : [evt];
         if (!timeBaseline) {
           timeBaseline = nowTimestamp();
         }
-        positions.push({
-          x: clientX,
-          y: clientY,
-          id: mirror.getId(target as Node),
-          timeOffset: nowTimestamp() - timeBaseline,
-        });
+        for (const point of points) {
+          const pointerId =
+            'identifier' in point ? point.identifier : undefined;
+          let pointerPositions = positions.get(pointerId);
+          if (!pointerPositions) {
+            pointerPositions = [];
+            positions.set(pointerId, pointerPositions);
+          }
+          pointerPositions.push({
+            x: point.clientX,
+            y: point.clientY,
+            id: mirror.getId(target as Node),
+            timeOffset: nowTimestamp() - timeBaseline,
+          });
+        }
         // it is possible DragEvent is undefined even on devices
         // that support event 'drag'
         wrappedCb(
@@ -216,6 +243,9 @@ function initMouseInteractionObserver({
 
   const handlers: listenerHandler[] = [];
   let currentPointerType: PointerTypes | null = null;
+  // Touch events carry the finger's identifier, which TouchMove uses too,
+  // so prefer them over pointer events (whose pointerId is a different id)
+  const hasTouchEvents = 'ontouchstart' in window;
   const getHandler = (eventKey: keyof typeof MouseInteractions) => {
     return (event: MouseEvent | TouchEvent | PointerEvent) => {
       const target = getEventTarget(event) as Node;
@@ -237,6 +267,9 @@ function initMouseInteractionObserver({
             break;
         }
         if (pointerType === PointerTypes.Touch) {
+          if (hasTouchEvents) {
+            return; // recorded from touchstart/touchend instead
+          }
           if (MouseInteractions[eventKey] === MouseInteractions.MouseDown) {
             // we are actually listening on 'pointerdown'
             thisEventKey = 'TouchStart';
@@ -267,19 +300,20 @@ function initMouseInteractionObserver({
         pointerType = currentPointerType;
         currentPointerType = null; // cleanup as we've used it
       }
-      const e = legacy_isTouchEvent(event) ? event.changedTouches[0] : event;
-      if (!e) {
-        return;
-      }
       const id = mirror.getId(target);
-      const { clientX, clientY } = e;
-      callbackWrapper(mouseInteractionCb)({
-        type: MouseInteractions[thisEventKey],
-        id,
-        x: clientX,
-        y: clientY,
-        ...(pointerType !== null && { pointerType }),
-      });
+      // a touch event can carry several fingers, e.g. two lifted at once
+      const points: Array<Touch | MouseEvent | PointerEvent> =
+        legacy_isTouchEvent(event) ? Array.from(event.changedTouches) : [event];
+      for (const e of points) {
+        callbackWrapper(mouseInteractionCb)({
+          type: MouseInteractions[thisEventKey],
+          id,
+          x: e.clientX,
+          y: e.clientY,
+          ...(pointerType !== null && { pointerType }),
+          ...('identifier' in e && { pointerId: e.identifier }),
+        });
+      }
     };
   };
   Object.keys(MouseInteractions)
@@ -303,8 +337,10 @@ function initMouseInteractionObserver({
             break;
           case MouseInteractions.TouchStart:
           case MouseInteractions.TouchEnd:
-            // these are handled by pointerdown/pointerup
-            return;
+            if (!hasTouchEvents) {
+              // these are handled by pointerdown/pointerup
+              return;
+            }
         }
       }
       handlers.push(on(eventName, handler, doc));

@@ -89,6 +89,7 @@ function record<T = eventWithTime>(
     mousemoveWait,
     recordDOM = true,
     recordCanvas = false,
+    recordMultiTouch = false,
     recordCrossOriginIframes = false,
     recordAfter = options.recordAfter === 'DOMContentLoaded'
       ? options.recordAfter
@@ -432,12 +433,13 @@ function record<T = eventWithTime>(
       return callbackWrapper(initObservers)(
         {
           mutationCb: wrappedMutationEmit,
-          mousemoveCb: (positions, source) =>
+          mousemoveCb: (positions, source, pointerId) =>
             wrappedEmit({
               type: EventType.IncrementalSnapshot,
               data: {
                 source,
                 positions,
+                ...(pointerId !== undefined && { pointerId }),
               },
             }),
           mouseInteractionCb: (d) =>
@@ -526,6 +528,7 @@ function record<T = eventWithTime>(
           sampling,
           recordDOM,
           recordCanvas,
+          recordMultiTouch,
           inlineImages,
           userTriggeredOnInput,
           collectFonts,

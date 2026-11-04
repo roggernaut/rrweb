@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Touch</title>
+    <style>
+      body {
+        margin: 0;
+        height: 3000px;
+      }
+      #pad {
+        position: absolute;
+        top: 100px;
+        left: 0;
+        width: 400px;
+        height: 400px;
+        background: #cfc;
+        /* the page handles gestures here, so the browser does not take them over */
+        touch-action: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="pad"></div>
+  </body>
+</html>

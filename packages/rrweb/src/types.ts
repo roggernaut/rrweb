@@ -68,6 +68,11 @@ export type recordOptions<T> = {
   dataURLOptions?: DataURLOptions;
   recordDOM?: boolean;
   recordCanvas?: boolean;
+  /**
+   * Also record the movement of every additional finger (as TouchMove events with a pointerId).
+   * Off by default: replayers without multi-touch support draw all positions on one indicator.
+   */
+  recordMultiTouch?: boolean;
   recordCrossOriginIframes?: boolean;
   recordAfter?: 'DOMContentLoaded' | 'load';
   userTriggeredOnInput?: boolean;
@@ -112,6 +117,7 @@ export type observerParam = {
   sampling: SamplingStrategy;
   recordDOM: boolean;
   recordCanvas: boolean;
+  recordMultiTouch: boolean;
   inlineImages: boolean;
   userTriggeredOnInput: boolean;
   collectFonts: boolean;
