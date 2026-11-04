@@ -553,8 +553,18 @@ export class Replayer {
    * @param timeOffset - number
    */
   public play(timeOffset = 0) {
+    // Resuming re-queues the future but skips the past, so carry the current
+    // cursor position and scroll glides over; a seek rebuilds both.
+    const { baselineTime, events } = this.service.state.context;
+    const now = baselineTime + this.timer.timeOffset;
+    const resume = Math.abs(events[0].timestamp + timeOffset - now) < 1;
+    const prev =
+      resume && this.config.smoothCursor
+        ? cursorAt(this.cursorSamples, now, this.sameDocument)
+        : null;
     this.cursorSamples.length = 0;
-    this.scrollGlides.clear();
+    if (prev) this.cursorSamples.push({ ...prev, t: now });
+    if (!resume) this.scrollGlides.clear();
     if (this.service.state.matches('paused')) {
       this.service.send({ type: 'PLAY', payload: { timeOffset } });
     } else {
