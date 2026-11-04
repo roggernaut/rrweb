@@ -88,6 +88,13 @@ export function cursorAt(
   };
 }
 
+/** Appends samples to a buffer sorted by t, re-sorting only when batches overlap. */
+export function queueSamples(s: CursorSample[], add: CursorSample[]) {
+  const n = s.length;
+  s.push(...add);
+  if (n && add.length && s[n - 1].t > s[n].t) s.sort((a, b) => a.t - b.t);
+}
+
 export function glideAt(g: ScrollGlide, t: number) {
   const u = Math.min(1, Math.max(0, (t - g.t0) / (g.t1 - g.t0 || 1)));
   return {

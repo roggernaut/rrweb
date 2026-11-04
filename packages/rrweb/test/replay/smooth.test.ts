@@ -6,6 +6,7 @@ import {
   findNextScroll,
   glideAt,
   haloScale,
+  queueSamples,
   REST_GAP_MS,
   smoothSpeed,
   TRAVEL_MS,
@@ -54,6 +55,16 @@ describe('cursorAt', () => {
   it('uses only neighbours closer than REST_GAP_MS as spline control points', () => {
     const far = [s(0, -1000), s(REST_GAP_MS + 1, 0), s(REST_GAP_MS + 51, 10)];
     expect(cursorAt(far, REST_GAP_MS + 26)!.x).toBeCloseTo(5);
+  });
+});
+
+describe('queueSamples', () => {
+  it('keeps the buffer sorted when batches overlap', () => {
+    const buf = [s(100, 1), s(300, 3)];
+    queueSamples(buf, [s(200, 2), s(400, 4)]);
+    expect(buf.map((p) => p.t)).toEqual([100, 200, 300, 400]);
+    queueSamples(buf, [s(500, 5)]);
+    expect(buf.map((p) => p.t)).toEqual([100, 200, 300, 400, 500]);
   });
 });
 

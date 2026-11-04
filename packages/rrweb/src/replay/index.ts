@@ -36,6 +36,7 @@ import {
   findNextScroll,
   glideAt,
   haloScale,
+  queueSamples,
   SCROLL_GUARD_MS,
   smoothSpeed,
   TRAIL_HEAD_SCALE,
@@ -463,14 +464,23 @@ export class Replayer {
   }
 
   public setConfig(config: Partial<playerConfig>) {
+    const { smoothCursor, smoothScroll } = this.config;
     Object.keys(config).forEach((key) => {
       const newConfigValue = config[key as keyof playerConfig];
       (this.config as Record<keyof playerConfig, typeof newConfigValue>)[
         key as keyof playerConfig
       ] = config[key as keyof playerConfig];
     });
-    this.mouse.classList.toggle('smooth', this.config.smoothCursor);
-    if (!this.service.state.matches('paused')) this.startSmoothLoop();
+    if (
+      smoothCursor !== this.config.smoothCursor ||
+      smoothScroll !== this.config.smoothScroll
+    ) {
+      // Reschedule so the sample buffer and scroll tracking match the options.
+      this.mouse.classList.toggle('smooth', !!this.config.smoothCursor);
+      this.desiredScroll.clear();
+      if (this.service.state.matches('playing'))
+        this.play(this.getCurrentTime());
+    }
     if (!this.config.skipInactive) {
       this.backToNormal();
     }
@@ -745,8 +755,13 @@ export class Replayer {
         };
         break;
       case EventType.IncrementalSnapshot:
-        if (!isSync && this.config.smoothCursor && 'positions' in event.data)
-          this.addCursorSamples(event, event.data);
+        if (this.config.smoothCursor && 'positions' in event.data) {
+          if (isSync) this.cursorSamples.length = 0;
+          this.addCursorSamples(
+            event,
+            isSync ? event.data.positions.slice(-1) : event.data.positions,
+          );
+        }
         castFn = () => {
           this.applyIncremental(event, isSync);
           if (isSync) {
@@ -844,13 +859,6 @@ export class Replayer {
     }
     this.scrollGlides.clear();
     this.desiredScroll.clear();
-    if (this.config.smoothScroll) {
-      const { left: x, top: y } = event.data.initialOffset;
-      this.desiredScroll.set(this.mirror.getId(this.iframe.contentDocument), {
-        x,
-        y,
-      });
-    }
     if (Object.keys(this.legacy_missingNodeRetryMap).length) {
       this.warn(
         'Found unresolved missing node map',
@@ -914,6 +922,13 @@ export class Replayer {
       this.iframe.contentDocument
         .getElementsByTagName('html')[0]
         .classList.add('rrweb-paused');
+    }
+    if (this.config.smoothScroll) {
+      const { left: x, top: y } = event.data.initialOffset;
+      this.desiredScroll.set(this.mirror.getId(this.iframe.contentDocument), {
+        x,
+        y,
+      });
     }
     this.emitter.emit(ReplayerEvents.FullsnapshotRebuilded, event);
     if (!isSync) {
@@ -1266,8 +1281,15 @@ export class Replayer {
               if (d.type === MouseInteractions.TouchStart) {
                 // don't draw a trail as user has lifted finger and is placing at a new point
                 this.tailPositions.length = 0;
+                this.cursorSamples = this.cursorSamples.filter(
+                  (p) => p.t >= e.timestamp,
+                );
               }
               this.moveAndHover(d.x || 0, d.y || 0, d.id, isSync, d);
+              if (this.config.smoothCursor)
+                queueSamples(this.cursorSamples, [
+                  { t: e.timestamp, x: d.x || 0, y: d.y || 0, id: d.id },
+                ]);
               if (d.type === MouseInteractions.Click) {
                 /*
                  * don't want target.click() here as could trigger an iframe navigation
@@ -1310,7 +1332,7 @@ export class Replayer {
         if (d.id === -1) {
           break;
         }
-        if (this.config.smoothScroll) this.trackScroll(e, d, isSync);
+        if (this.config.smoothScroll) this.trackScroll(e, d);
         if (this.usingVirtualDom) {
           const target = this.virtualDom.mirror.getNode(d.id) as RRElement;
           if (!target) {
@@ -2291,19 +2313,24 @@ export class Replayer {
     }, duration / this.speedService.state.context.timer.speed);
   }
 
-  private addCursorSamples(e: eventWithTime, d: mousemoveData) {
-    const s = this.cursorSamples;
-    const last = s[s.length - 1];
-    for (const p of d.positions)
-      s.push({ t: e.timestamp + p.timeOffset, x: p.x, y: p.y, id: p.id });
-    if (last && last.t > s[s.length - 1].t) s.sort((a, b) => a.t - b.t);
+  private addCursorSamples(
+    e: eventWithTime,
+    positions: mousemoveData['positions'],
+  ) {
+    queueSamples(
+      this.cursorSamples,
+      positions.map((p) => ({
+        t: e.timestamp + p.timeOffset,
+        x: p.x,
+        y: p.y,
+        id: p.id,
+      })),
+    );
   }
 
-  private trackScroll(e: eventWithTime, d: scrollData, isSync: boolean) {
+  private trackScroll(e: eventWithTime, d: scrollData) {
     this.desiredScroll.set(d.id, { x: d.x, y: d.y });
-    const next = isSync
-      ? null
-      : findNextScroll(this.service.state.context.events, e, d.id);
+    const next = findNextScroll(this.service.state.context.events, e, d.id);
     if (next)
       this.scrollGlides.set(d.id, {
         fx: d.x,
