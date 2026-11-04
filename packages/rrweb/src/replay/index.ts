@@ -2350,7 +2350,7 @@ export class Replayer {
   private stepCursor(t: number) {
     const s = this.cursorSamples;
     while (s.length > 2 && s[2].t <= t) s.shift();
-    const p = cursorAt(s, t);
+    const p = cursorAt(s, t, this.sameDocument);
     const target = p && this.mirror.getNode(p.id);
     if (!p || !target) return;
     const base = getBaseDimension(target, this.iframe);
@@ -2372,6 +2372,12 @@ export class Replayer {
     }
     this.lastCursor = { x, y, t };
   }
+
+  /** Mouse positions are client coordinates of the sample's document. */
+  private sameDocument = (a: CursorSample, b: CursorSample) =>
+    a.id === b.id ||
+    this.mirror.getNode(a.id)?.ownerDocument ===
+      this.mirror.getNode(b.id)?.ownerDocument;
 
   private stepScroll(t: number) {
     for (const [id, g] of this.scrollGlides) {

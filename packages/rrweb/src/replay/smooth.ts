@@ -42,8 +42,15 @@ const hermite = (p1: number, p2: number, m1: number, m2: number, u: number) => {
 const easeInOut = (u: number) =>
   u < 0.5 ? 2 * u * u : 1 - ((2 - 2 * u) * (2 - 2 * u)) / 2;
 
-/** Interpolated cursor position at time t from samples sorted by t. */
-export function cursorAt(s: CursorSample[], t: number): CursorSample | null {
+/**
+ * Interpolated cursor position at time t from samples sorted by t. Samples are
+ * only blended when `sameSpace` says their coordinates are comparable.
+ */
+export function cursorAt(
+  s: CursorSample[],
+  t: number,
+  sameSpace: (a: CursorSample, b: CursorSample) => boolean = () => true,
+): CursorSample | null {
   if (!s.length || t < s[0].t) return null;
   let lo = 0;
   let hi = s.length - 1;
@@ -54,7 +61,7 @@ export function cursorAt(s: CursorSample[], t: number): CursorSample | null {
   }
   const a = s[lo];
   const b = s[lo + 1];
-  if (!b || b.id !== a.id) return a;
+  if (!b || !sameSpace(a, b)) return a;
   const dt = b.t - a.t;
   if (dt > REST_GAP_MS) {
     const leave = b.t - TRAVEL_MS;
@@ -68,8 +75,8 @@ export function cursorAt(s: CursorSample[], t: number): CursorSample | null {
   const n = s[lo + 2];
   // Velocities at a and b from the neighbouring samples, so uneven sample
   // spacing does not turn into speed changes along the path.
-  const p0 = p && p.id === a.id && a.t - p.t <= REST_GAP_MS ? p : a;
-  const p3 = n && n.id === a.id && n.t - b.t <= REST_GAP_MS ? n : b;
+  const p0 = p && sameSpace(p, a) && a.t - p.t <= REST_GAP_MS ? p : a;
+  const p3 = n && sameSpace(b, n) && n.t - b.t <= REST_GAP_MS ? n : b;
   const vx1 = ((b.x - p0.x) / (b.t - p0.t)) * dt;
   const vy1 = ((b.y - p0.y) / (b.t - p0.t)) * dt;
   const vx2 = ((p3.x - a.x) / (p3.t - a.t)) * dt;

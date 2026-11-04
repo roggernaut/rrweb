@@ -37,8 +37,10 @@ describe('cursorAt', () => {
     expect(cursorAt(samples, 999)!.x).toBeGreaterThan(99);
   });
 
-  it('does not interpolate across different targets', () => {
-    expect(cursorAt([s(0, 0, 0, 1), s(100, 50, 0, 2)], 50)!.x).toBe(0);
+  it('blends across targets unless sameSpace rejects the pair', () => {
+    const samples = [s(0, 0, 0, 1), s(100, 50, 0, 2)];
+    expect(cursorAt(samples, 50)!.x).toBe(25);
+    expect(cursorAt(samples, 50, (a, b) => a.id === b.id)!.x).toBe(0);
   });
 
   it('reproduces constant velocity exactly despite uneven sample spacing', () => {
