@@ -41,6 +41,14 @@ describe('cursorAt', () => {
     expect(cursorAt([s(0, 0, 0, 1), s(100, 50, 0, 2)], 50)!.x).toBe(0);
   });
 
+  it('reproduces constant velocity exactly despite uneven sample spacing', () => {
+    const samples = [0, 50, 120, 170, 250, 300].map((t) => s(t, t, 2 * t));
+    for (let t = 0; t <= 300; t += 7) {
+      expect(cursorAt(samples, t)!.x).toBeCloseTo(t, 6);
+      expect(cursorAt(samples, t)!.y).toBeCloseTo(2 * t, 6);
+    }
+  });
+
   it('uses only neighbours closer than REST_GAP_MS as spline control points', () => {
     const far = [s(0, -1000), s(REST_GAP_MS + 1, 0), s(REST_GAP_MS + 51, 10)];
     expect(cursorAt(far, REST_GAP_MS + 26)!.x).toBeCloseTo(5);

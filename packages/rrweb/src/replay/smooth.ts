@@ -27,18 +27,17 @@ export const smoothSpeed = (prev: number, v: number) =>
 export const haloScale = (v: number) =>
   Math.max(0.2, 1 / (1 + 3 * v)).toFixed(2);
 
-const catmullRom = (
-  p0: number,
-  p1: number,
-  p2: number,
-  p3: number,
-  u: number,
-) =>
-  0.5 *
-  (2 * p1 +
-    (p2 - p0) * u +
-    (2 * p0 - 5 * p1 + 4 * p2 - p3) * u * u +
-    (3 * p1 - p0 - 3 * p2 + p3) * u * u * u);
+/** Cubic Hermite from p1 to p2 with tangents m1, m2 already scaled to the segment. */
+const hermite = (p1: number, p2: number, m1: number, m2: number, u: number) => {
+  const u2 = u * u;
+  const u3 = u2 * u;
+  return (
+    (2 * u3 - 3 * u2 + 1) * p1 +
+    (u3 - 2 * u2 + u) * m1 +
+    (3 * u2 - 2 * u3) * p2 +
+    (u3 - u2) * m2
+  );
+};
 
 const easeInOut = (u: number) =>
   u < 0.5 ? 2 * u * u : 1 - ((2 - 2 * u) * (2 - 2 * u)) / 2;
@@ -63,15 +62,22 @@ export function cursorAt(s: CursorSample[], t: number): CursorSample | null {
     const u = easeInOut((t - leave) / TRAVEL_MS);
     return { ...a, x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u };
   }
-  const u = dt ? (t - a.t) / dt : 1;
+  if (!dt) return b;
+  const u = (t - a.t) / dt;
   const p = s[lo - 1];
   const n = s[lo + 2];
+  // Velocities at a and b from the neighbouring samples, so uneven sample
+  // spacing does not turn into speed changes along the path.
   const p0 = p && p.id === a.id && a.t - p.t <= REST_GAP_MS ? p : a;
   const p3 = n && n.id === a.id && n.t - b.t <= REST_GAP_MS ? n : b;
+  const vx1 = ((b.x - p0.x) / (b.t - p0.t)) * dt;
+  const vy1 = ((b.y - p0.y) / (b.t - p0.t)) * dt;
+  const vx2 = ((p3.x - a.x) / (p3.t - a.t)) * dt;
+  const vy2 = ((p3.y - a.y) / (p3.t - a.t)) * dt;
   return {
     ...a,
-    x: catmullRom(p0.x, a.x, b.x, p3.x, u),
-    y: catmullRom(p0.y, a.y, b.y, p3.y, u),
+    x: hermite(a.x, b.x, vx1, vx2, u),
+    y: hermite(a.y, b.y, vy1, vy2, u),
   };
 }
 
