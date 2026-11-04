@@ -2295,14 +2295,17 @@ export class Replayer {
     const d = e.data as incrementalData;
     let add: CursorSample[];
     if ('positions' in d)
-      add = d.positions.map((p) => ({
-        t: e.timestamp + p.timeOffset,
-        x: p.x,
-        y: p.y,
-        id: p.id,
-      }));
+      add = d.positions
+        .filter((p) => p.id !== -1)
+        .map((p) => ({
+          t: e.timestamp + p.timeOffset,
+          x: p.x,
+          y: p.y,
+          id: p.id,
+        }));
     else if (
       d.source === IncrementalSource.MouseInteraction &&
+      d.id !== -1 &&
       typeof d.x === 'number' &&
       typeof d.y === 'number'
     )
@@ -2316,6 +2319,7 @@ export class Replayer {
         },
       ];
     else return;
+    if (!add.length) return;
     if (isSync) seedSample(this.cursorSamples, add[add.length - 1]);
     else queueSamples(this.cursorSamples, add);
   }
@@ -2339,7 +2343,8 @@ export class Replayer {
     this.scrollGlides.clear();
     this.desiredScroll.clear();
     for (const e of events) {
-      const past = e.timestamp <= now;
+      // The poster snapshot is built before play(), while baselineTime is still 0.
+      const past = e.timestamp <= now || e === this.firstFullSnapshot;
       if (e.type === EventType.FullSnapshot) {
         if (past) this.trackInitialOffset(e);
       } else if (e.type === EventType.IncrementalSnapshot) {
