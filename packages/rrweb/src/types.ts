@@ -36,6 +36,7 @@ import type {
   styleDeclarationCallback,
   styleSheetRuleCallback,
   viewportResizeCallback,
+  visualViewportCallback,
   PackFn,
   UnpackFn,
 } from '@rrweb/types';
@@ -95,6 +96,7 @@ export type observerParam = {
   mouseInteractionCb: mouseInteractionCallBack;
   scrollCb: scrollCallback;
   viewportResizeCb: viewportResizeCallback;
+  visualViewportCb: visualViewportCallback;
   inputCb: inputCallback;
   mediaInteractionCb: mediaInteractionCallback;
   selectionCb: selectionCallback;

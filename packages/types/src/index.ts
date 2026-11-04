@@ -160,6 +160,7 @@ export enum IncrementalSource {
   Selection,
   AdoptedStyleSheet,
   CustomElement,
+  VisualViewport,
 }
 
 export type mutationData = {
@@ -228,6 +229,10 @@ export type customElementData = {
   source: IncrementalSource.CustomElement;
 } & customElementParam;
 
+export type visualViewportData = {
+  source: IncrementalSource.VisualViewport;
+} & visualViewportState;
+
 export type incrementalData =
   | mutationData
   | mousemoveData
@@ -242,7 +247,8 @@ export type incrementalData =
   | selectionData
   | styleDeclarationData
   | adoptedStyleSheetData
-  | customElementData;
+  | customElementData
+  | visualViewportData;
 
 export type eventWithoutTime =
   | domContentLoadedEvent
@@ -647,6 +653,18 @@ export type viewportResizeDimension = {
 };
 
 export type viewportResizeCallback = (d: viewportResizeDimension) => void;
+
+/**
+ * How far the user has pinch-zoomed into the page: the visual viewport's scale
+ * and its offset within the layout viewport (window.visualViewport).
+ */
+export type visualViewportState = {
+  scale: number;
+  offsetLeft: number;
+  offsetTop: number;
+};
+
+export type visualViewportCallback = (s: visualViewportState) => void;
 
 export type inputValue = {
   text: string;

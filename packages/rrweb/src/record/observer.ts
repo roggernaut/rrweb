@@ -35,6 +35,7 @@ import type {
   scrollCallback,
   styleSheetRuleCallback,
   viewportResizeCallback,
+  visualViewportState,
   inputValue,
   inputCallback,
   hookResetter,
@@ -421,6 +422,45 @@ function initViewportResizeObserver(
 
 export const INPUT_TAGS = ['INPUT', 'TEXTAREA', 'SELECT'];
 const lastInputValueMap: WeakMap<EventTarget, inputValue> = new WeakMap();
+function initVisualViewportObserver(
+  { visualViewportCb, sampling }: observerParam,
+  { win }: { win: IWindow },
+): listenerHandler {
+  const visualViewport = win.visualViewport;
+  if (!visualViewport) {
+    return () => {
+      //
+    };
+  }
+  const state = (): visualViewportState => ({
+    scale: visualViewport.scale,
+    offsetLeft: visualViewport.offsetLeft,
+    offsetTop: visualViewport.offsetTop,
+  });
+  let last = JSON.stringify(state());
+  const update = callbackWrapper(
+    throttle(
+      callbackWrapper(() => {
+        const current = state();
+        const key = JSON.stringify(current);
+        if (key !== last) {
+          last = key;
+          visualViewportCb(current);
+        }
+      }),
+      sampling.scroll || 100,
+    ),
+  );
+  // `scroll` fires when the zoomed-in viewport is panned within the page
+  const handlers = [
+    on('resize', update, visualViewport),
+    on('scroll', update, visualViewport),
+  ];
+  return callbackWrapper(() => {
+    handlers.forEach((h) => h());
+  });
+}
+
 function initInputObserver({
   inputCb,
   doc,
@@ -1360,6 +1400,9 @@ export function initObservers(
   const viewportResizeHandler = initViewportResizeObserver(o, {
     win: currentWindow,
   });
+  const visualViewportHandler = initVisualViewportObserver(o, {
+    win: currentWindow,
+  });
   const inputHandler = initInputObserver(o);
   const mediaInteractionHandler = initMediaInteractionObserver(o);
 
@@ -1398,6 +1441,7 @@ export function initObservers(
     mouseInteractionHandler();
     scrollHandler();
     viewportResizeHandler();
+    visualViewportHandler();
     inputHandler();
     mediaInteractionHandler();
     styleSheetObserver();

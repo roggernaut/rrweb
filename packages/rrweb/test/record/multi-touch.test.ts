@@ -190,4 +190,27 @@ describe('multi-touch', () => {
     expect(byPointer(0)).toEqual([190, 180]);
     expect(byPointer(1)).toEqual([230, 240]);
   });
+
+  it('records the visual viewport when pinch-zooming', async () => {
+    await startRecording();
+    await cdp.send('Input.synthesizePinchGesture', {
+      x: 200,
+      y: 300,
+      scaleFactor: 2,
+      relativeSpeed: 800,
+    });
+    await sleep(300);
+
+    const viewports = events.flatMap((e) =>
+      e.type === EventType.IncrementalSnapshot &&
+      e.data.source === IncrementalSource.VisualViewport
+        ? [e.data]
+        : [],
+    );
+    expect(viewports.length).toBeGreaterThan(1);
+    const last = viewports[viewports.length - 1];
+    expect(last.scale).toBeCloseTo(2, 1);
+    expect(last.offsetLeft).toBeGreaterThan(0);
+    expect(last.offsetTop).toBeGreaterThan(0);
+  });
 });

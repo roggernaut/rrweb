@@ -19,7 +19,7 @@ export { nowTimestamp } from '@rrweb/utils';
 export function on(
   type: string,
   fn: EventListenerOrEventListenerObject,
-  target: Document | IWindow = document,
+  target: Document | IWindow | VisualViewport = document,
 ): listenerHandler {
   const options = { capture: true, passive: true };
   target.addEventListener(type, fn, options);

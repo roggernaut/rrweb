@@ -459,6 +459,14 @@ function record<T = eventWithTime>(
                 ...d,
               },
             }),
+          visualViewportCb: (s) =>
+            wrappedEmit({
+              type: EventType.IncrementalSnapshot,
+              data: {
+                source: IncrementalSource.VisualViewport,
+                ...s,
+              },
+            }),
           inputCb: (v) =>
             wrappedEmit({
               type: EventType.IncrementalSnapshot,
