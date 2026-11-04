@@ -38,6 +38,7 @@ import {
   haloScale,
   queueSamples,
   SCROLL_GUARD_MS,
+  seedSample,
   smoothSpeed,
   TRAIL_HEAD_SCALE,
   type CursorSample,
@@ -71,7 +72,6 @@ import type {
   metaEvent,
   mutationData,
   scrollData,
-  mousemoveData,
   inputData,
   canvasMutationData,
   styleValueWithPriority,
@@ -475,11 +475,9 @@ export class Replayer {
       smoothCursor !== this.config.smoothCursor ||
       smoothScroll !== this.config.smoothScroll
     ) {
-      // Reschedule so the sample buffer and scroll tracking match the options.
       this.mouse.classList.toggle('smooth', !!this.config.smoothCursor);
-      this.desiredScroll.clear();
-      if (this.service.state.matches('playing'))
-        this.play(this.getCurrentTime());
+      this.seedSmoothState();
+      if (!this.service.state.matches('paused')) this.startSmoothLoop();
     }
     if (!this.config.skipInactive) {
       this.backToNormal();
@@ -755,13 +753,7 @@ export class Replayer {
         };
         break;
       case EventType.IncrementalSnapshot:
-        if (this.config.smoothCursor && 'positions' in event.data) {
-          if (isSync) this.cursorSamples.length = 0;
-          this.addCursorSamples(
-            event,
-            isSync ? event.data.positions.slice(-1) : event.data.positions,
-          );
-        }
+        if (this.config.smoothCursor) this.scheduleCursorSamples(event, isSync);
         castFn = () => {
           this.applyIncremental(event, isSync);
           if (isSync) {
@@ -857,8 +849,6 @@ export class Replayer {
     if (!this.iframe.contentDocument) {
       return this.warn('Looks like your replayer has been destroyed.');
     }
-    this.scrollGlides.clear();
-    this.desiredScroll.clear();
     if (Object.keys(this.legacy_missingNodeRetryMap).length) {
       this.warn(
         'Found unresolved missing node map',
@@ -923,13 +913,7 @@ export class Replayer {
         .getElementsByTagName('html')[0]
         .classList.add('rrweb-paused');
     }
-    if (this.config.smoothScroll) {
-      const { left: x, top: y } = event.data.initialOffset;
-      this.desiredScroll.set(this.mirror.getId(this.iframe.contentDocument), {
-        x,
-        y,
-      });
-    }
+    this.trackInitialOffset(event);
     this.emitter.emit(ReplayerEvents.FullsnapshotRebuilded, event);
     if (!isSync) {
       this.waitForStylesheetLoad();
@@ -1281,15 +1265,8 @@ export class Replayer {
               if (d.type === MouseInteractions.TouchStart) {
                 // don't draw a trail as user has lifted finger and is placing at a new point
                 this.tailPositions.length = 0;
-                this.cursorSamples = this.cursorSamples.filter(
-                  (p) => p.t >= e.timestamp,
-                );
               }
               this.moveAndHover(d.x || 0, d.y || 0, d.id, isSync, d);
-              if (this.config.smoothCursor)
-                queueSamples(this.cursorSamples, [
-                  { t: e.timestamp, x: d.x || 0, y: d.y || 0, id: d.id },
-                ]);
               if (d.type === MouseInteractions.Click) {
                 /*
                  * don't want target.click() here as could trigger an iframe navigation
@@ -2313,19 +2290,68 @@ export class Replayer {
     }, duration / this.speedService.state.context.timer.speed);
   }
 
-  private addCursorSamples(
-    e: eventWithTime,
-    positions: mousemoveData['positions'],
-  ) {
-    queueSamples(
-      this.cursorSamples,
-      positions.map((p) => ({
+  /** Queues an event's pointer positions; a synchronous event only seeds the position the pointer is at. */
+  private scheduleCursorSamples(e: eventWithTime, isSync: boolean) {
+    const d = e.data as incrementalData;
+    let add: CursorSample[];
+    if ('positions' in d)
+      add = d.positions.map((p) => ({
         t: e.timestamp + p.timeOffset,
         x: p.x,
         y: p.y,
         id: p.id,
-      })),
-    );
+      }));
+    else if (
+      d.source === IncrementalSource.MouseInteraction &&
+      typeof d.x === 'number' &&
+      typeof d.y === 'number'
+    )
+      add = [
+        {
+          t: e.timestamp,
+          x: d.x,
+          y: d.y,
+          id: d.id,
+          jump: d.type === MouseInteractions.TouchStart,
+        },
+      ];
+    else return;
+    if (isSync) seedSample(this.cursorSamples, add[add.length - 1]);
+    else queueSamples(this.cursorSamples, add);
+  }
+
+  private trackInitialOffset(event: fullSnapshotEvent) {
+    this.scrollGlides.clear();
+    this.desiredScroll.clear();
+    if (!this.config.smoothScroll || !this.iframe.contentDocument) return;
+    const { left: x, top: y } = event.data.initialOffset;
+    this.desiredScroll.set(this.mirror.getId(this.iframe.contentDocument), {
+      x,
+      y,
+    });
+  }
+
+  /** Rebuilds the sample buffer and scroll tracking from the events, as play() would have. */
+  private seedSmoothState() {
+    const { baselineTime, events } = this.service.state.context;
+    const now = baselineTime + this.timer.timeOffset;
+    this.cursorSamples.length = 0;
+    this.scrollGlides.clear();
+    this.desiredScroll.clear();
+    for (const e of events) {
+      const past = e.timestamp <= now;
+      if (e.type === EventType.FullSnapshot) {
+        if (past) this.trackInitialOffset(e);
+      } else if (e.type === EventType.IncrementalSnapshot) {
+        if (this.config.smoothCursor) this.scheduleCursorSamples(e, past);
+        if (
+          this.config.smoothScroll &&
+          past &&
+          e.data.source === IncrementalSource.Scroll
+        )
+          this.trackScroll(e, e.data);
+      }
+    }
   }
 
   private trackScroll(e: eventWithTime, d: scrollData) {
@@ -2402,9 +2428,10 @@ export class Replayer {
 
   /** Mouse positions are client coordinates of the sample's document. */
   private sameDocument = (a: CursorSample, b: CursorSample) =>
-    a.id === b.id ||
-    this.mirror.getNode(a.id)?.ownerDocument ===
-      this.mirror.getNode(b.id)?.ownerDocument;
+    !b.jump &&
+    (a.id === b.id ||
+      this.mirror.getNode(a.id)?.ownerDocument ===
+        this.mirror.getNode(b.id)?.ownerDocument);
 
   private stepScroll(t: number) {
     for (const [id, g] of this.scrollGlides) {

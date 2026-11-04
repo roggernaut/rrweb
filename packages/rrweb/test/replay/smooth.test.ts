@@ -7,6 +7,7 @@ import {
   glideAt,
   haloScale,
   queueSamples,
+  seedSample,
   REST_GAP_MS,
   smoothSpeed,
   TRAVEL_MS,
@@ -65,6 +66,15 @@ describe('queueSamples', () => {
     expect(buf.map((p) => p.t)).toEqual([100, 200, 300, 400]);
     queueSamples(buf, [s(500, 5)]);
     expect(buf.map((p) => p.t)).toEqual([100, 200, 300, 400, 500]);
+  });
+});
+
+describe('seedSample', () => {
+  it('replaces the past and keeps queued future samples', () => {
+    const buf = [s(300, 3), s(400, 4)];
+    seedSample(buf, s(250, 2));
+    seedSample(buf, s(280, 3));
+    expect(buf.map((p) => p.t)).toEqual([280, 300, 400]);
   });
 });
 

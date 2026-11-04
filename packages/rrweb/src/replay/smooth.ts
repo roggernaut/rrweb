@@ -1,7 +1,14 @@
 import { EventType, IncrementalSource } from '@rrweb/types';
 import type { eventWithTime, scrollData } from '@rrweb/types';
 
-export type CursorSample = { t: number; x: number; y: number; id: number };
+export type CursorSample = {
+  t: number;
+  x: number;
+  y: number;
+  id: number;
+  /** The pointer was placed here rather than moved here; never blend into it. */
+  jump?: boolean;
+};
 export type ScrollGlide = {
   fx: number;
   fy: number;
@@ -93,6 +100,13 @@ export function queueSamples(s: CursorSample[], add: CursorSample[]) {
   const n = s.length;
   s.push(...add);
   if (n && add.length && s[n - 1].t > s[n].t) s.sort((a, b) => a.t - b.t);
+}
+
+/** Replaces every sample at or before sample.t with it, so a seek starts from where the pointer was. */
+export function seedSample(s: CursorSample[], sample: CursorSample) {
+  let i = 0;
+  while (i < s.length && s[i].t <= sample.t) i++;
+  s.splice(0, i, sample);
 }
 
 export function glideAt(g: ScrollGlide, t: number) {
