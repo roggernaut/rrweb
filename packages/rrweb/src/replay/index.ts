@@ -570,8 +570,9 @@ export class Replayer {
       this.service.send({ type: 'PAUSE' });
       this.service.send({ type: 'PLAY', payload: { timeOffset } });
     }
+    // Only when moving forward: on a rewind the old position is in the future.
     const s = this.cursorSamples;
-    if (prev && (!s.length || s[0].t > target))
+    if (prev && now <= target && (!s.length || s[0].t > target))
       seedSample(s, { ...prev, t: now });
     this.iframe.contentDocument
       ?.getElementsByTagName('html')[0]
