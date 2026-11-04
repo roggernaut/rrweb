@@ -553,24 +553,26 @@ export class Replayer {
    * @param timeOffset - number
    */
   public play(timeOffset = 0) {
-    // Resuming re-queues the future but skips the past, so carry the current
-    // cursor position and scroll glides over; a seek rebuilds both.
+    // Rescheduling skips already played events, so keep what is still valid
+    // at the target time: the current cursor position and any glide spanning it.
     const { baselineTime, events } = this.service.state.context;
     const now = baselineTime + this.timer.timeOffset;
-    const resume = Math.abs(events[0].timestamp + timeOffset - now) < 1;
-    const prev =
-      resume && this.config.smoothCursor
-        ? cursorAt(this.cursorSamples, now, this.sameDocument)
-        : null;
+    const target = events[0].timestamp + timeOffset;
+    const prev = this.config.smoothCursor
+      ? cursorAt(this.cursorSamples, now, this.sameDocument)
+      : null;
     this.cursorSamples.length = 0;
-    if (prev) this.cursorSamples.push({ ...prev, t: now });
-    if (!resume) this.scrollGlides.clear();
+    for (const [id, g] of this.scrollGlides)
+      if (!(g.t0 <= target && target < g.t1)) this.scrollGlides.delete(id);
     if (this.service.state.matches('paused')) {
       this.service.send({ type: 'PLAY', payload: { timeOffset } });
     } else {
       this.service.send({ type: 'PAUSE' });
       this.service.send({ type: 'PLAY', payload: { timeOffset } });
     }
+    const s = this.cursorSamples;
+    if (prev && (!s.length || s[0].t > target))
+      seedSample(s, { ...prev, t: now });
     this.iframe.contentDocument
       ?.getElementsByTagName('html')[0]
       ?.classList.remove('rrweb-paused');
