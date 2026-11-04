@@ -133,6 +133,8 @@ export class Replayer {
   public virtualDom: RRDocument = new RRDocument();
 
   private mouse: HTMLDivElement;
+  // indicator per finger that is down, keyed by pointerId (see `pointer()`)
+  private pointers = new Map<number, HTMLDivElement>();
   private mouseTail: HTMLCanvasElement | null = null;
   private tailPositions: Array<{ x: number; y: number }> = [];
 
@@ -809,6 +811,7 @@ export class Replayer {
     if (!this.iframe.contentDocument) {
       return this.warn('Looks like your replayer has been destroyed.');
     }
+    this.releasePointers();
     if (Object.keys(this.legacy_missingNodeRetryMap).length) {
       this.warn(
         'Found unresolved missing node map',
@@ -1136,9 +1139,21 @@ export class Replayer {
       }
       case IncrementalSource.Drag:
       case IncrementalSource.TouchMove:
-      case IncrementalSource.MouseMove:
+      case IncrementalSource.MouseMove: {
+        const pointer = this.pointer(d.pointerId);
         if (isSync) {
           const lastPosition = d.positions[d.positions.length - 1];
+          if (pointer !== this.mouse) {
+            this.moveAndHover(
+              lastPosition.x,
+              lastPosition.y,
+              lastPosition.id,
+              isSync,
+              d,
+              pointer,
+            );
+            break;
+          }
           this.mousePos = {
             x: lastPosition.x,
             y: lastPosition.y,
@@ -1149,7 +1164,7 @@ export class Replayer {
           d.positions.forEach((p) => {
             const action = {
               doAction: () => {
-                this.moveAndHover(p.x, p.y, p.id, isSync, d);
+                this.moveAndHover(p.x, p.y, p.id, isSync, d, pointer);
               },
               delay:
                 p.timeOffset +
@@ -1168,6 +1183,7 @@ export class Replayer {
           });
         }
         break;
+      }
       case IncrementalSource.MouseInteraction: {
         /**
          * Same as the situation of missing input target.
@@ -1185,6 +1201,7 @@ export class Replayer {
           target,
         });
         const { triggerFocus } = this.config;
+        const pointer = this.pointer(d.pointerId);
         switch (d.type) {
           case MouseInteractions.Blur:
             if ('blur' in (target as HTMLElement)) {
@@ -1204,28 +1221,27 @@ export class Replayer {
           case MouseInteractions.MouseDown:
           case MouseInteractions.MouseUp:
             if (isSync) {
-              if (d.type === MouseInteractions.TouchStart) {
-                this.touchActive = true;
-              } else if (d.type === MouseInteractions.TouchEnd) {
-                this.touchActive = false;
-              }
               if (d.type === MouseInteractions.MouseDown) {
                 this.lastMouseDownEvent = [target, event];
               } else if (d.type === MouseInteractions.MouseUp) {
                 this.lastMouseDownEvent = null;
               }
-              this.mousePos = {
-                x: d.x || 0,
-                y: d.y || 0,
-                id: d.id,
-                debugData: d,
-              };
+              if (pointer !== this.mouse) {
+                this.moveAndHover(d.x || 0, d.y || 0, d.id, isSync, d, pointer);
+              } else {
+                this.mousePos = {
+                  x: d.x || 0,
+                  y: d.y || 0,
+                  id: d.id,
+                  debugData: d,
+                };
+              }
             } else {
               if (d.type === MouseInteractions.TouchStart) {
                 // don't draw a trail as user has lifted finger and is placing at a new point
                 this.tailPositions.length = 0;
               }
-              this.moveAndHover(d.x || 0, d.y || 0, d.id, isSync, d);
+              this.moveAndHover(d.x || 0, d.y || 0, d.id, isSync, d, pointer);
               if (d.type === MouseInteractions.Click) {
                 /*
                  * don't want target.click() here as could trigger an iframe navigation
@@ -1238,23 +1254,25 @@ export class Replayer {
                 this.mouse.classList.remove('active');
                 void this.mouse.offsetWidth;
                 this.mouse.classList.add('active');
-              } else if (d.type === MouseInteractions.TouchStart) {
-                void this.mouse.offsetWidth; // needed for the position update of moveAndHover to apply without the .touch-active transition
-                this.mouse.classList.add('touch-active');
-              } else if (d.type === MouseInteractions.TouchEnd) {
-                this.mouse.classList.remove('touch-active');
-              } else {
+              } else if (
+                d.type === MouseInteractions.MouseDown ||
+                d.type === MouseInteractions.MouseUp
+              ) {
                 // for MouseDown & MouseUp also invoke default behavior
                 target.dispatchEvent(event);
               }
             }
+            if (d.type === MouseInteractions.TouchStart) {
+              this.setTouchActive(pointer, true, isSync);
+            } else if (d.type === MouseInteractions.TouchEnd) {
+              this.setTouchActive(pointer, false, isSync);
+              this.releasePointer(d.pointerId);
+            }
             break;
           case MouseInteractions.TouchCancel:
-            if (isSync) {
-              this.touchActive = false;
-            } else {
-              this.mouse.classList.remove('touch-active');
-            }
+            // the browser cancels all fingers at once
+            this.setTouchActive(this.mouse, false, isSync);
+            this.releasePointers();
             break;
           default:
             target.dispatchEvent(event);
@@ -2188,12 +2206,70 @@ export class Replayer {
     }
   }
 
+  /**
+   * The indicator for a pointer. Events without a pointerId (mouse, or
+   * recordings made before fingers were identified) and the first finger down
+   * use `this.mouse`; every further finger gets its own `.replayer-mouse`,
+   * removed again when it lifts.
+   */
+  private pointer(pointerId?: number): HTMLDivElement {
+    if (pointerId === undefined) {
+      return this.mouse;
+    }
+    let pointer = this.pointers.get(pointerId);
+    if (!pointer) {
+      const mouseInUse = Array.from(this.pointers.values()).includes(
+        this.mouse,
+      );
+      pointer = mouseInUse ? document.createElement('div') : this.mouse;
+      if (pointer !== this.mouse) {
+        pointer.className = this.mouse.className;
+        pointer.classList.remove('active', 'touch-active');
+        this.wrapper.appendChild(pointer);
+      }
+      this.pointers.set(pointerId, pointer);
+    }
+    return pointer;
+  }
+
+  private releasePointer(pointerId?: number) {
+    if (pointerId === undefined) {
+      return;
+    }
+    const pointer = this.pointers.get(pointerId);
+    this.pointers.delete(pointerId);
+    if (pointer && pointer !== this.mouse) {
+      pointer.remove();
+    }
+  }
+
+  private releasePointers() {
+    this.pointers.forEach((_, pointerId) => this.releasePointer(pointerId));
+  }
+
+  private setTouchActive(
+    pointer: HTMLDivElement,
+    active: boolean,
+    isSync: boolean,
+  ) {
+    if (isSync && pointer === this.mouse) {
+      // applied once the fast-forward is over
+      this.touchActive = active;
+    } else if (active) {
+      void pointer.offsetWidth; // needed for the position update of moveAndHover to apply without the .touch-active transition
+      pointer.classList.add('touch-active');
+    } else {
+      pointer.classList.remove('touch-active');
+    }
+  }
+
   private moveAndHover(
     x: number,
     y: number,
     id: number,
     isSync: boolean,
     debugData: incrementalData,
+    pointer = this.mouse,
   ) {
     const target = this.mirror.getNode(id);
     if (!target) {
@@ -2204,8 +2280,12 @@ export class Replayer {
     const _x = x * base.absoluteScale + base.x;
     const _y = y * base.absoluteScale + base.y;
 
-    this.mouse.style.left = `${_x}px`;
-    this.mouse.style.top = `${_y}px`;
+    pointer.style.left = `${_x}px`;
+    pointer.style.top = `${_y}px`;
+    if (pointer !== this.mouse) {
+      // only the main indicator has a tail and hovers elements
+      return;
+    }
     if (!isSync) {
       this.drawMouseTail({ x: _x, y: _y });
     }
