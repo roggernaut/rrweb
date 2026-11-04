@@ -50,6 +50,7 @@ import type {
   eventWithTime,
   playerMetaData,
   viewportResizeDimension,
+  visualViewportState,
   addedNodeMutation,
   incrementalSnapshotEvent,
   incrementalData,
@@ -135,6 +136,12 @@ export class Replayer {
   private mouse: HTMLDivElement;
   // indicator per finger that is down, keyed by pointerId (see `pointer()`)
   private pointers = new Map<number, HTMLDivElement>();
+  // how far the user had pinch-zoomed in (see `applyVisualViewport()`)
+  private visualViewport: visualViewportState = {
+    scale: 1,
+    offsetLeft: 0,
+    offsetTop: 0,
+  };
   private mouseTail: HTMLCanvasElement | null = null;
   private tailPositions: Array<{ x: number; y: number }> = [];
 
@@ -812,6 +819,7 @@ export class Replayer {
       return this.warn('Looks like your replayer has been destroyed.');
     }
     this.releasePointers();
+    this.applyVisualViewport({ scale: 1, offsetLeft: 0, offsetTop: 0 });
     if (Object.keys(this.legacy_missingNodeRetryMap).length) {
       this.warn(
         'Found unresolved missing node map',
@@ -1303,6 +1311,9 @@ export class Replayer {
           width: d.width,
           height: d.height,
         });
+        break;
+      case IncrementalSource.VisualViewport:
+        this.applyVisualViewport(d);
         break;
       case IncrementalSource.Input: {
         /**
@@ -2247,6 +2258,30 @@ export class Replayer {
     this.pointers.forEach((_, pointerId) => this.releasePointer(pointerId));
   }
 
+  /**
+   * Shows the part of the page the user had pinch-zoomed into, by scaling and
+   * shifting the iframe. Pointer indicators are mapped the same way in
+   * `moveAndHover()`, as recorded positions are in layout coordinates.
+   */
+  private applyVisualViewport(state: visualViewportState) {
+    const isZoomed = (s: visualViewportState) =>
+      s.scale !== 1 || s.offsetLeft !== 0 || s.offsetTop !== 0;
+    const zoomed = isZoomed(state);
+    const wasZoomed = isZoomed(this.visualViewport);
+    this.visualViewport = state;
+    if (!zoomed && !wasZoomed) {
+      return; // leave the DOM untouched for recordings without pinch-zoom
+    }
+    const { scale, offsetLeft, offsetTop } = state;
+    this.iframe.style.transformOrigin = zoomed ? '0 0' : '';
+    this.iframe.style.transform = zoomed
+      ? `translate(${-offsetLeft * scale}px, ${
+          -offsetTop * scale
+        }px) scale(${scale})`
+      : '';
+    this.wrapper.style.overflow = zoomed ? 'hidden' : '';
+  }
+
   private setTouchActive(
     pointer: HTMLDivElement,
     active: boolean,
@@ -2277,8 +2312,9 @@ export class Replayer {
     }
 
     const base = getBaseDimension(target, this.iframe);
-    const _x = x * base.absoluteScale + base.x;
-    const _y = y * base.absoluteScale + base.y;
+    const { scale, offsetLeft, offsetTop } = this.visualViewport;
+    const _x = (x * base.absoluteScale + base.x - offsetLeft) * scale;
+    const _y = (y * base.absoluteScale + base.y - offsetTop) * scale;
 
     pointer.style.left = `${_x}px`;
     pointer.style.top = `${_y}px`;

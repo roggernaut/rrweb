@@ -90,4 +90,30 @@ describe('replay multi-touch', function () {
       { left: '150px', top: '450px', active: false },
     ]);
   });
+
+  it('zooms into the part of the page the user pinched into', async () => {
+    const transformAt = async (offset: number) => {
+      await page.evaluate(`replayer.pause(${offset})`);
+      await waitForRAF(page);
+      return page.evaluate(() => ({
+        iframe: (document.querySelector('iframe') as HTMLElement).style
+          .transform,
+        wrapper: (document.querySelector('.replayer-wrapper') as HTMLElement)
+          .style.overflow,
+      }));
+    };
+    expect(await transformAt(2900)).toEqual({ iframe: '', wrapper: '' });
+    expect(await transformAt(3050)).toEqual({
+      iframe: 'translate(-100px, -200px) scale(2)',
+      wrapper: 'hidden',
+    });
+    // the finger at layout (150, 200) shows up where it is on the zoomed page
+    expect(await indicatorsAt(3150)).toEqual([
+      { left: '200px', top: '200px', active: true },
+    ]);
+    expect(await transformAt(3600)).toEqual({ iframe: '', wrapper: '' });
+    // seeking back before the zoom resets it
+    expect(await transformAt(3050)).not.toEqual({ iframe: '', wrapper: '' });
+    expect(await transformAt(500)).toEqual({ iframe: '', wrapper: '' });
+  });
 });

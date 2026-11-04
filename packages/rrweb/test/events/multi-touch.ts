@@ -22,7 +22,8 @@ const touch = (
 });
 
 /**
- * A pinch with two fingers, then a tap that gets cancelled by the browser.
+ * A pinch with two fingers, a tap that gets cancelled by the browser, then a
+ * tap while pinch-zoomed in.
  */
 const events: eventWithTime[] = [
   {
@@ -107,6 +108,28 @@ const events: eventWithTime[] = [
       y: 450,
     },
     timestamp: now + 2100,
+  },
+  {
+    type: EventType.IncrementalSnapshot,
+    data: {
+      source: IncrementalSource.VisualViewport,
+      scale: 2,
+      offsetLeft: 50,
+      offsetTop: 100,
+    },
+    timestamp: now + 3000,
+  },
+  touch(MouseInteractions.TouchStart, 0, 150, 200, 3100),
+  touch(MouseInteractions.TouchEnd, 0, 150, 200, 3200),
+  {
+    type: EventType.IncrementalSnapshot,
+    data: {
+      source: IncrementalSource.VisualViewport,
+      scale: 1,
+      offsetLeft: 0,
+      offsetTop: 0,
+    },
+    timestamp: now + 3500,
   },
 ];
 
