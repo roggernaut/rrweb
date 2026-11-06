@@ -192,6 +192,13 @@ It only comments. Closing, labeling and merging stay manual.
 
 ## When something fails
 
+- **The workflow did not run, or `gh workflow run` says Actions is
+  disabled.** Two fork settings gate it, both under the repository's
+  Settings → Actions → General: workflows must be enabled for the fork, and
+  "Allow GitHub Actions to create and approve pull requests" must be ticked.
+  A scheduled workflow is also switched off after 60 days without a push to
+  the repository; the refresh PRs count, so a run that fails for weeks can
+  end the schedule. Re-enable it from the Actions tab.
 - **`refresh.py` stops with a `gh` error.** Run `gh auth status`. A
   rate limit clears within the hour; rerun the script.
 - **The build says `Missing PR overlay for: [...]`.** Those PRs are new since

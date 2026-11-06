@@ -186,7 +186,8 @@ clean-up PR with changes requested upstream carries a hand-written message.
 since the previous snapshot, from `previous-buckets.json`), the refresh
 report now quotes inline review comments and shows new PRs' assignees and
 labels, a `Triage refresh` workflow opens the snapshot PR on the Thursday before
-each triage Friday (scheduled from the fork's `main`), and
+each triage Friday (scheduled from the fork's `main`; its first run on
+2026-11-06 opened roggernaut/rrweb PR 18), and
 `post_messages.py` posts the chosen messages after the meeting. The filter
 pills sit on two rows and multi-select: buckets combine as OR, the narrowing
 row (Changed, privacy, waiting, vendors, maintainer close) as AND; the choice
