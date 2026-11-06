@@ -1,5 +1,11 @@
 import type { CheckOutcome, TargetResult } from '../../src/node/results.ts';
-import type { Engine } from '../../src/types.ts';
+import type {
+  Failure,
+  FailureTarget,
+  RunSummary,
+} from '../../src/report/failures.ts';
+import type { ExistingIssue } from '../../src/report/issues-plan.ts';
+import type { CheckKind, Engine } from '../../src/types.ts';
 
 /** Optional overrides; each is derived from the target id when absent. */
 export interface ResultOpts {
@@ -145,3 +151,78 @@ export function incomplete(
 }
 
 export const ids = (rs: TargetResult[]): string[] => rs.map((r) => r.targetId);
+
+const engineOf = (targetId: string): Engine =>
+  engines[targetId.split('-')[0]] ?? 'chromium';
+
+/** A failure of `key` (`<check-id>:<kind>`) on the given targets. */
+export function fail(key: string, targetIds: string[]): Failure {
+  const [checkId, kind] = key.split(':') as [string, CheckKind];
+  const targets: FailureTarget[] = [...targetIds].sort().map((targetId) => ({
+    targetId,
+    engine: engineOf(targetId),
+    channel: targetId.endsWith('-stable') ? 'stable' : 'upcoming',
+    message: `${checkId} broke`,
+    reproduce: `yarn workspace @rrweb/prerelease-browsers run-target --target ${targetId} --check ${checkId}`,
+  }));
+  return {
+    key,
+    checkId,
+    kind,
+    targets,
+    engines: [...new Set(targets.map((t) => t.engine))].sort(),
+    alsoFailsOnStable: targets.some((t) => t.channel === 'stable'),
+  };
+}
+
+/**
+ * A run summary with the given failures (sorted by key). `totalKeys` defaults
+ * to the distinct keys among the failures, `passedOn` and `flaky`.
+ */
+export function summary(
+  failures: Failure[],
+  overrides: Partial<RunSummary> = {},
+): RunSummary {
+  const s: RunSummary = {
+    failures: [...failures].sort((a, b) =>
+      a.key < b.key ? -1 : a.key > b.key ? 1 : 0,
+    ),
+    parked: [],
+    flaky: [],
+    launchFailures: [],
+    missingTargets: [],
+    incompleteTargets: [],
+    passedOn: {},
+    totalKeys: 0,
+    notes: [],
+    ...overrides,
+  };
+  if (overrides.totalKeys === undefined) {
+    s.totalKeys = new Set([
+      ...s.failures.map((f) => f.key),
+      ...Object.keys(s.passedOn),
+      ...s.flaky.map((f) => f.key),
+    ]).size;
+  }
+  return s;
+}
+
+/** An existing issue as parsed from its body marker. */
+export function issue(
+  number: number,
+  state: 'open' | 'closed',
+  key: string,
+  issueEngines: Engine[],
+  failingTargets: string[],
+  labels: string[] = [],
+): ExistingIssue {
+  return {
+    number,
+    state,
+    labels,
+    body: `issue ${number} for ${key}`,
+    key,
+    engines: issueEngines,
+    failingTargets,
+  };
+}
