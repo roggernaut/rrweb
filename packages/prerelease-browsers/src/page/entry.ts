@@ -36,20 +36,22 @@ function messageOf(reason: unknown): string {
   }
 }
 
+// Listen from bundle load, so errors from beforeRrweb and from rrweb's own
+// evaluation, both before start, still fail the run. The first one is enough.
+let pageError: string | undefined;
+window.addEventListener('error', (event: ErrorEvent) => {
+  pageError ??= event.error ? messageOf(event.error) : event.message;
+});
+window.addEventListener('unhandledrejection', (event) => {
+  pageError ??= messageOf(event.reason);
+});
+
 async function run(id: string, options: RunOptions): Promise<void> {
-  let pageError: string | undefined;
-  const onError = (event: ErrorEvent) => {
-    pageError ??= event.error ? messageOf(event.error) : event.message;
-  };
-  const onRejection = (event: PromiseRejectionEvent) => {
-    pageError ??= messageOf(event.reason);
-  };
-  window.addEventListener('error', onError);
-  window.addEventListener('unhandledrejection', onRejection);
   try {
     const check = findCheck(id);
     if (!check) throw new Error(`unknown check: ${id}`);
     let outcome: AttemptResult = await check.run(createContext(options));
+    // Read after the check settles, so a late rejection is caught too.
     if (pageError !== undefined) {
       outcome = { ...outcome, ok: false, message: `page error: ${pageError}` };
     }
@@ -58,9 +60,6 @@ async function run(id: string, options: RunOptions): Promise<void> {
   } catch (err) {
     error = messageOf(err);
     state = 'error';
-  } finally {
-    window.removeEventListener('error', onError);
-    window.removeEventListener('unhandledrejection', onRejection);
   }
 }
 
@@ -77,7 +76,8 @@ window.__prerelease = {
     state = 'running';
     result = '';
     error = undefined;
-    void run(id, options);
+    // A macrotask, so no check code runs inside the caller's evaluate.
+    setTimeout(() => void run(id, options), 0);
   },
   poll() {
     if (state === 'done') return { state, length: result.length };

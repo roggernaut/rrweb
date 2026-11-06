@@ -5,6 +5,8 @@ declare global {
   interface Window {
     /** Set by tests in meta.head, before the bundle runs. */
     __prerelease_test?: boolean;
+    /** Set by test-start-deferred the moment its run begins. */
+    __prerelease_test_ran?: boolean;
   }
 }
 
@@ -29,6 +31,26 @@ const protocolTestChecks: CheckDefinition[] = [
     tier: 'focused',
     async run() {
       throw new Error('boom');
+    },
+  },
+  {
+    id: 'test-load-error',
+    kind: 'functional',
+    tier: 'focused',
+    beforeRrweb() {
+      throw new Error('early boom');
+    },
+    async run() {
+      return { ok: true };
+    },
+  },
+  {
+    id: 'test-start-deferred',
+    kind: 'functional',
+    tier: 'focused',
+    async run() {
+      window.__prerelease_test_ran = true;
+      return { ok: true };
     },
   },
   {

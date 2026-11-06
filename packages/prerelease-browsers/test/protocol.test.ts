@@ -1,6 +1,10 @@
 import type { PageDriver } from '../src/node/drivers/types.ts';
 import { launchPlaywright } from '../src/node/drivers/playwright.ts';
-import { buildPageBundle, readRrwebUmd } from '../src/node/page-source.ts';
+import {
+  buildPageBundle,
+  composePage,
+  readRrwebUmd,
+} from '../src/node/page-source.ts';
 import { runAttempt } from '../src/node/run-check.ts';
 import type { CheckMeta } from '../src/types.ts';
 
@@ -78,4 +82,29 @@ test('a hung check times out', async () => {
     timeoutMs: 2_000,
   });
   expect(r.message).toBe('timed out after 2000 ms');
+});
+
+test('a page error before start fails the check', async () => {
+  const r = await runAttempt(driver, meta('test-load-error'), src, {
+    timeoutMs: 10_000,
+  });
+  expect(r).toMatchObject({
+    ok: false,
+    message: expect.stringContaining('page error: early boom'),
+  });
+});
+
+test('start returns before any check code runs', async () => {
+  const m = meta('test-start-deferred');
+  await driver.loadHtml(composePage(m, src.bundle, src.rrweb));
+  // One expression, so nothing else can run between start and the reads.
+  const atReturn = await driver.evaluate(
+    `(__prerelease.start(${JSON.stringify(m.id)}, {}),
+      [window.__prerelease_test_ran === true, __prerelease.poll().state])`,
+  );
+  expect(atReturn).toEqual([false, 'running']);
+  await vi.waitFor(async () => {
+    expect(await driver.evaluate('__prerelease.poll().state')).toBe('done');
+  });
+  expect(await driver.evaluate('window.__prerelease_test_ran')).toBe(true);
 });
