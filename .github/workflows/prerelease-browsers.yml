@@ -390,7 +390,11 @@ jobs:
         env:
           PUPPETEER_SKIP_DOWNLOAD: true
 
+      # After a failed build no target uploads anything. The download must
+      # not stop the report then: reconcile lists every expected target as
+      # missing, which keeps every issue open and shows in the status issue.
       - name: Download results
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           pattern: results-*

@@ -393,6 +393,38 @@ test('missing BrowserStack results keep the run-broken issue open and show in th
   );
 });
 
+test('a run with no results at all, as after a failed build, closes nothing and lists every target missing', async () => {
+  const gh = fakeGitHub([
+    {
+      labels: ['prerelease', 'prerelease:run-broken'],
+      body: '<!-- prerelease:run-broken -->\nold',
+    },
+  ]);
+  await reconcile({
+    gh,
+    results: [failing('chrome-canary', 'css-nested-rules')],
+    expected,
+    apply: true,
+    run: runN(1),
+  });
+  const plan = await reconcile({
+    gh,
+    results: [],
+    expected,
+    apply: true,
+    run: runN(2),
+    browserstackMissing: true,
+  });
+  expect(plan.actions).toEqual([]);
+  expect(keyed(gh)[0].state).toBe('open');
+  expect(gh.issues[0].state).toBe('open');
+  const body = statusIssues(gh)[0].body;
+  for (const id of expected) {
+    expect(body).toMatch(new RegExp(`${id}\\W*: no results`));
+  }
+  expect(body).toContain('BrowserStack: no results');
+});
+
 test('a partial run plans as before, keeps a left-out issue open, and says partial', async () => {
   const gh = fakeGitHub();
   await reconcile({
