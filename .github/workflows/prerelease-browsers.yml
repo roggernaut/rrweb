@@ -38,6 +38,7 @@ jobs:
       run_macos: ${{ steps.plan.outputs.run_macos }}
       run_android: ${{ steps.plan.outputs.run_android }}
       expected: ${{ steps.plan.outputs.expected }}
+      left_out: ${{ steps.plan.outputs.left_out }}
     steps:
       - name: Decide what runs
         id: plan
@@ -55,8 +56,8 @@ jobs:
 
           if [ "$EVENT" = schedule ]; then
             run=false
-            # 10# reads weeks 08 and 09 as decimal, not as bad octal.
-            if [ "$REPOSITORY" = rrweb-io/rrweb ] && [ $(( 10#$(date -u +%V) % 2 )) -eq 0 ]; then
+            # Weeks since the epoch, so the rhythm holds across 53-week years.
+            if [ "$REPOSITORY" = rrweb-io/rrweb ] && [ $(( $(date -u +%s) / 604800 % 2 )) -eq 0 ]; then
               run=true
             fi
             browserstack=true
@@ -92,6 +93,16 @@ jobs:
           mapfile -t android < <(pick "${android_ids[@]}")
           expected=("${linux[@]}" "${macos[@]}" "${android[@]}")
 
+          # What a hand-started run chose not to cover, so the status issue
+          # can say the run was partial.
+          left_out=()
+          for id in "${all_ids[@]}"; do
+            [[ " ${expected[*]} " == *" $id "* ]] || left_out+=("$id")
+          done
+          if [ "$EVENT" != schedule ] && [ "$browserstack" != true ]; then
+            left_out+=(browserstack)
+          fi
+
           {
             echo "run=$run"
             echo "browserstack=$browserstack"
@@ -100,6 +111,7 @@ jobs:
             echo "run_macos=$([ ${#macos[@]} -gt 0 ] && echo true || echo false)"
             echo "run_android=$([ ${#android[@]} -gt 0 ] && echo true || echo false)"
             echo "expected=$(IFS=,; echo "${expected[*]}")"
+            echo "left_out=$(IFS=,; echo "${left_out[*]}")"
           } | tee -a "$GITHUB_OUTPUT"
 
   build:
@@ -107,9 +119,11 @@ jobs:
     needs: gate
     if: needs.gate.outputs.run == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js 24
         uses: actions/setup-node@v4
@@ -148,6 +162,8 @@ jobs:
       T: ${{ matrix.target }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js 24
         uses: actions/setup-node@v4
@@ -171,7 +187,7 @@ jobs:
         run: node src/node/install.ts "$T" "$RUNNER_TEMP/browsers" >> "$GITHUB_ENV"
 
       - name: Run ${{ matrix.target }}
-        run: xvfb-run yarn workspace @rrweb/prerelease-browsers run-target --target "$T" --deadline "$PRERELEASE_DEADLINE"
+        run: xvfb-run --server-args="-screen 0 1920x1080x24" yarn workspace @rrweb/prerelease-browsers run-target --target "$T" --deadline "$PRERELEASE_DEADLINE"
 
       - name: Upload results
         if: always()
@@ -191,6 +207,8 @@ jobs:
       PRERELEASE_DEADLINE: ${{ needs.gate.outputs.deadline }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js 24
         uses: actions/setup-node@v4
@@ -247,6 +265,8 @@ jobs:
       PRERELEASE_DEADLINE: ${{ needs.gate.outputs.deadline }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js 24
         uses: actions/setup-node@v4
@@ -311,6 +331,8 @@ jobs:
       PRERELEASE_DEADLINE: ${{ needs.gate.outputs.deadline }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js 24
         uses: actions/setup-node@v4
@@ -348,12 +370,14 @@ jobs:
     needs: [gate, linux, macos, android, browserstack]
     if: always() && needs.gate.outputs.run == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     permissions:
       contents: read
       issues: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js 24
         uses: actions/setup-node@v4
@@ -379,6 +403,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           EXPECTED: ${{ needs.gate.outputs.expected }}
           BROWSERSTACK_DUE: ${{ needs.gate.outputs.browserstack }}
+          LEFT_OUT: ${{ needs.gate.outputs.left_out }}
         run: |
           set -euo pipefail
           mkdir -p results
@@ -392,4 +417,5 @@ jobs:
             fi
           fi
           echo "expected targets: $EXPECTED"
-          node src/report/reconcile.ts --results results --expected "$EXPECTED" --apply "${flags[@]}"
+          echo "left out: ${LEFT_OUT:-nothing}"
+          node src/report/reconcile.ts --results results --expected "$EXPECTED" --left-out "$LEFT_OUT" --apply "${flags[@]}"

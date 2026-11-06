@@ -51,6 +51,8 @@ export interface ReconcileOptions {
   run?: RunMeta;
   /** BrowserStack was due, but its job wrote no list of expected targets. */
   browserstackMissing?: boolean;
+  /** Targets a hand-started run left out; the status then reads as a partial run. */
+  leftOut?: string[];
   log?: (line: string) => void;
 }
 
@@ -298,6 +300,7 @@ export async function reconcile(opts: ReconcileOptions): Promise<IssuePlan> {
 
   const body = statusBody(summary, plan, run, results, links, {
     browserstackMissing: opts.browserstackMissing,
+    leftOut: opts.leftOut,
   });
   if (status) {
     if (status.body !== body) {
@@ -336,13 +339,16 @@ async function main(argv: string[]): Promise<void> {
       known: { type: 'string' },
       apply: { type: 'boolean', default: false },
       'browserstack-missing': { type: 'boolean', default: false },
+      'left-out': { type: 'string', default: '' },
     },
   });
   if (!values.results) throw new Error('--results <dir> is required');
-  const expected = (values.expected ?? '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter((s) => s !== '');
+  const commaList = (value: string | undefined) =>
+    (value ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => s !== '');
+  const expected = commaList(values.expected);
   const results = await readResults(values.results);
   const knownPath =
     values.known ??
@@ -367,6 +373,7 @@ async function main(argv: string[]): Promise<void> {
     apply: values.apply === true,
     known: active,
     browserstackMissing: values['browserstack-missing'] === true,
+    leftOut: commaList(values['left-out']),
     log: (line) => console.log(line),
   });
   if (!values.apply) console.log(JSON.stringify(plan, null, 2));

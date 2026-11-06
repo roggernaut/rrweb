@@ -6,6 +6,7 @@ import {
   browserStackIds,
   connectTimeoutFor,
   connectWithBackoff,
+  executorSession,
   isParallelLimitError,
   jsonTransport,
   majorOf,
@@ -626,4 +627,26 @@ describe('run-browserstack command line', () => {
     expect(unknown.status).toBe(1);
     expect(unknown.stderr).toContain('unknown check "no-such-check"');
   }, 30_000);
+});
+
+describe('session link', () => {
+  const details = (publicUrl: unknown) =>
+    executorSession(async (command) => {
+      expect(command).toContain('getSessionDetails');
+      return JSON.stringify({ public_url: publicUrl });
+    });
+
+  test('is recorded without its share token', async () => {
+    const url = await details(
+      'https://automate.browserstack.com/builds/b1/sessions/s1?auth_token=secret123',
+    ).sessionUrl!();
+    expect(url).toBe('https://automate.browserstack.com/builds/b1/sessions/s1');
+    expect(url).not.toContain('?');
+    expect(url).not.toContain('secret123');
+  });
+
+  test('is left out when BrowserStack sends none, or nonsense', async () => {
+    expect(await details(undefined).sessionUrl!()).toBeUndefined();
+    expect(await details('not a url').sessionUrl!()).toBeUndefined();
+  });
 });

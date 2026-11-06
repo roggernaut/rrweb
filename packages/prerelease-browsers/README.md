@@ -10,7 +10,9 @@ The workflow `.github/workflows/prerelease-browsers.yml` runs every other
 Monday and can be started by hand from the Actions tab. It reports through
 GitHub issues labelled `prerelease`. A failing check gets one issue, which
 lists every target it fails on. A pinned status issue describes the latest
-run. If the status issue shows an old date, a run didn't happen.
+run. If the status issue shows an old date, a run didn't happen. A run
+started by hand with only some targets, or without BrowserStack, shows as a
+partial run and lists what it left out under "Not covered by this run".
 
 The package is private and is never published.
 

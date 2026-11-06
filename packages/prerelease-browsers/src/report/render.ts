@@ -336,12 +336,25 @@ export function statusBody(
   run: RunMeta,
   results: TargetResult[],
   issueLinks: Record<string, number>,
-  opts: { browserstackMissing?: boolean } = {},
+  opts: {
+    browserstackMissing?: boolean;
+    /** Targets a hand-started run chose not to run; `browserstack` stands for all of them. */
+    leftOut?: string[];
+  } = {},
 ): string {
   const complete =
     s.missingTargets.length === 0 &&
     s.incompleteTargets.length === 0 &&
     !opts.browserstackMissing;
+  const leftOut = (opts.leftOut ?? []).map((t) =>
+    t === 'browserstack' ? 'BrowserStack' : cell(t),
+  );
+  const state =
+    leftOut.length === 0
+      ? `**${complete ? 'complete' : 'incomplete'}**`
+      : complete
+      ? 'a **partial run**'
+      : 'an **incomplete partial run**';
 
   const failing = new Map<string, Set<string>>();
   for (const f of [...s.failures, ...s.parked.map((p) => p.failure)]) {
@@ -428,7 +441,7 @@ export function statusBody(
     '',
     `[The run of ${run.date}](${run.runUrl}), with rrweb at commit ${code(
       run.rrwebCommit,
-    )}, is **${complete ? 'complete' : 'incomplete'}**.`,
+    )}, is ${state}.`,
     '',
     'This issue is rewritten after every scheduled run. An old date means a run did not happen.',
     '',
@@ -485,6 +498,9 @@ export function statusBody(
     '',
     ...bullets(incompleteReasons),
     '',
+    ...(leftOut.length > 0
+      ? ['### Not covered by this run', '', ...bullets(leftOut), '']
+      : []),
     ...(s.notes.length > 0
       ? [
           '### Notes',

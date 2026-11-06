@@ -393,6 +393,37 @@ test('missing BrowserStack results keep the run-broken issue open and show in th
   );
 });
 
+test('a partial run plans as before, keeps a left-out issue open, and says partial', async () => {
+  const gh = fakeGitHub();
+  await reconcile({
+    gh,
+    results: [failing('safari-tp', 'css-nested-rules')],
+    expected: ['safari-tp'],
+    apply: true,
+    run: runN(1),
+  });
+  const args = {
+    results: [passing('chrome-canary', 'css-nested-rules')],
+    expected: ['chrome-canary'],
+    apply: false,
+    run: runN(2),
+  };
+  const without = await reconcile({ gh, ...args });
+  const partial = await reconcile({
+    gh,
+    ...args,
+    apply: true,
+    leftOut: ['safari-tp', 'browserstack'],
+  });
+  expect(partial).toEqual(without);
+  expect(keyed(gh)[0].state).toBe('open');
+  const body = statusIssues(gh)[0].body;
+  expect(body).toContain('is a **partial run**');
+  expect(body).toMatch(
+    /### Not covered by this run\n\n- safari-tp\n- BrowserStack/,
+  );
+});
+
 test('an existing status issue is rewritten in place, not pinned again', async () => {
   const gh = fakeGitHub([
     {

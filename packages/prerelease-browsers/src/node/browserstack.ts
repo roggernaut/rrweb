@@ -506,8 +506,22 @@ function executorCommand(action: string, args?: unknown): string {
   })}`;
 }
 
+/**
+ * The link without its query. BrowserStack's public_url carries an auth_token
+ * that lets anyone view the session, and results files land in public
+ * artifacts.
+ */
+function withoutQuery(url: string): string | undefined {
+  try {
+    const { origin, pathname } = new URL(url);
+    return origin + pathname;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Session status and link, through BrowserStack's in-page executor commands. */
-function executorSession(
+export function executorSession(
   run: (command: string) => Promise<unknown>,
 ): Pick<PageDriver, 'markSession' | 'sessionUrl'> {
   return {
@@ -526,7 +540,7 @@ function executorSession(
         | null
         | undefined;
       return typeof details?.public_url === 'string'
-        ? details.public_url
+        ? withoutQuery(details.public_url)
         : undefined;
     },
   };

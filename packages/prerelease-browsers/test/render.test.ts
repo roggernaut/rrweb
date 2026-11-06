@@ -291,6 +291,45 @@ describe('statusBody', () => {
   });
 });
 
+describe('a partial run', () => {
+  const rs = [passing('chrome-stable', 'a-check')];
+  const s = collectFailures(rs, ['chrome-stable'], []);
+
+  test('never reads complete, and lists what it left out', () => {
+    const body = statusBody(
+      s,
+      planIssueActions(s, []),
+      run,
+      rs,
+      {},
+      { leftOut: ['safari-tp', 'browserstack'] },
+    );
+    expect(body).toContain('is a **partial run**');
+    expect(body).not.toMatch(/\*\*complete\*\*/);
+    expect(body).toMatch(
+      /### Not covered by this run\n\n- safari-tp\n- BrowserStack\n/,
+    );
+  });
+
+  test('that is also incomplete says both', () => {
+    const body = statusBody(
+      s,
+      planIssueActions(s, []),
+      run,
+      rs,
+      {},
+      { leftOut: ['safari-tp'], browserstackMissing: true },
+    );
+    expect(body).toContain('is an **incomplete partial run**');
+  });
+
+  test('a full run has no left-out section', () => {
+    const body = statusBody(s, planIssueActions(s, []), run, rs, {}, {});
+    expect(body).toContain('is **complete**');
+    expect(body).not.toContain('Not covered by this run');
+  });
+});
+
 test('the run-broken body carries its marker and lists the failures', () => {
   const s = summary([failure]);
   const body = runBrokenBody(s.failures, s, run);
