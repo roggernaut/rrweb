@@ -5,10 +5,10 @@ Open that file in a browser for filters, sorts, tags, downstream evidence,
 and links. This markdown is the research notes behind the board.
 
 A snapshot proposal for restarting pull-request and issue intake on
-rrweb-io/rrweb. First taken 2026-09-03 and refreshed 2026-10-23 from public
-GitHub read-only APIs. The board reflects 2026-10-23. Sections below the
-changelog are the original 2026-09-03 research; where they disagree with the
-board, the board wins.
+rrweb-io/rrweb. First taken 2026-09-03 and refreshed 2026-10-23 and
+2026-11-06 from public GitHub read-only APIs. The board reflects 2026-11-06.
+Sections below the changelog are the original 2026-09-03 research; where they
+disagree with the board, the board wins.
 This is a working document, not a decision log: buckets can change after
 maintainer review.
 
@@ -17,19 +17,21 @@ written as plain numbers, not tracker URLs, so this file does not create
 GitHub cross-references. Look them up under the project's Pull requests
 or Issues tabs.
 
-- Open PRs: **141** (21 drafts). Oldest: 2020-08 (294). Newest: 2026-10-23 (1972).
-  **55 are from core maintainers** (Eoghan 28, Justin 26, Yun 1); the other 86 are community.
-- Open issues: **290**. Oldest: 2019-07 (88). Newest: 2026-10-18 (1967).
-- Upstream `main` HEAD at refresh: `009b2dd4` (shadow DOM leak fix 1958).
+- Open PRs: **154** (25 drafts). Oldest: 2020-08 (294). Newest: 2026-11-05 (2004).
+  **62 are from core maintainers** (Eoghan 32, Justin 29, Yun 1); the other 92 are community.
+- Open issues: **287**. Oldest: 2019-07 (88). Newest: 2026-10-07 (1955).
+- Upstream `main` HEAD at refresh: `59506da1` (BrowserStack note in the README, 2003).
+  rrweb 2.2.0 shipped on 2026-10-24 with the 1971 teardown work; the 2.2.1
+  release PR (1981) is open.
 - This repository also contains privacy-at-capture work that is ahead of
   upstream `main`. Several open masking PRs overlap that work; they should
   not be merged as parallel APIs.
 - A second pass over 62 older PRs tightened duplicates and already-fixed
   patches (CSS crash 1735, media-target cluster, asset draft 1239, etc.).
 - Most of the queue is waiting on review, not on authors. GitHub
-  `reviewDecision` on 2026-10-23: **124 REVIEW_REQUIRED**, 10
-  CHANGES_REQUESTED, 4 APPROVED and still open, 2 with no decision.
-  Branch protection requires a human review. 97 PRs still share an
+  `reviewDecision` on 2026-11-06: **125 REVIEW_REQUIRED**, 17
+  CHANGES_REQUESTED, 9 APPROVED and still open, 3 with no decision.
+  Branch protection requires a human review. 83 PRs still share an
   `updatedAt` of 2026-06-08 (a bulk touch, not a review pass).
 
 The queue is years of un-triaged patches plus bugs that never got a
@@ -37,6 +39,70 @@ reproduction. A practical restart is to **accept a small high-confidence
 slice, discuss a handful of product and privacy forks, and close or
 bounce the rest with a short explanation**. The two already-approved PRs
 can merge as soon as someone presses the button.
+
+---
+
+## Since 2026-10-23
+
+Two weeks of maintainer activity, mostly Eoghan reviewing. Six approved PRs
+are waiting only for the merge button.
+
+**Merged:** 1971 (10-24, recorder teardown, replaces 1968), 1961 (10-24,
+Version Packages for 2.2.0), 1964 (10-25, blocked iframe document), 1673
+(10-26, safer media play/pause), 1633 (10-26, Angular untainted prototypes),
+1255 (11-04, semver bump). Maintainers also merged 2003 (BrowserStack note in
+the README), which was never on the board.
+
+**Closed without merge:** 1970 (10-23, folded into 1971), 1809 (10-23, CI
+plumbing), 1739 (10-25, closed shadow DOM, replaced by 1978), 1791 (10-27,
+iframe leaks, covered by 1971 and 1987), 1259 and 1238 (11-04, stale
+Dependabot).
+
+**Issues closed:** 1967 (fixed by 1971), 1959 (fixed by 1958), 1628 (iframe
+leaks, fixed by 1971).
+
+**Decisions moved by maintainer activity:**
+
+- 1965 blocked images: Eoghan approved 2026-10-25 and labeled it privacy.
+  Moved to Merge now. 1770 is also approved now; moved to Merge now.
+- 1681 :hover regex: Eoghan measured no improvement and says 1480 is the fix.
+  Moved to Reject. Issue 1675 is assigned to Eoghan and points at 1480.
+- 1679 postMessage target origin: Justin approved, Eoghan requested a
+  changeset fix and opened 1991 as the symmetric alternative. Moved from
+  Reject to Discuss alongside 1800 and 1991. One trust model to pick.
+- 1972 checkbox/radio masking: Eoghan requested changes with a design
+  (fold into the value masking, also mask click targets). Moved from Discuss
+  to Clean-up; it is now the live PR for the gap 1164 described.
+- 1745 hidden inputs: Eoghan wants hidden always masked, even without
+  maskAllInputs. Still Clean-up, with that ask.
+- 1688 invalid media: 1673 merged, so only the record-side guard is left.
+  Moved to Clean-up. 1462 and 1798 stay Reject against merged 1673.
+- 1966 cross-origin re-snapshot: Eoghan asked two design questions. Moved to
+  Clean-up until the author answers.
+- 1963 Justin's teardown draft: 1971 took the path. Moved to Clean-up; his
+  1975 is the follow-up.
+- Issue 1315 autocomplete: PR 2004 adds the replay-side guard; Eoghan still
+  has to say whether the record-side rename is wanted.
+
+**New since the snapshot:** 25 PRs and no new issues. Four are approved
+already (2000 Dependabot group, 1995 rrdom scroll reset, 1993 fragment CSS
+urls, 1979 WebKit in Docker) and sit in Merge now. Seven went to Adopt: 2002
+(replay removes written back into the event), 1988 (PostHog's shadow-root
+walk-up port, Eoghan's comments addressed), 1987 (StyleSheetMirror leak),
+1977 (narrowed to iframe navigation tests as Eoghan asked), and the small
+maintainer items 1986, 1990, 1980, 1992. The cross-origin cluster got a
+maintainer proposal, 1991, which carries 1679 and overlaps 1800; the draft
+1996 (custom transport) belongs in the same discussion. 1978 revives closed
+shadow DOM recording from 1739 with Eoghan's tests folded in and the author
+waiting on a decision. Four community PRs from this repository's owner (2001
+TouchCancel, 1982 cursor state, 1983 smooth cursor and scroll, 1984 rrvideo
+MP4) all have Eoghan's review on them; 1984 overlaps Justin's draft 1951.
+Justin's 1975 (per-document teardown) conflicts after 1971 and has a user
+report of what 1971 left.
+
+**Board tests:** the Node suite now picks its sample rows from the current
+snapshot instead of hard-coding 1970 and 1971, so a refresh that retires
+those rows no longer breaks it.
 
 ---
 

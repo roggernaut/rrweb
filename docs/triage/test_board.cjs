@@ -62,8 +62,12 @@ function openBoard({ storage = memoryStorage(), claude } = {}) {
     b.run(`state.sort = "${sort}"; render()`);
     assert.equal(b.rows(), total);
   }
-  b.run('state.q = "release observers, buffers and listeners"; render()');
-  assert.equal(b.rows(), 1);
+  // Search: a row's own reason text narrows the list to the rows that carry it.
+  const probe = b.run('ITEMS.find((i) => i.kind === "pr" && i.reason.length > 80).reason');
+  b.run(`state.q = ${JSON.stringify(probe)}; render()`);
+  const hits = b.run(`ITEMS.filter((i) => [i.reason, i.message, i.notes].join(" ").toLowerCase().includes(${JSON.stringify(probe.toLowerCase())})).length`);
+  assert.ok(hits >= 1 && hits < total, "the probe must match some rows but not all");
+  assert.equal(b.rows(), hits);
   b.run('state.q = ""; state.assignee = "none"; render()');
   assert.equal(b.rows(), b.run("ITEMS.filter((i) => i.assignees.length === 0).length"));
   const someone = b.run("ITEMS.flatMap((i) => i.assignees)[0] || null");
@@ -74,18 +78,21 @@ function openBoard({ storage = memoryStorage(), claude } = {}) {
   b.run('state.assignee = "all"; render()');
   assert.equal((b.elements.board.innerHTML.match(/class="copy-msg"/g) || []).length, total);
 
+  // Two open PRs from the current snapshot, so the test survives refreshes.
+  const [one, two] = b.run('ITEMS.filter((i) => i.kind === "pr").slice(0, 2).map((i) => i.id)');
+
   // Local Done marks: a mark hides the row, survives a reload, and undoes.
-  b.run("setDone(ITEMS.find((i) => i.id === 1971), true); render()");
+  b.run(`setDone(ITEMS.find((i) => i.id === ${one}), true); render()`);
   assert.equal(b.rows(), total - 1);
   const reopened = openBoard({ storage: b.storage });
   reopened.run('state.pre = "done"; render()');
   assert.equal(reopened.rows(), 1);
-  reopened.run("setDone(ITEMS.find((i) => i.id === 1971), false); render()");
+  reopened.run(`setDone(ITEMS.find((i) => i.id === ${one}), false); render()`);
   assert.equal(reopened.rows(), 0);
 
   // Marks saved under an earlier per-snapshot key carry over once.
   const legacy = openBoard({
-    storage: memoryStorage({ "rrweb-triage-done:2026-09-03": JSON.stringify({ "pr:1970": true }) }),
+    storage: memoryStorage({ "rrweb-triage-done:2026-09-03": JSON.stringify({ [`pr:${two}`]: true }) }),
   });
   legacy.run('state.pre = "done"; render()');
   assert.equal(legacy.rows(), 1);
@@ -100,17 +107,18 @@ function openBoard({ storage = memoryStorage(), claude } = {}) {
   const bob = openBoard({ claude: viewer(true) });
   const guest = openBoard({ claude: viewer(false) });
   await tick();
-  alice.run("setDone(ITEMS.find((i) => i.id === 1970), true)");
+  const isDoneTwo = `isDone(ITEMS.find((i) => i.id === ${two}))`;
+  alice.run(`setDone(ITEMS.find((i) => i.id === ${two}), true)`);
   await tick();
-  assert.deepEqual({ ...docs.get("pr-1970"), at: undefined }, { key: "pr:1970", by: "u-true", at: undefined });
-  for (const other of [bob, guest]) assert.equal(other.run('isDone(ITEMS.find((i) => i.id === 1970))'), true);
-  guest.run("setDone(ITEMS.find((i) => i.id === 1970), false)");
+  assert.deepEqual({ ...docs.get(`pr-${two}`), at: undefined }, { key: `pr:${two}`, by: "u-true", at: undefined });
+  for (const other of [bob, guest]) assert.equal(other.run(isDoneTwo), true);
+  guest.run(`setDone(ITEMS.find((i) => i.id === ${two}), false)`);
   await tick();
-  assert.equal(alice.run('isDone(ITEMS.find((i) => i.id === 1970))'), true);
+  assert.equal(alice.run(isDoneTwo), true);
   assert.match(guest.elements["meta-count"].textContent, /view only/);
-  bob.run("setDone(ITEMS.find((i) => i.id === 1970), false)");
+  bob.run(`setDone(ITEMS.find((i) => i.id === ${two}), false)`);
   await tick();
-  assert.equal(alice.run('isDone(ITEMS.find((i) => i.id === 1970))'), false);
+  assert.equal(alice.run(isDoneTwo), false);
 
   console.log("PASS: filters, search, sorting, copy actions, local and shared Done marks");
 })().catch((e) => {
