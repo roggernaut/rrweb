@@ -1,5 +1,6 @@
 import type { AttemptResult, CheckMeta, RunOptions } from '../types.ts';
 import type { PageDriver } from './drivers/types.ts';
+import type { CheckStatus } from './results.ts';
 import { composePage } from './page-source.ts';
 
 const pollIntervalMs = 250;
@@ -91,4 +92,31 @@ export async function runAttempt(
     }
     return json;
   }
+}
+
+/**
+ * Applies the 2-of-3 rule: stop at a first pass, at two failures, or after a
+ * third attempt breaks the tie.
+ */
+export async function runWithRetry(
+  attempt: () => Promise<AttemptResult>,
+): Promise<{ status: CheckStatus; attempts: AttemptResult[] }> {
+  const attempts: AttemptResult[] = [];
+  let failures = 0;
+  let passes = 0;
+  while (attempts.length < 3) {
+    const result = await attempt();
+    attempts.push(result);
+    if (result.ok) {
+      if (result.skipped && attempts.length === 1) {
+        return { status: 'skipped', attempts };
+      }
+      passes++;
+    } else {
+      failures++;
+    }
+    if (passes === 1 && failures === 0) return { status: 'pass', attempts };
+    if (failures === 2) return { status: 'fail', attempts };
+  }
+  return { status: passes === 2 ? 'flaky' : 'fail', attempts };
 }

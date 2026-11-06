@@ -64,7 +64,9 @@ const protocolTestChecks: CheckDefinition[] = [
 /** Every check, in run order. */
 export const checks: CheckDefinition[] = [
   ...domChecks,
-  ...(window.__prerelease_test === true ? protocolTestChecks : []),
+  ...(typeof window !== 'undefined' && window.__prerelease_test === true
+    ? protocolTestChecks
+    : []),
 ];
 
 export function findCheck(id: string): CheckDefinition | undefined {
