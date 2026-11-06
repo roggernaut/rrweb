@@ -74,6 +74,12 @@ This feature aims to provide developers with more information about the bug scen
 
 [link](./console.md)
 
+## Keydown Recorder
+
+Record Enter, Tab, Escape, arrow keys and keyboard shortcuts, which rrweb core does not capture, with the keydown plugin.
+
+[link](./keydown.md)
+
 ### Plugin API
 
 The plugin API is designed to enable extending the functionality of rrweb without impacting regular use of the core packages.
