@@ -14,7 +14,10 @@ The triage calls (bucket, reason, next step, suggested message) live in the
 the changelog for each refresh are in `2026-09-03-open-prs-and-issues.md`.
 
 To refresh the board, follow [RUNBOOK.md](RUNBOOK.md). `refresh.py` fetches a
-new snapshot and prints the change report the runbook works from.
+new snapshot, records the outgoing buckets in `previous-buckets.json` (behind
+the board's **Changed** filter) and prints the change report the runbook works
+from. The `Triage refresh` workflow runs it and opens a draft PR.
+`post_messages.py` posts the suggested comments for rows marked Done.
 
 ## Done marks
 

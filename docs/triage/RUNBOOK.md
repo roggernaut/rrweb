@@ -32,13 +32,27 @@ git pull --ff-only
 python3 docs/triage/refresh.py > ../triage-report.md
 ```
 
-This replaces `snapshot-<old date>.json` with `snapshot-<today>.json` and
-writes a report (keep it outside the repo) with four sections:
+This replaces `snapshot-<old date>.json` with `snapshot-<today>.json`,
+records the outgoing board's buckets in `previous-buckets.json` (the board's
+**Changed** filter and badges compare against it), and writes a report (keep
+it outside the repo) with four sections:
 
 - PRs and issues closed since the last snapshot, merged or not
-- New PRs and issues
+- New PRs and issues, with their review state, assignees and labels
 - Items whose review decision, draft state, labels or assignees changed
-- Maintainer comments and reviews since the last snapshot, quoted
+- Maintainer comments and reviews since the last snapshot, quoted, with
+  each review's inline comments under it
+
+The `Triage refresh` workflow (`.github/workflows/triage-refresh.yml`) does
+this step on a runner and opens a draft PR against the board branch with the
+report as its body. GitHub only runs its schedule from the default branch, so
+on this fork start it by hand:
+
+```sh
+gh workflow run triage-refresh.yml --ref cursor/pr-issue-triage-d529
+```
+
+Check out that PR's branch and continue from step 3.
 
 ### 3. Work the report into the overlays
 
@@ -72,9 +86,10 @@ assignees, and filters by assignee. Keep the overlays consistent with them:
   `reproduction needed`), the bucket and message agree with it.
 - Never copy a label into an overlay's `tags`. Labels show on their own.
 
-`test_board.py` enforces two of these: a bucketed row with an assignee must
-name that person in `next_step`, and `related=` may only list open items
-(merged or closed numbers belong in the `reason` text instead).
+`test_board.py` enforces three rules: a bucketed row with an assignee must
+name that person in `next_step`; `related=` may only list open items (merged
+or closed numbers belong in the `reason` text instead); and a `cleanup` PR
+with changes requested upstream must have a hand-written `message=`.
 
 #### Buckets
 
@@ -153,7 +168,21 @@ check the header date.
 
 Shared Done marks persist from one meeting to the next. A row marked Done
 last time that is still open stays hidden. At the start of the meeting,
-turn on **Show done** and unmark anything that needs another look.
+turn on **Show done** and unmark anything that needs another look. Start the
+meeting on the **Changed** filter: it lists the rows that are new or moved
+bucket since the previous snapshot.
+
+### 8. After the meeting: post the messages
+
+The board never writes to GitHub. To post the suggested comments for the
+rows the team marked Done, copy them with **Copy done IDs** and run:
+
+```sh
+pbpaste | python3 docs/triage/post_messages.py          # dry run, prints each message
+pbpaste | python3 docs/triage/post_messages.py --post   # posts them as comments
+```
+
+It only comments. Closing, labeling and merging stay manual.
 
 ## When something fails
 

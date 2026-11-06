@@ -104,7 +104,14 @@ report of what 1971 left.
 snapshot instead of hard-coding 1970 and 1971, so a refresh that retires
 those rows no longer breaks it. Two Python checks enforce runbook rules that
 had drifted: a row with an upstream assignee must name them in its next
-step (14 rows were fixed), and `related` may only list open items.
+step (14 rows were fixed), `related` may only list open items, and a
+clean-up PR with changes requested upstream carries a hand-written message.
+
+**Tooling:** the board has a **Changed** filter and badges (new or moved
+since the previous snapshot, from `previous-buckets.json`), the refresh
+report now quotes inline review comments and shows new PRs' assignees and
+labels, a `Triage refresh` workflow opens the snapshot PR, and
+`post_messages.py` posts the chosen messages after the meeting.
 
 ---
 

@@ -56,6 +56,10 @@ function openBoard({ storage = memoryStorage(), claude } = {}) {
   assert.equal(b.run("state.pre"), "adopt");
   assert.equal(b.rows(), b.run('ITEMS.filter((i) => i.triage === "adopt").length'));
   assert.ok(b.rows() > 0, "the default filter must not open on an empty list");
+  b.run('state.pre = "changed"; render()');
+  assert.equal(b.rows(), b.run("ITEMS.filter((i) => i.change).length"));
+  assert.ok(b.rows() > 0, "the refresh must leave some rows new or moved");
+  assert.equal((b.elements.board.innerHTML.match(/class="tag change"/g) || []).length, b.rows());
   b.run('state.pre = "all"; render()');
   assert.equal(b.rows(), total);
   for (const sort of ["number", "triage", "tags", "recency"]) {

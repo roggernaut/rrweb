@@ -39,3 +39,7 @@ vite.config.ts.timestamp-*
 
 # bundle analysis files
 *-bundle-analysis.html
+
+# python bytecode (docs/triage scripts)
+__pycache__/
+*.pyc

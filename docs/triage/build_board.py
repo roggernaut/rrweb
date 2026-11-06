@@ -16,6 +16,9 @@ ROOT = Path(__file__).resolve().parent
 # Checked-in upstream state, written by refresh.py. Exactly one is kept.
 SNAPSHOT = max(ROOT.glob("snapshot-*.json"))
 OUT_HTML = ROOT / "index.html"
+# Buckets of the board as it stood at the last refresh, written by refresh.py.
+# Rows that are new or in a different bucket get a badge and the Changed filter.
+PREVIOUS = ROOT / "previous-buckets.json"
 
 MAINTAINERS = {
     "eoghanmurray": "Eoghan",
@@ -296,14 +299,14 @@ pr(1300, "cleanup", reason="addList perf sibling of 1302. Draft. 1652 merged 202
 pr(1290, "cleanup", reason="rrvideo Chrome launch options.", next_step="Ask for rebase + why, or close.")
 pr(960, "cleanup", reason="Custom event in checkout count. Draft, 4 lines, 2022.", next_step="Land the four lines or close as abandoned.")
 pr(863, "cleanup", reason="Save/view snapshot scripts. Better as a recipe than a package dump.", next_step="Move to a recipe or close.")
-pr(768, "cleanup", reason="Dynamic inline-style URLs. Eoghan requested changes. Very stale.", next_step="Eoghan: ask the author to rebase onto current transform utilities, or close as very stale.", tags=("changes-requested",))
+pr(768, "cleanup", reason="Dynamic inline-style URLs. Eoghan requested changes. Very stale.", next_step="Eoghan: ask the author to rebase onto current transform utilities, or close as very stale.", tags=("changes-requested",), message="Eoghan's review still stands and the branch is years behind main. If you want to keep this, please rebase it onto the current transform utilities; otherwise we will close it and you can open a fresh PR.")
 pr(1730, "cleanup", reason="rrdom-to-html trim. Rare CLEAN status; still needs a why.", next_step="Eoghan: add the why or close.")
 pr(1653, "cleanup", reason="Micro perf on top of 1652, which merged 2026-09-17.", next_step="Rebase onto main if it still helps; otherwise close.")
 pr(1534, "cleanup", reason="Export isBlocked. Lets hosts implement their own policy; easy to misuse. Draft.", next_step="Decide whether exporting the predicate is the API, then rebase.", tags=("impacts-privacy",))
 pr(1466, "cleanup", reason="History-change tests only. Draft.", next_step="Land if they pass.")
 pr(1322, "cleanup", reason="Failing CSS shorthand test. Draft.", next_step="Make it an issue, not a red PR.")
 pr(1140, "cleanup", reason="Scrub-to-zero. Split unrelated pointer-event changes.", next_step="Split, then review.")
-pr(1875, "cleanup", reason="Prefer minified CDN ESM. Docs. Eoghan requested changes on Justin.", next_step="Justin: address or close.", tags=("changes-requested",))
+pr(1875, "cleanup", reason="Prefer minified CDN ESM. Docs. Eoghan requested changes on Justin.", next_step="Justin: address or close.", tags=("changes-requested",), message="Eoghan's requested changes are still open here. Address them or close; a docs change this small should not sit.")
 pr(1841, "cleanup", reason="Changelog backfill. DIRTY.", next_step="Rebase or close.")
 pr(1811, "cleanup", reason="CI / changeset / fork-comment plumbing. 1809 closed 2026-10-23.", next_step="Squash with 1810/1792/1789 into one hygiene PR.", related=(1810, 1792, 1789))
 pr(1810, "cleanup", reason="CI / changeset plumbing.", next_step="Squash into one hygiene PR with 1811/1792/1789.", related=(1811, 1792, 1789))
@@ -672,6 +675,10 @@ def load_json(path: Path):
     return json.loads(path.read_text())
 
 
+def previous_buckets() -> dict[str, str]:
+    return load_json(PREVIOUS)["buckets"] if PREVIOUS.exists() else {}
+
+
 def who_of(login: str) -> tuple[str, str]:
     if login in MAINTAINERS:
         return "maintainer", MAINTAINERS[login]
@@ -968,6 +975,12 @@ def assemble() -> list[dict]:
             }
         )
 
+    previous = previous_buckets()
+    for item in items:
+        was = previous.get(f"{item['kind']}:{item['id']}")
+        item["change"] = None if not previous else "new" if was is None else "moved" if was != item["triage"] else None
+        item["movedFrom"] = was if item["change"] == "moved" else None
+
     items.sort(key=lambda x: (0 if x["kind"] == "pr" else 1, -x["id"]))
     return items
 
@@ -1079,6 +1092,7 @@ HTML_HEAD = r"""<!DOCTYPE html>
   .tag.impacts-privacy { color: #ffc9b8; border-color: #6b3d33; }
   .tag.posthog-backed, .tag.posthog-shipped { color: #b8e0ff; border-color: #33556b; }
   .tag.approved { color: #1b1404; background: var(--merge); border-color: var(--merge); }
+  .tag.change { color: #10241c; background: var(--accent-2); border-color: var(--accent-2); font-weight: 650; }
   .sub { color: var(--muted); font-size: 12px; }
   .grid {
     display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; margin-top: 8px;
@@ -1212,6 +1226,7 @@ const TAG_RANK = {
 };
 
 const PREFILTERS = [
+  { id: "changed", label: "Changed" },
   { id: "merge-now", label: "Merge now" },
   { id: "adopt", label: "Adopt" },
   { id: "posthog", label: "PostHog-backed" },
@@ -1350,6 +1365,7 @@ function doneCount() {
 
 function matchesPre(item, pre) {
   if (pre === "all") return true;
+  if (pre === "changed") return Boolean(item.change);
   if (pre === "merge-now") return item.triage === "merge-now";
   if (pre === "adopt") return item.triage === "adopt";
   if (pre === "posthog") return item.tags.includes("posthog-backed") || item.tags.includes("posthog-shipped");
@@ -1380,6 +1396,7 @@ function filtered() {
       ...item.labels, ...item.assignees,
       TRIAGE_LABEL[item.triage], item.next, item.reason, item.notes,
       item.downstream, item.message, ...(item.tags || []), ...(item.related || []),
+      item.change ? changeLabel(item) : "",
       ...((item.downstreamLinks || []).map((l) => [l.label, l.note, l.url].join(" "))),
     ].join(" ").toLowerCase();
     return hay.includes(q);
@@ -1454,6 +1471,11 @@ function downstreamCell(item) {
   return `<div class="cell${empty ? " empty" : ""}"><h3>Downstream evidence</h3>${body}</div>`;
 }
 
+function changeLabel(item) {
+  if (item.change === "new") return "New since " + PREVIOUS_DATE;
+  return "Moved from " + (TRIAGE_LABEL[item.movedFrom] || item.movedFrom);
+}
+
 function renderRow(item) {
   const tags = item.labels.map((l) =>
     `<span class="tag upstream-label" title="Label on GitHub">${esc(l)}</span>`
@@ -1477,6 +1499,7 @@ function renderRow(item) {
       <span class="id"><a href="${esc(item.url)}" target="_blank" rel="noreferrer">#${item.id}</a></span>
       <span class="title">${esc(item.title)}</span>
       <span class="triage ${esc(item.triage)}">${esc(TRIAGE_LABEL[item.triage] || item.triage)}</span>
+      ${item.change ? `<span class="tag change" title="Compared with the ${PREVIOUS_DATE} board">${esc(changeLabel(item))}</span>` : ""}
       <span class="row-actions">
         <button type="button" class="mark-done ghost${marked ? " done-on" : ""}" data-id="${item.id}" data-kind="${item.kind}">${marked ? "Undo" : "Done"}</button>
         ${msg ? `<span class="msg">${msg}</span>` : ""}
@@ -1622,8 +1645,12 @@ connectShared();
 def render_html(items: list[dict]) -> str:
     # Escaping "</" keeps a title or message from closing the inline script.
     payload = json.dumps(items, ensure_ascii=False).replace("</", "<\\/")
-    html = HTML_HEAD + f"const ITEMS = {payload};\n" + HTML_TAIL
-    return html.replace("{{SNAPSHOT_DATE}}", load_json(SNAPSHOT)["taken"])
+    html = HTML_HEAD + "const PREVIOUS_DATE = {{PREVIOUS_DATE}};\n" + f"const ITEMS = {payload};\n" + HTML_TAIL
+    previous_date = load_json(PREVIOUS)["taken"] if PREVIOUS.exists() else None
+    return (
+        html.replace("{{SNAPSHOT_DATE}}", load_json(SNAPSHOT)["taken"])
+        .replace("{{PREVIOUS_DATE}}", json.dumps(previous_date))
+    )
 
 
 def artifact_html(html: str) -> str:

@@ -38,6 +38,25 @@ class BoardTest(unittest.TestCase):
             closed = sorted(set(item["related"]) - open_ids)
             self.assertEqual(closed, [], (item["kind"], item["id"]))
 
+    def test_reviewed_cleanup_rows_have_a_written_message(self):
+        """Once a maintainer requested changes, the generic clean-up text is wrong: point at their request."""
+        for item in self.items:
+            if item["kind"] == "pr" and item["triage"] == "cleanup" and "changes-requested" in item["tags"]:
+                overlay = board.PR[item["id"]]
+                self.assertTrue(overlay["message"], (item["id"], "needs a hand-written message"))
+
+    def test_change_badges_follow_the_previous_buckets(self):
+        previous = board.previous_buckets()
+        self.assertTrue(previous, "previous-buckets.json is missing; refresh.py writes it")
+        self.assertLess(board.load_json(board.PREVIOUS)["taken"], self.snapshot["taken"])
+        for item in self.items:
+            was = previous.get(f"{item['kind']}:{item['id']}")
+            expected = "new" if was is None else "moved" if was != item["triage"] else None
+            self.assertEqual(item["change"], expected, (item["kind"], item["id"]))
+            self.assertEqual(item["movedFrom"], was if expected == "moved" else None, (item["kind"], item["id"]))
+        html = board.OUT_HTML.read_text()
+        self.assertNotIn("{{PREVIOUS_DATE}}", html)
+
     def test_every_triage_and_tag_has_a_label(self):
         for item in self.items:
             self.assertIn(item["triage"], board.TRIAGE_LABEL, item["id"])

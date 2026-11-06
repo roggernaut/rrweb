@@ -1,0 +1,70 @@
+name: Triage refresh
+
+# Step 2 of docs/triage/RUNBOOK.md: fetch a new upstream snapshot and open a
+# draft PR carrying the change report. The overlays are still edited by hand.
+#
+# GitHub only runs `schedule` from the default branch, so on a fork where the
+# board lives on its own branch, start it by hand:
+#   gh workflow run triage-refresh.yml --ref cursor/pr-issue-triage-d529
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * 3' # Wednesdays 06:00 UTC; the job skips odd ISO weeks
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Only every second week on the schedule
+        if: github.event_name == 'schedule'
+        run: |
+          if [ $(( $(date -u +%V) % 2 )) -ne 0 ]; then
+            echo "odd ISO week, skipping" && exit 0
+          fi
+          echo "GO=1" >> "$GITHUB_ENV"
+      - name: Always go when started by hand
+        if: github.event_name == 'workflow_dispatch'
+        run: echo "GO=1" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v4
+        if: env.GO == '1'
+        with:
+          fetch-depth: 0
+
+      - name: Fetch the snapshot and write the report
+        if: env.GO == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 docs/triage/refresh.py > "$RUNNER_TEMP/triage-report.md"
+          echo "DATE=$(date -u +%F)" >> "$GITHUB_ENV"
+
+      - name: Open a draft PR against the board branch
+        if: env.GO == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          base="${GITHUB_REF_NAME}"
+          branch="triage/refresh-${DATE}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add -A docs/triage
+          if git diff --cached --quiet; then
+            echo "nothing changed since the last snapshot" && exit 0
+          fi
+          git commit -m "docs: triage snapshot ${DATE}"
+          git push -u origin "$branch"
+          {
+            echo "Snapshot ${DATE}. Work this report into the overlays per \`docs/triage/RUNBOOK.md\` step 3, then build, test, update the notes and merge into \`${base}\`."
+            echo
+            head -c 60000 "$RUNNER_TEMP/triage-report.md"
+          } > "$RUNNER_TEMP/pr-body.md"
+          gh pr create --draft --base "$base" --head "$branch" \
+            --title "docs: triage refresh ${DATE}" \
+            --body-file "$RUNNER_TEMP/pr-body.md"
