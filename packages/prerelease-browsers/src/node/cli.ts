@@ -16,11 +16,7 @@ import {
 } from './browserstack.ts';
 import type { TargetResult } from './results.ts';
 import { errorMessage } from './run-check.ts';
-import {
-  assertKnownChecks,
-  runTarget,
-  runTargetOrRecordCrash,
-} from './run-targets.ts';
+import { assertKnownChecks, runTargetOrRecordCrash } from './run-targets.ts';
 import { applyPortOffset, asPrRole, findTarget } from './targets.ts';
 
 const deadlineMinutes = 105;
@@ -78,6 +74,8 @@ async function runTargetCommand(argv: string[]): Promise<void> {
     },
   });
   if (!values.target) throw new Error(`--target is required\n${usage}`);
+  // A typo would otherwise be written as a crashed launch.
+  if (values.check) assertKnownChecks(values.check);
   const role = values['pr-role'];
   if (role !== undefined && role !== 'pr' && role !== 'base') {
     throw new Error(`--pr-role must be pr or base, got "${role}"`);
@@ -89,7 +87,8 @@ async function runTargetCommand(argv: string[]): Promise<void> {
   const rrwebCommit = values['rrweb-commit'] ?? headCommit();
   const found = findTarget(values.target);
   const target = role === undefined ? found : asPrRole(found, role);
-  const result = await runTarget(target, {
+  // A crash is written as a launch failure, so the report still sees this target.
+  const result = await runTargetOrRecordCrash(target, {
     resultsDir: resolve(values.results ?? 'results'),
     deadline,
     only: values.check,

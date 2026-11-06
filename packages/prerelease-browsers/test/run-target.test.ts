@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -578,5 +579,53 @@ describe('findFenixNightlyApk', () => {
       findFenixNightlyApk(new Date('2027-01-01T03:00:00Z'), fetchListing),
     ).rejects.toThrow(/no Fenix nightly/);
     expect(requested).toEqual([`${root}/2027/01/`, `${root}/2026/12/`]);
+  });
+});
+
+describe('run-target command line', () => {
+  const cli = fileURLToPath(new URL('../src/node/cli.ts', import.meta.url));
+  const runCli = (...args: string[]) =>
+    spawnSync(process.execPath, [cli, 'run-target', ...args], {
+      encoding: 'utf8',
+    });
+
+  test('a crash after launch still writes a results file', async () => {
+    const out = runCli(
+      '--target',
+      'local-chromium',
+      '--check',
+      'snapshot-basic',
+      '--results',
+      tmp,
+      '--rrweb-dist',
+      join(tmp, 'no-such-dist'),
+      '--rrweb-commit',
+      'abc',
+    );
+    expect(out.stderr).toBe('');
+    expect(out.status).toBe(0);
+    expect(out.stdout).toContain(
+      'local-chromium launch failed: crashed: rrweb is not built',
+    );
+    const [r] = await readResults(tmp);
+    expect(r).toMatchObject({
+      targetId: 'local-chromium',
+      rrwebCommit: 'abc',
+      launch: { ok: false, error: expect.stringMatching(/^crashed: /) },
+    });
+  }, 60_000);
+
+  test('an unknown check exits before any session, with no results file', async () => {
+    const out = runCli(
+      '--target',
+      'local-chromium',
+      '--check',
+      'nope',
+      '--results',
+      tmp,
+    );
+    expect(out.status).toBe(1);
+    expect(out.stderr).toContain('unknown check "nope"');
+    expect(await readResults(tmp)).toEqual([]);
   });
 });
