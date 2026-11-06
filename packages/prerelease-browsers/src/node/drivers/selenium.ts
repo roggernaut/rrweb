@@ -32,7 +32,10 @@ export async function connectSelenium(opts: {
 }): Promise<PageDriver> {
   let driver: WebDriver;
   try {
+    // Without this, SELENIUM_REMOTE_URL and SELENIUM_BROWSER in the
+    // environment would silently send the session somewhere else.
     driver = await new Builder()
+      .disableEnvironmentOverrides()
       .usingServer(opts.serverUrl)
       .withCapabilities(opts.capabilities)
       .build();
@@ -53,17 +56,21 @@ export async function connectSelenium(opts: {
     }
   }
 
+  let loads = 0;
+
   return {
     canReachLocalhost: opts.canReachLocalhost,
     async loadHtml(html) {
       // A navigation, not just document.open(), so each page gets a new
-      // Window: open() keeps the Window and every global on it.
-      await driver.get('about:blank');
+      // Window: open() keeps the Window and every global on it. The URL is
+      // new every time, so no engine can skip it as a same-URL navigation.
+      const blank = `about:blank?n=${++loads}`;
+      await driver.get(blank);
       if (
         await driver.executeScript(`return window.${reuseMarker} === true;`)
       ) {
         throw new Error(
-          'navigating to about:blank kept the previous Window; pages would share globals',
+          `navigating to ${blank} kept the previous Window; pages would share globals`,
         );
       }
       await driver.executeScript(writePage, html);

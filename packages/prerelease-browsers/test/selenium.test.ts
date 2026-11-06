@@ -1,3 +1,4 @@
+import { createServer as createHttpServer } from 'node:http';
 import { createServer } from 'node:net';
 import type { AddressInfo } from 'node:net';
 import { startDriverProcess } from '../src/node/driver-process.ts';
@@ -46,6 +47,24 @@ describe('startDriverProcess', () => {
     await expect(fetch(`${proc.url}/status`)).rejects.toThrow();
   });
 
+  test('rejects when the process exits while another server answers on its port', async () => {
+    const leftover = createHttpServer((req, res) => {
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ value: { ready: true } }));
+    });
+    await new Promise<void>((r) => leftover.listen(0, '127.0.0.1', r));
+    const { port } = leftover.address() as AddressInfo;
+    // Like a second geckodriver on a fixed port: binding fails, so it exits.
+    const binds = `require('node:http').createServer().listen(${port}, '127.0.0.1')`;
+    try {
+      await expect(
+        startDriverProcess(process.execPath, ['-e', binds], port),
+      ).rejects.toThrow(/exited.*EADDRINUSE/s);
+    } finally {
+      await new Promise((r) => leftover.close(r));
+    }
+  });
+
   test('rejects when the process exits before it is ready', async () => {
     const port = await freePort();
     await expect(
@@ -55,6 +74,123 @@ describe('startDriverProcess', () => {
         port,
       ),
     ).rejects.toThrow(/exited with code 3.*no browser here/s);
+  });
+});
+
+/**
+ * Just enough of a WebDriver server for connectSelenium: sessions,
+ * navigation and the scripts loadHtml runs. With `keepWindow`, the reuse
+ * marker survives navigation, like an engine that reuses the Window.
+ */
+async function startFakeWebDriver() {
+  const state = {
+    sessions: 0,
+    navigations: [] as string[],
+    keepWindow: false,
+    written: false,
+  };
+  const server = createHttpServer(async (req, res) => {
+    let body = '';
+    for await (const chunk of req) body += chunk;
+    const send = (value: unknown, status = 200) => {
+      res.statusCode = status;
+      res.setHeader('content-type', 'application/json; charset=utf-8');
+      res.end(JSON.stringify({ value }));
+    };
+    const route = `${req.method} ${req.url}`;
+    if (route === 'POST /session') {
+      state.sessions++;
+      return send({ sessionId: 'fake', capabilities: { browserName: 'fake' } });
+    }
+    if (route === 'POST /session/fake/url') {
+      state.navigations.push((JSON.parse(body) as { url: string }).url);
+      return send(null);
+    }
+    if (route === 'POST /session/fake/execute/sync') {
+      const { script } = JSON.parse(body) as { script: string };
+      if (script.includes('document.readyState')) return send('complete');
+      if (script.includes('document.write')) {
+        state.written = true;
+        return send(null);
+      }
+      if (script.includes('=== true')) {
+        return send(state.keepWindow && state.written);
+      }
+      return send(null);
+    }
+    if (route === 'DELETE /session/fake') return send(null);
+    send({ error: 'unknown command', message: route }, 404);
+  });
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+  const { port } = server.address() as AddressInfo;
+  return {
+    state,
+    url: `http://127.0.0.1:${port}`,
+    close: () => new Promise((r) => server.close(r)),
+  };
+}
+
+describe('connectSelenium against a fake WebDriver server', () => {
+  let fake: Awaited<ReturnType<typeof startFakeWebDriver>>;
+  beforeEach(async () => {
+    fake = await startFakeWebDriver();
+  });
+  afterEach(async () => {
+    await fake.close();
+  });
+
+  const connect = () =>
+    connectSelenium({
+      serverUrl: fake.url,
+      capabilities: { browserName: 'fake' },
+      canReachLocalhost: false,
+    });
+
+  test('every load navigates to a blank URL no earlier load used', async () => {
+    const driver = await connect();
+    await driver.loadHtml('<p>one</p>');
+    await driver.loadHtml('<p>two</p>');
+    await driver.loadHtml('<p>three</p>');
+    await driver.close();
+    const { navigations } = fake.state;
+    expect(navigations).toHaveLength(3);
+    expect(new Set(navigations).size).toBe(3);
+    for (const url of navigations) expect(url).toMatch(/^about:blank\?/);
+  });
+
+  test('a load that keeps the previous Window throws', async () => {
+    fake.state.keepWindow = true;
+    const driver = await connect();
+    await driver.loadHtml('<p>one</p>');
+    await expect(driver.loadHtml('<p>two</p>')).rejects.toThrow(
+      /kept the previous Window/,
+    );
+    await driver.close();
+  });
+
+  test('SELENIUM_REMOTE_URL and SELENIUM_BROWSER cannot redirect the session', async () => {
+    const other = await startFakeWebDriver();
+    const saved = {
+      url: process.env.SELENIUM_REMOTE_URL,
+      browser: process.env.SELENIUM_BROWSER,
+    };
+    process.env.SELENIUM_REMOTE_URL = other.url;
+    process.env.SELENIUM_BROWSER = 'chrome';
+    try {
+      const driver = await connect();
+      await driver.close();
+      expect(fake.state.sessions).toBe(1);
+      expect(other.state.sessions).toBe(0);
+    } finally {
+      for (const [key, value] of [
+        ['SELENIUM_REMOTE_URL', saved.url],
+        ['SELENIUM_BROWSER', saved.browser],
+      ] as const) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+      await other.close();
+    }
   });
 });
 
@@ -96,7 +232,12 @@ describe.skipIf(!geckodriver || !firefoxBinary)('Selenium on Firefox', () => {
     const info = await driver.describe();
     expect(info.browserName).toBe('firefox');
     expect(info.browserVersion).toMatch(/^\d+\./);
-    expect(info.platform).toBe('mac');
+    const platforms: Record<string, string> = {
+      darwin: 'mac',
+      linux: 'linux',
+      win32: 'windows',
+    };
+    expect(info.platform).toBe(platforms[process.platform]);
     expect(info.userAgent).toMatch(/Firefox\//);
   });
 

@@ -2,6 +2,12 @@ import { spawn } from 'node:child_process';
 
 const readyTimeoutMs = 30_000;
 const pollIntervalMs = 100;
+/**
+ * How long the process must stay up after /status first answers. A second
+ * driver on a fixed port fails to bind and exits, while the leftover one
+ * answers /status; this catches that instead of using the leftover.
+ */
+const settleMs = 500;
 const stopTimeoutMs = 5_000;
 /** How much of the driver's output an error message keeps. */
 const outputTailChars = 2_000;
@@ -15,7 +21,8 @@ export interface DriverProcess {
  * Starts a WebDriver server such as geckodriver or safaridriver and waits
  * until `http://127.0.0.1:<port>/status` reports ready. `args` must make the
  * server listen on `port` (`--port` for geckodriver, `-p` for safaridriver).
- * Gives up after 30 s, or as soon as the process exits.
+ * Gives up after 30 s, or as soon as the process exits, including within a
+ * short settle time after /status answers.
  */
 export async function startDriverProcess(
   cmd: string,
@@ -60,7 +67,16 @@ export async function startDriverProcess(
   const giveUpAt = Date.now() + readyTimeoutMs;
   for (;;) {
     if (failure) throw failure;
-    if (await isReady(url)) return { url, stop };
+    if (await isReady(url)) {
+      await Promise.race([closed, new Promise((r) => setTimeout(r, settleMs))]);
+      if (child.exitCode !== null || child.signalCode !== null || failure) {
+        await closed;
+        throw new Error(
+          `${cmd} exited although ${url}/status answered, so another server holds port ${port}: ${output.trim()}`,
+        );
+      }
+      return { url, stop };
+    }
     if (Date.now() >= giveUpAt) {
       await stop();
       throw new Error(
