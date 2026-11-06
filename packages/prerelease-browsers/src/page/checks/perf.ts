@@ -209,6 +209,12 @@ const recordStopCycles: CheckDefinition = {
       (window as { gc?: () => void }).gc?.();
       return ctx.heapBytes();
     };
+    // One unmeasured cycle first, so the baseline already holds the larger
+    // part of rrweb's one-time cost and the delta leans on per-cycle growth.
+    const warmUp = ctx.rrweb.record({ emit: () => undefined });
+    if (!warmUp) throw new Error('rrweb.record did not start');
+    warmUp();
+    await settle(ctx);
     const before = heap();
     let snapshots = 0;
     // Events are counted, not kept, so the heap delta shows what rrweb holds on to.
