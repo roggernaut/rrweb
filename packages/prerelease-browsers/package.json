@@ -16,6 +16,7 @@
     "report": "node src/report/reconcile.ts"
   },
   "devDependencies": {
+    "@puppeteer/browsers": "^2",
     "@rrweb/types": "^2.2.0",
     "@types/node": "^18.15.11",
     "@types/selenium-webdriver": "^4.35.7",

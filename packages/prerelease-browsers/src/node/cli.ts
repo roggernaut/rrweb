@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import type { PerfSample } from '../types.ts';
 import { runTarget } from './run-targets.ts';
-import { findTarget } from './targets.ts';
+import { applyPortOffset, findTarget } from './targets.ts';
 
 const deadlineMinutes = 105;
 
@@ -31,7 +31,7 @@ function describeSamples(samples: PerfSample[]): string[] {
   });
 }
 
-const usage = `usage: cli.ts run-target --target <id> [--check <id>]... [--results <dir>] [--deadline <iso>]`;
+const usage = `usage: cli.ts run-target --target <id> [--check <id>]... [--results <dir>] [--deadline <iso>] [--port-offset <n>]`;
 
 async function runTargetCommand(argv: string[]): Promise<void> {
   const { values } = parseArgs({
@@ -41,9 +41,13 @@ async function runTargetCommand(argv: string[]): Promise<void> {
       check: { type: 'string', multiple: true },
       results: { type: 'string', default: 'results' },
       deadline: { type: 'string' },
+      'port-offset': { type: 'string' },
     },
   });
   if (!values.target) throw new Error(`--target is required\n${usage}`);
+  if (values['port-offset'] !== undefined) {
+    applyPortOffset(Number(values['port-offset']));
+  }
   const deadline = values.deadline
     ? new Date(values.deadline)
     : new Date(Date.now() + deadlineMinutes * 60_000);

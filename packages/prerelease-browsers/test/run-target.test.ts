@@ -1,9 +1,16 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { readResults } from '../src/node/results.ts';
 import { runTarget } from '../src/node/run-targets.ts';
-import { findTarget } from '../src/node/targets.ts';
+import {
+  applyPortOffset,
+  findTarget,
+  githubTargets,
+  localTargets,
+} from '../src/node/targets.ts';
+import { findFenixNightlyApk } from '../src/node/install.ts';
 import type { PageDriver } from '../src/node/drivers/types.ts';
 import { launchPlaywright } from '../src/node/drivers/playwright.ts';
 import { scriptedDriver } from './fake-driver.ts';
@@ -234,4 +241,113 @@ test('a deadline passing mid-scenario stops sampling and marks the run incomplet
     ],
   });
   expect(r.incomplete).toBe(true);
+});
+
+describe('GitHub-runner targets', () => {
+  test('match the target table', () => {
+    const none = undefined;
+    // prettier-ignore
+    const table = [
+      ['chrome-canary',           'chromium', 'upcoming', 'chrome-linux',  'github-linux',   'all',                'compare'],
+      ['chrome-dev',              'chromium', 'upcoming', 'chrome-linux',  'github-linux',   'all',                'compare'],
+      ['chrome-stable',           'chromium', 'stable',   'chrome-linux',  'github-linux',   'all',                'compare'],
+      ['edge-dev',                'chromium', 'upcoming', 'edge-linux',    'github-linux',   'all',                'compare'],
+      ['edge-stable',             'chromium', 'stable',   'edge-linux',    'github-linux',   'all',                'compare'],
+      ['firefox-nightly',         'gecko',    'upcoming', 'firefox-linux', 'github-linux',   'all',                'compare'],
+      ['firefox-stable',          'gecko',    'stable',   'firefox-linux', 'github-linux',   'all',                'compare'],
+      ['webkit-next',             'webkit',   'upcoming', none,            'github-linux',   'all',                'ceiling-only'],
+      ['safari-tp',               'webkit',   'upcoming', 'safari-macos',  'github-macos',   'all',                'compare'],
+      ['safari-stable',           'webkit',   'stable',   'safari-macos',  'github-macos',   'all',                'compare'],
+      ['firefox-android-nightly', 'gecko',    'upcoming', none,            'github-android', 'functional-privacy', 'none'],
+    ];
+    expect(
+      githubTargets.map((t) => [
+        t.id,
+        t.engine,
+        t.channel,
+        t.pairGroup,
+        t.where,
+        t.checks,
+        t.perf,
+      ]),
+    ).toEqual(table);
+    for (const t of githubTargets) {
+      expect([t.id, t.timeScale, t.perfSamples]).toEqual([t.id, 1, 5]);
+    }
+  });
+
+  test('every upcoming target in a pair group has exactly one stable target in that group', () => {
+    const upcoming = githubTargets.filter(
+      (t) => t.pairGroup && t.channel === 'upcoming',
+    );
+    expect(upcoming.length).toBeGreaterThan(0);
+    for (const t of upcoming) {
+      const stable = githubTargets.filter(
+        (s) => s.pairGroup === t.pairGroup && s.channel === 'stable',
+      );
+      expect([t.id, stable.length]).toEqual([t.id, 1]);
+    }
+  });
+
+  test('ids are unique across local and GitHub targets', () => {
+    const ids = [...localTargets, ...githubTargets].map((t) => t.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  test('findTarget finds GitHub targets', () => {
+    expect(findTarget('safari-tp').where).toBe('github-macos');
+  });
+
+  test('a port offset moves the driver port by one and the fixture ports by two', () => {
+    const env: Record<string, string | undefined> = {};
+    applyPortOffset(1, env);
+    expect(env).toEqual({
+      PRERELEASE_PORT_OFFSET: '1',
+      PRERELEASE_HTTP_PORT: '8125',
+    });
+    const free: Record<string, string | undefined> = {
+      PRERELEASE_HTTP_PORT: '0',
+    };
+    applyPortOffset(2, free);
+    expect(free.PRERELEASE_HTTP_PORT).toBe('0');
+    expect(() => applyPortOffset(-1, {})).toThrow(/port offset/);
+  });
+});
+
+describe('findFenixNightlyApk', () => {
+  const fixtures = fileURLToPath(new URL('fixtures/fenix/', import.meta.url));
+  const root = 'https://ftp.mozilla.org/pub/fenix/nightly';
+
+  async function listings(byUrl: Record<string, string>) {
+    const pages: Record<string, string> = {};
+    for (const [url, file] of Object.entries(byUrl)) {
+      pages[url] = await readFile(join(fixtures, file), 'utf8');
+    }
+    const requested: string[] = [];
+    const fetchListing = async (url: string) => {
+      requested.push(url);
+      return pages[url];
+    };
+    return { requested, fetchListing };
+  }
+
+  test('falls back to the previous month and picks its newest x86_64 build', async () => {
+    const build = `${root}/2026/10/2026-10-31-04-40-11-fenix-161.0a1-android-x86_64/`;
+    const { fetchListing } = await listings({
+      [`${root}/2026/11/`]: 'month-empty.html',
+      [`${root}/2026/10/`]: 'month.html',
+      [build]: 'build.html',
+    });
+    expect(
+      await findFenixNightlyApk(new Date('2026-11-01T03:00:00Z'), fetchListing),
+    ).toBe(`${build}fenix-161.0a1.multi.android-x86_64.apk`);
+  });
+
+  test('in January the previous month is December of the year before', async () => {
+    const { requested, fetchListing } = await listings({});
+    await expect(
+      findFenixNightlyApk(new Date('2027-01-01T03:00:00Z'), fetchListing),
+    ).rejects.toThrow(/no Fenix nightly/);
+    expect(requested).toEqual([`${root}/2027/01/`, `${root}/2026/12/`]);
+  });
 });

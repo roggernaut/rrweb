@@ -11,7 +11,7 @@ export interface FixtureServer {
   close(): Promise<void>;
 }
 
-const defaultPort = 8123;
+export const defaultHttpPort = 8123;
 const slowCssDelayMs = 500;
 
 /** The page a cross-origin iframe check embeds: rrweb plus one control string (base64 in the query). */
@@ -53,7 +53,7 @@ export async function startFixtureServer(src: {
 }): Promise<FixtureServer> {
   const basePort = process.env.PRERELEASE_HTTP_PORT
     ? Number(process.env.PRERELEASE_HTTP_PORT)
-    : defaultPort;
+    : defaultHttpPort;
   if (!Number.isInteger(basePort) || basePort < 0 || basePort > 65534) {
     throw new Error(`invalid PRERELEASE_HTTP_PORT: ${basePort}`);
   }
