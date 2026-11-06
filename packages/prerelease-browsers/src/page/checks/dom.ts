@@ -249,6 +249,72 @@ const dialogTopLayer: CheckDefinition = {
   },
 };
 
+/** A small seeded PRNG, so every run builds the same tree. */
+function mulberry32(seed: number): () => number {
+  let a = seed;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** The document-order sequence of tagName#id for everything under body. */
+function nodeSequence(doc: Document): string {
+  return [...doc.body.querySelectorAll('*')]
+    .map((el) => `${el.tagName.toLowerCase()}#${el.id}`)
+    .join(' ');
+}
+
+const nodeOrderBurst: CheckDefinition = {
+  id: 'node-order-burst',
+  kind: 'functional',
+  tier: 'focused',
+  async run(ctx) {
+    document.body.innerHTML = '<div id="n0"></div>';
+    const random = mulberry32(1690);
+    const tags = ['div', 'span', 'p', 'section', 'ul'];
+    const nodes: Element[] = [document.getElementById('n0')!];
+    const recording = ctx.record();
+    await ctx.nextFrame();
+    // 500 nodes in 10 microtask batches. Each goes to a random existing
+    // parent at a random position, so siblings are added in a different
+    // order than they end up in.
+    for (let batch = 0; batch < 10; batch++) {
+      for (let i = 0; i < 50; i++) {
+        const el = document.createElement(
+          tags[Math.floor(random() * tags.length)],
+        );
+        el.id = `n${nodes.length}`;
+        const parent = nodes[Math.floor(random() * nodes.length)];
+        const before =
+          parent.children[
+            Math.floor(random() * (parent.children.length + 1))
+          ] ?? null;
+        parent.insertBefore(el, before);
+        nodes.push(el);
+      }
+      await Promise.resolve();
+    }
+    const live = nodeSequence(document);
+    const events = await recording.stop();
+
+    const replayed = nodeSequence(await ctx.replay(events));
+    if (replayed !== live) {
+      const liveItems = live.split(' ');
+      const replayedItems = replayed.split(' ');
+      const at = liveItems.findIndex((item, i) => item !== replayedItems[i]);
+      return {
+        ok: false,
+        message: `replayed order differs from live at position ${at}: live ${liveItems[at]}, replay ${replayedItems[at]} (${replayedItems.length} of ${liveItems.length} nodes replayed)`,
+        events,
+      };
+    }
+    return { ok: true, events };
+  },
+};
+
 export const domChecks: CheckDefinition[] = [
   snapshotBasic,
   shadowDomOpen,
@@ -256,4 +322,5 @@ export const domChecks: CheckDefinition[] = [
   iframeSameOrigin,
   iframeCrossOrigin,
   dialogTopLayer,
+  nodeOrderBurst,
 ];

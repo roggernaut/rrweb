@@ -1,6 +1,8 @@
 import { builtinChecks } from './checks/builtins.ts';
 import { cssChecks } from './checks/css.ts';
 import { domChecks } from './checks/dom.ts';
+import { inputChecks } from './checks/inputs.ts';
+import { mediaChecks } from './checks/media.ts';
 import type { CheckDefinition } from './harness.ts';
 
 declare global {
@@ -68,6 +70,8 @@ export const checks: CheckDefinition[] = [
   ...cssChecks,
   ...builtinChecks,
   ...domChecks,
+  ...inputChecks,
+  ...mediaChecks,
   ...(typeof window !== 'undefined' && window.__prerelease_test === true
     ? protocolTestChecks
     : []),

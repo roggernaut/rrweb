@@ -23,12 +23,34 @@ const expectedIds = [
   'missing-webgl-types',
   'missing-css-grouping-rule',
   // DOM
+  'snapshot-basic',
   'shadow-dom-open',
   'custom-elements',
   'iframe-same-origin',
   'iframe-cross-origin',
   'dialog-top-layer',
+  'node-order-burst',
+  // Inputs
+  'input-types',
+  'checkbox-radio',
+  'select',
+  'contenteditable',
+  'selection',
+  // Canvas and media
+  'canvas-2d',
+  'canvas-webgl',
+  'canvas-sampled',
+  'media-play-pause',
 ];
+
+/**
+ * The only checks that may skip, each with its one allowed reason: an engine
+ * without WebGL, or one that refuses to play audio.
+ */
+const allowedSkips: Record<string, string> = {
+  'canvas-webgl': 'no webgl',
+  'media-play-pause': 'play rejected',
+};
 
 const timeoutMs = 60_000;
 let driver: PageDriver;
@@ -67,7 +89,10 @@ describe.each(expectedIds)('%s', (id) => {
       { bundle, rrweb, httpOrigin: server.origin },
       { timeoutMs },
     );
-    expect(result.skipped, 'no check may skip here').toBeUndefined();
+    if (result.skipped !== undefined) {
+      expect(result.skipped, `unexpected skip in ${id}`).toBe(allowedSkips[id]);
+      return;
+    }
     expect(result.message ?? '').toBe('');
     expect(result.ok).toBe(true);
   });
