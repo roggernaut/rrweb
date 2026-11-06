@@ -310,8 +310,19 @@ export async function reconcile(opts: ReconcileOptions): Promise<IssuePlan> {
       body,
       labels: ['prerelease', STATUS_LABEL],
     });
-    await gh.pinIssue(created.node_id);
-    log(`opened and pinned status #${created.number}`);
+    log(`opened status #${created.number}`);
+    // A pin is a convenience: failing to pin (say, three issues are pinned
+    // already) must not fail the step after every issue was written.
+    try {
+      await gh.pinIssue(created.node_id);
+      log(`pinned status #${created.number}`);
+    } catch (err) {
+      console.warn(
+        `could not pin status #${created.number}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
   return plan;
 }

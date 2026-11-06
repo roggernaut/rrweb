@@ -16,28 +16,65 @@ const HISTORY_CLOSE = '<!-- /prerelease:history -->';
 
 /** GitHub allows 65,536 characters; stay well clear of it. */
 export const MAX_BODY = 60_000;
+/** Raw message length on the first pass, before any escaping. */
+const MESSAGE_LIMIT = 2_000;
 const SHORT_MESSAGE = 500;
 const HISTORY_ROWS = 10;
 const engineNames: Engine[] = ['chromium', 'gecko', 'webkit'];
 
 /**
- * An `@` followed by a letter would mention a user or team when the body is
- * saved, so every edit would notify someone. An empty HTML comment between
- * the two keeps the text readable and inert.
+ * An `@` followed by a letter or digit would mention a user, org or team when
+ * the body is saved (names can start with a digit), so every edit would
+ * notify someone. An empty HTML comment between the two keeps it inert.
  */
 export const noMentions = (text: string): string =>
-  text.replace(/@(?=[a-z])/gi, '@<!-- -->');
+  text.replace(/@(?=[a-z0-9])/gi, '@<!-- -->');
 
-/** The text of one table cell: no HTML, no column breaks, one line. */
-function cell(text: string, limit = Infinity): string {
-  let t = text;
-  if (t.length > limit) {
-    let end = limit;
-    const code = t.charCodeAt(end - 1);
-    if (code >= 0xd800 && code <= 0xdbff) end--; // keep surrogate pairs whole
-    t = t.slice(0, end) + '…';
-  }
-  return t
+/** At most `limit` characters, keeping surrogate pairs whole. */
+function truncate(text: string, limit: number): string {
+  if (text.length <= limit) return text;
+  let end = limit;
+  const unit = text.charCodeAt(end - 1);
+  if (unit >= 0xd800 && unit <= 0xdbff) end--;
+  return text.slice(0, end) + '…';
+}
+
+/**
+ * Untrusted text (messages, launch errors, notes, browser strings) as one
+ * inline code span, so links, images and `owner/repo#n` references never
+ * render. Inside a code span an HTML comment would show verbatim, so a
+ * mention-shaped `@` becomes a full-width `＠` instead, and `<!--` is broken
+ * up so the text cannot forge a marker. In a table, `|` stays escaped.
+ */
+function untrusted(text: string, limit: number, inTable = true): string {
+  let t = truncate(text, limit)
+    .replace(/`/g, "'")
+    .replace(/<!--/g, '< !--')
+    .replace(/@(?=[a-z0-9])/gi, '＠')
+    .replace(/\r?\n|\r/g, ' ⏎ ');
+  if (inTable) t = t.replace(/\|/g, '\\|');
+  return t.trim() === '' ? '–' : '`' + t + '`';
+}
+
+const TRUNCATED =
+  "_This body was truncated to fit GitHub's size limit; the run's artifacts hold everything._";
+
+/**
+ * A hard cap, measured on the final text: cut on a line boundary, close an
+ * open code block, and say so. Markers sit at the top, so they survive.
+ */
+export function capBody(body: string, max = MAX_BODY): string {
+  if (body.length <= max) return body;
+  const room = max - TRUNCATED.length - 8;
+  const nl = body.lastIndexOf('\n', room);
+  let kept = body.slice(0, nl > 0 ? nl : room);
+  if ((kept.match(/^```/gm) ?? []).length % 2 === 1) kept += '\n```';
+  return `${kept}\n\n${TRUNCATED}\n`;
+}
+
+/** Trusted short text in a table cell: no HTML, no column breaks, one line. */
+function cell(text: string): string {
+  return text
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -84,12 +121,13 @@ export function parseMarkers(body: string): {
       .split(',')
       .filter((x) => x !== '');
   const open = body.indexOf(HISTORY_OPEN);
-  const close = body.indexOf(HISTORY_CLOSE, open);
+  // A capped body may have lost the closing marker: read to the end.
+  const close = open < 0 ? -1 : body.indexOf(HISTORY_CLOSE, open);
   const history =
-    open < 0 || close < 0
+    open < 0
       ? []
       : body
-          .slice(open + HISTORY_OPEN.length, close)
+          .slice(open + HISTORY_OPEN.length, close < 0 ? undefined : close)
           .split('\n')
           .filter((l) => l.startsWith('| ') && !/^\| (Date|---) /.test(l));
   return {
@@ -134,7 +172,8 @@ export function issueBody(
   record?: IssueRecord,
 ): string {
   const recordTargets =
-    record?.recordTargets ?? f.targets.map((t) => t.targetId);
+    record?.recordTargets ??
+    [...new Set(f.targets.map((t) => t.targetId))].sort();
   const recordEngines = record?.recordEngines ?? f.engines;
   const failingNow = f.targets.map((t) => t.targetId);
   const carried = recordTargets.filter((t) => !failingNow.includes(t));
@@ -164,16 +203,20 @@ export function issueBody(
           '',
           cell(t.targetId),
           t.browser
-            ? cell(`${t.browser.browserName} ${t.browser.browserVersion}`)
+            ? untrusted(
+                `${t.browser.browserName} ${t.browser.browserVersion}`,
+                SHORT_MESSAGE,
+              )
             : '–',
           t.browser
-            ? cell(
+            ? untrusted(
                 t.browser.device
                   ? `${t.browser.device} (${t.browser.platform})`
                   : t.browser.platform,
+                SHORT_MESSAGE,
               )
             : '–',
-          cell(t.message, messageLimit),
+          untrusted(t.message, messageLimit),
           sessionLink(t.sessionUrl),
           '',
         ]
@@ -230,14 +273,14 @@ export function issueBody(
     return noMentions(lines.join('\n'));
   };
 
-  let body = build(Infinity, history);
+  let body = build(MESSAGE_LIMIT, history);
   if (body.length > MAX_BODY) body = build(SHORT_MESSAGE, history);
   let rows = history;
   while (body.length > MAX_BODY && rows.length > 1) {
     rows = rows.slice(0, -1);
     body = build(SHORT_MESSAGE, rows);
   }
-  return body;
+  return capBody(body);
 }
 
 export const statusTitle = '[pre-release] Status of the latest run';
@@ -251,27 +294,29 @@ export function runBrokenBody(
   s: RunSummary,
   run: RunMeta,
 ): string {
-  return noMentions(
-    [
-      RUN_BROKEN_MARKER,
-      '',
-      `${failures.length} of the ${
-        s.totalKeys
-      } checks that ran failed in ${runLink(run)}, with rrweb at commit ${code(
-        run.rrwebCommit,
-      )}.`,
-      'That usually means a broken build, a BrowserStack outage or a sweeping engine change, so no per-check issue was opened or changed.',
-      '',
-      '| Check | Failing targets | First message |',
-      '| --- | --- | --- |',
-      ...failures.map(
-        (f) =>
-          `| ${code(f.key)} | ${f.targets
-            .map((t) => cell(t.targetId))
-            .join(', ')} | ${cell(f.targets[0]?.message ?? '', 200)} |`,
-      ),
-      '',
-    ].join('\n'),
+  return capBody(
+    noMentions(
+      [
+        RUN_BROKEN_MARKER,
+        '',
+        `${failures.length} of the ${
+          s.totalKeys
+        } checks that ran failed in ${runLink(
+          run,
+        )}, with rrweb at commit ${code(run.rrwebCommit)}.`,
+        'That usually means a broken build, a BrowserStack outage or a sweeping engine change, so no per-check issue was opened or changed.',
+        '',
+        '| Check | Failing targets | First message |',
+        '| --- | --- | --- |',
+        ...failures.map(
+          (f) =>
+            `| ${code(f.key)} | ${f.targets
+              .map((t) => cell(t.targetId))
+              .join(', ')} | ${untrusted(f.targets[0]?.message ?? '', 200)} |`,
+        ),
+        '',
+      ].join('\n'),
+    ),
   );
 }
 
@@ -316,18 +361,21 @@ export function statusBody(
       outcomes.filter(([id, c]) => c.status === status && !fails.has(id))
         .length;
     const name = r.incomplete
-      ? `${r.targetId} (incomplete: ${r.incompleteReason ?? 'unknown reason'})`
-      : r.targetId;
+      ? `${cell(r.targetId)} (incomplete: ${untrusted(
+          r.incompleteReason ?? 'unknown reason',
+          SHORT_MESSAGE,
+        )})`
+      : cell(r.targetId);
     const version = r.browser
       ? `${r.browser.browserName} ${r.browser.browserVersion} (${
           r.browser.device ?? r.browser.platform
         })`
       : '–';
-    return `| ${cell(name)} | ${cell(version)} | ${
-      r.launch.ok ? 'ok' : 'failed'
-    } | ${count('pass')} | ${fails.size} | ${count('flaky')} | ${count(
-      'skipped',
-    )} | ${count('not-run')} |`;
+    return `| ${name} | ${
+      version === '–' ? version : untrusted(version, SHORT_MESSAGE)
+    } | ${r.launch.ok ? 'ok' : 'failed'} | ${count('pass')} | ${
+      fails.size
+    } | ${count('flaky')} | ${count('skipped')} | ${count('not-run')} |`;
   });
 
   const open: string[] = [];
@@ -367,7 +415,11 @@ export function statusBody(
     .filter((r) => r.incomplete)
     .map(
       (r) =>
-        `${cell(r.targetId)}: ${cell(r.incompleteReason ?? 'unknown reason')}`,
+        `${cell(r.targetId)}: ${untrusted(
+          r.incompleteReason ?? 'unknown reason',
+          SHORT_MESSAGE,
+          false,
+        )}`,
     );
 
   const lines = [
@@ -420,7 +472,8 @@ export function statusBody(
     '',
     ...bullets(
       s.launchFailures.map(
-        (l) => `${cell(l.targetId)}: ${cell(l.error, SHORT_MESSAGE)}`,
+        (l) =>
+          `${cell(l.targetId)}: ${untrusted(l.error, SHORT_MESSAGE, false)}`,
       ),
     ),
     '',
@@ -436,10 +489,10 @@ export function statusBody(
       ? [
           '### Notes',
           '',
-          ...s.notes.map((n) => `- ${cell(n, SHORT_MESSAGE)}`),
+          ...s.notes.map((n) => `- ${untrusted(n, SHORT_MESSAGE, false)}`),
           '',
         ]
       : []),
   ];
-  return noMentions(lines.join('\n'));
+  return capBody(noMentions(lines.join('\n')));
 }

@@ -406,6 +406,23 @@ test('an existing status issue is rewritten in place, not pinned again', async (
   expect(gh.pinned).toEqual([]);
 });
 
+test('a failed pin warns and the step still succeeds', async () => {
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+  try {
+    const gh = fakeGitHub();
+    gh.pinIssue = () => Promise.reject(new Error('too many pinned issues'));
+    await expect(
+      reconcile({ gh, results: fixtureResults, expected, apply: true, run }),
+    ).resolves.toBeDefined();
+    expect(statusIssues(gh)).toHaveLength(1);
+    expect(String(warn.mock.calls[0]?.[0])).toMatch(
+      /could not pin status #\d+: too many pinned issues/,
+    );
+  } finally {
+    warn.mockRestore();
+  }
+});
+
 test('three runs: a target that went incomplete stays recorded and blocks the close', async () => {
   const gh = fakeGitHub();
   const exp = ['chrome-canary', 'chrome-dev', 'chrome-stable'];
@@ -459,7 +476,7 @@ test('three runs: a target that went incomplete stays recorded and blocks the cl
     gh.created.filter((i) => i.labels.includes('prerelease:functional')),
   ).toHaveLength(1);
   expect(gh.comments).toEqual([]);
-  expect(statusIssues(gh)[0].body).toMatch(/chrome-canary: deadline/);
+  expect(statusIssues(gh)[0].body).toMatch(/chrome-canary: `deadline`/);
 });
 
 describe('GitHub client', () => {

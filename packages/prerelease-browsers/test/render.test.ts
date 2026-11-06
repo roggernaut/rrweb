@@ -71,11 +71,17 @@ test('bodies never mention anyone', () => {
     issueBody(
       {
         ...failure,
-        targets: [{ ...failure.targets[0], message: 'thrown by @scope/pkg' }],
+        targets: [
+          {
+            ...failure.targets[0],
+            message:
+              'thrown by @scope/pkg, @1st1, @0xdevalias and @123org/team',
+          },
+        ],
       },
       run,
     ),
-  ).not.toMatch(/@[a-z]/i);
+  ).not.toMatch(/@[a-z0-9]/i);
 });
 test('privacy failures get the severe labels', () => {
   expect(labelsFor({ ...failure, kind: 'privacy' })).toEqual(
@@ -142,7 +148,9 @@ test('page text cannot forge a marker or break the table', () => {
   );
   expect(parseMarkers(body).key).toBe(failure.key);
   expect(body.match(/<!-- prerelease:key=/g)).toHaveLength(1);
-  expect(body).toContain('a \\| b<br>&lt;!-- prerelease:key=evil');
+  expect(body).toContain(
+    '`a \\| b ⏎ < !-- prerelease:key=evil:functional --> c`',
+  );
 });
 
 test('a re-run of the same run replaces its history row', () => {
@@ -175,7 +183,7 @@ describe('statusBody', () => {
   test('shows the run, the targets table and every section', () => {
     const rs = [
       ...results,
-      launchFailed('edge-dev', 'msedge did not start'),
+      launchFailed('edge-dev', 'msedge did not start for @1st1'),
       incomplete('bs-ios-upcoming', { reason: 'protocol broken' }),
     ];
     rs[rs.length - 1].browser = {
@@ -206,16 +214,16 @@ describe('statusBody', () => {
     expect(body).toContain(run.runUrl);
     expect(body).toMatch(/\bincomplete\b/);
     expect(body).toContain(
-      '| chrome-canary | chrome 132.0.0.0 (linux) | ok | 3 | 1 | 0 | 0 | 0 |',
+      '| chrome-canary | `chrome 132.0.0.0 (linux)` | ok | 3 | 1 | 0 | 0 | 0 |',
     );
-    expect(body).toMatch(/bs-ios-upcoming \(incomplete: protocol broken\)/);
-    expect(body).toContain('safari 27.0 (iPhone 17)');
+    expect(body).toMatch(/bs-ios-upcoming \(incomplete: `protocol broken`\)/);
+    expect(body).toContain('`safari 27.0 (iPhone 17)`');
     expect(body).toMatch(/#7.*css-nested-rules:functional/);
-    expect(body).toMatch(/edge-dev.*msedge did not start/);
+    expect(body).toMatch(/edge-dev: `msedge did not start/);
     expect(body).toMatch(/Missing[\s\S]*safari-tp/);
     expect(body).toMatch(/dom-shadow:functional.*chrome-stable/);
     expect(body).not.toMatch(/pre-release build/i);
-    expect(body).not.toMatch(/@[a-z]/i);
+    expect(body).not.toMatch(/@[a-z0-9]/i);
   });
 
   test('a clean run reads complete', () => {
@@ -278,4 +286,82 @@ test('the run-broken body carries its marker and lists the failures', () => {
   expect(parseMarkers(body).key).toBeUndefined();
   expect(body).toContain('css-nested-rules:functional');
   expect(body).toContain('chrome-canary');
+});
+
+/** The body with every inline code span removed: what renders as markdown. */
+const outsideCode = (body: string) => body.replace(/`[^`\n]*`/g, '');
+
+test('untrusted text renders as code, so links, images and references stay inert', () => {
+  const message = '[x](https://e.com) ![i](https://e.com/i.png) a/b#1';
+  const withMessage = {
+    ...failure,
+    targets: [{ ...failure.targets[0], message }],
+  };
+  const issue = issueBody(withMessage, run);
+  expect(issue).toContain('`' + message + '`');
+  const s = summary([withMessage], {
+    launchFailures: [{ targetId: 'edge-dev', error: message }],
+    notes: [message],
+  });
+  const status = statusBody(s, planIssueActions(s, []), run, results, {});
+  const broken = runBrokenBody(s.failures, s, run);
+  for (const body of [issue, status, broken]) {
+    expect(outsideCode(body)).not.toContain('e.com');
+    expect(outsideCode(body)).not.toContain('a/b#1');
+  }
+});
+
+describe('a hard size cap on every body', () => {
+  const heavy = '<&>|\n\n\n@1st1 `x`'.repeat(1_000);
+  const heavyFailure = (n: number): Failure => ({
+    ...failure,
+    targets: Array.from({ length: n }, (_, i) => ({
+      ...failure.targets[0],
+      targetId: `t${i}`,
+      message: heavy,
+    })),
+  });
+  const checkCapped = (body: string) => {
+    expect(body.length).toBeLessThanOrEqual(60_000);
+    expect(body).not.toMatch(/@[a-z0-9]/i);
+  };
+
+  for (const n of [40, 400]) {
+    test(`issue body, ${n} targets`, () => {
+      const body = issueBody(heavyFailure(n), run);
+      checkCapped(body);
+      expect(parseMarkers(body)).toMatchObject({
+        key: failure.key,
+        engines: ['chromium'],
+        targets: Array.from({ length: n }, (_, i) => `t${i}`).sort(),
+      });
+      if (n === 400) {
+        expect(body).toMatch(/\n_This body was truncated[^\n]*_\n$/);
+        // An open code block is closed before the notice.
+        expect((body.match(/^```/gm) ?? []).length % 2).toBe(0);
+      }
+    });
+
+    test(`run-broken body, ${n} failures`, () => {
+      const failures = Array.from({ length: n }, (_, i) => ({
+        ...heavyFailure(40),
+        key: `c${i}:functional`,
+        checkId: `c${i}`,
+      }));
+      const body = runBrokenBody(failures, summary(failures), run);
+      checkCapped(body);
+      expect(body.startsWith('<!-- prerelease:run-broken -->')).toBe(true);
+    });
+
+    test(`status body, ${n} launch failures`, () => {
+      const rs = Array.from({ length: n }, (_, i) =>
+        launchFailed(`t${i}`, heavy),
+      );
+      const s = collectFailures(rs, [], []);
+      s.notes.push(...Array.from({ length: n }, () => heavy));
+      const body = statusBody(s, planIssueActions(s, []), run, rs, {});
+      checkCapped(body);
+      expect(body.startsWith('<!-- prerelease:status -->')).toBe(true);
+    });
+  }
 });
