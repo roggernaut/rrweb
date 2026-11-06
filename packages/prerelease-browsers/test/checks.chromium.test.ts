@@ -154,8 +154,11 @@ describe.each(expectedIds)('%s', (id) => {
         { bundle, rrweb, httpOrigin: server.origin },
         { timeoutMs, disableMasking: true },
       );
+      // A missing public control means recording broke, not masking: that
+      // is no proof the check catches a leak.
       expect(result.ok).toBe(false);
-      expect(result.message).toMatch(/^(privacy leak|public control missing)/);
+      expect(result.message).toMatch(/^privacy leak: /);
+      expect(result.kind).toBeUndefined();
     },
   );
 });

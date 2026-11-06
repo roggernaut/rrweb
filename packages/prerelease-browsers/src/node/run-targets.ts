@@ -198,12 +198,13 @@ export async function runTarget(
         ),
       opts.deadline,
     );
+    const failed = attempts.filter((a) => !a.ok);
+    const lastFailure = failed.at(-1);
     const outcome: CheckOutcome = {
-      kind: meta.kind,
+      kind: failedAs(meta.kind, status, failed),
       status,
       attempts: attempts.length,
     };
-    const lastFailure = attempts.filter((a) => !a.ok).at(-1);
     if (lastFailure?.message !== undefined)
       outcome.message = lastFailure.message;
     if (status === 'skipped') outcome.message = attempts[0].skipped;
@@ -215,6 +216,22 @@ export async function runTarget(
     }
     return { outcome, broken: brokenBy(outcome, attempts) };
   }
+}
+
+/**
+ * The kind a check is filed under: for a failed check, the kind its failed
+ * attempts named, if they all named the same one; otherwise the check's own.
+ * A privacy check whose public control went missing is a functional failure,
+ * but a single leak among its failed attempts keeps it a privacy one.
+ */
+function failedAs(
+  kind: CheckKind,
+  status: CheckOutcome['status'],
+  failed: AttemptResult[],
+): CheckKind {
+  const override = failed.at(-1)?.kind;
+  if (status !== 'fail' || override === undefined) return kind;
+  return failed.every((a) => a.kind === override) ? override : kind;
 }
 
 /**

@@ -203,6 +203,11 @@ export function collectFailures(
           summary.flaky.push({ key, targetId: r.targetId });
         } else {
           (summary.passedOn[key] ??= []).push(r.targetId);
+          // A privacy check whose public control went missing was filed
+          // under functional; this pass clears that failure too.
+          if (c.kind === 'privacy') {
+            (summary.passedOn[`${checkId}:functional`] ??= []).push(r.targetId);
+          }
         }
         continue;
       }

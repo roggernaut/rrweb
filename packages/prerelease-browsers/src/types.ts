@@ -21,6 +21,11 @@ export interface AttemptResult {
   skipped?: string; // reason; a skipped attempt is neither pass nor fail
   events?: unknown[];
   sample?: PerfSample;
+  /**
+   * Overrides the check's kind for this failure: a privacy check whose public
+   * control never got recorded failed at recording, not at masking.
+   */
+  kind?: CheckKind;
 }
 export interface RunOptions {
   disableMasking?: boolean;

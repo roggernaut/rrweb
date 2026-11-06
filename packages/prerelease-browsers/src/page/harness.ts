@@ -250,9 +250,12 @@ export function createContext(runOptions: RunOptions): CheckContext {
       const leak = canaries.find((canary) => json.includes(canary));
       if (leak) return { ok: false, message: `privacy leak: ${leak}`, events };
       const missing = controls.find((control) => !json.includes(control));
+      // Nothing leaked, but the recording lost public text too: a broken
+      // recorder, which is a functional failure, not a privacy one.
       if (missing) {
         return {
           ok: false,
+          kind: 'functional',
           message: `public control missing: ${missing}`,
           events,
         };

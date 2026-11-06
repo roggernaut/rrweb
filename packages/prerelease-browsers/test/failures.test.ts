@@ -136,6 +136,19 @@ test('passing, flaky and totalKeys', () => {
   expect(s.failures).toEqual([]);
 });
 
+test('a privacy check that passed also clears its functional key', () => {
+  // A missing public control files the check under functional, so a later
+  // pass has to count for that key too, or its issue could never close.
+  const r = passing('chrome-canary', 'privacy-mask-all-inputs');
+  r.checks['privacy-mask-all-inputs'].kind = 'privacy';
+  const s = collectFailures([r], ['chrome-canary'], []);
+  expect(s.passedOn).toEqual({
+    'privacy-mask-all-inputs:privacy': ['chrome-canary'],
+    'privacy-mask-all-inputs:functional': ['chrome-canary'],
+  });
+  expect(s.totalKeys).toBe(1);
+});
+
 test('parking covers only the listed engines, and expiry un-parks', () => {
   const entry = {
     key: 'css-nested-rules:functional',

@@ -15,6 +15,7 @@ import {
 import { findFenixNightlyApk } from '../src/node/install.ts';
 import type { PageDriver } from '../src/node/drivers/types.ts';
 import { launchPlaywright } from '../src/node/drivers/playwright.ts';
+import type { AttemptResult } from '../src/types.ts';
 import { scriptedDriver } from './fake-driver.ts';
 
 let tmp: string;
@@ -403,6 +404,54 @@ test('a deadline passing mid-scenario stops sampling and marks the run incomplet
     ],
   });
   expect(r.incomplete).toBe(true);
+});
+
+describe('a privacy check whose public control went missing', () => {
+  const missing: AttemptResult = {
+    ok: false,
+    kind: 'functional',
+    message: 'public control missing: RRPUBLICX',
+  };
+  const leak: AttemptResult = { ok: false, message: 'privacy leak: RRCANARYX' };
+  const run = (next: (n: number) => AttemptResult) =>
+    runTarget(
+      {
+        ...findTarget('local-chromium'),
+        connect: async () => scriptedDriver(next),
+      },
+      {
+        resultsDir: tmp,
+        deadline: future,
+        rrwebCommit: 'abc',
+        only: ['privacy-mask-all-inputs'],
+      },
+    );
+
+  test('fails as a functional check', async () => {
+    const r = await run(() => missing);
+    expect(r.checks['privacy-mask-all-inputs']).toEqual({
+      kind: 'functional',
+      status: 'fail',
+      attempts: 2,
+      message: 'public control missing: RRPUBLICX',
+    });
+  });
+
+  test('stays privacy when another failed attempt leaked', async () => {
+    const r = await run((n) => (n === 1 ? leak : missing));
+    expect(r.checks['privacy-mask-all-inputs']).toMatchObject({
+      kind: 'privacy',
+      status: 'fail',
+    });
+  });
+
+  test('stays privacy when it passed after all', async () => {
+    const r = await run((n) => (n === 1 ? missing : { ok: true }));
+    expect(r.checks['privacy-mask-all-inputs']).toMatchObject({
+      kind: 'privacy',
+      status: 'flaky',
+    });
+  });
 });
 
 describe('GitHub-runner targets', () => {
