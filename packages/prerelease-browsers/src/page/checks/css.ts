@@ -71,27 +71,28 @@ const nestedRules = staticStyleCheck({
   probes: [{ selector: '.n .c', props: ['color'] }],
 });
 
-/** Resolves once the parser is done; the body may not exist before that. */
-function domReady(): Promise<void> {
-  if (document.readyState !== 'loading') return Promise.resolve();
-  return new Promise((resolve) =>
-    document.addEventListener('DOMContentLoaded', () => resolve(), {
-      once: true,
-    }),
-  );
-}
-
 const earlyLinkedStylesheet: CheckDefinition = {
   id: 'css-early-linked-stylesheet',
   kind: 'functional',
   tier: 'full',
   needsHttp: true,
-  startDuringLoad: true,
-  head: '<link rel="stylesheet" href="/assets/slow.css">',
   async run(ctx) {
-    // Recording starts during parse, while the stylesheet is still loading.
-    const recording = ctx.record();
-    await domReady();
+    // A link in the composed head would block the scripts until it loaded.
+    // Inserting it here, then recording at once, makes it pending when rrweb
+    // takes the full snapshot.
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = '/assets/slow.css';
+    document.head.appendChild(link);
+    const recording = ctx.record({ recordAfter: 'DOMContentLoaded' });
+    if (link.sheet !== null) {
+      const events = await recording.stop();
+      return {
+        ok: false,
+        message: 'precondition: slow.css already loaded when recording started',
+        events,
+      };
+    }
     const early = document.createElement('div');
     early.id = 'early';
     early.textContent = 'early';
