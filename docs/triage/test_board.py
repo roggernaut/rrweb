@@ -24,6 +24,20 @@ class BoardTest(unittest.TestCase):
         self.assertEqual(sorted(set(board.PR) - open_prs), [])
         self.assertEqual(sorted(set(board.ISSUE) - open_issues), [])
 
+    def test_next_step_names_the_assignee(self):
+        """Upstream assignees are the source of truth: the next step names them."""
+        for item in self.items:
+            if item["triage"] == "bulk" or not item["assignees"]:
+                continue
+            names = [board.MAINTAINERS.get(login, login) for login in item["assignees"]]
+            self.assertTrue(any(n in item["next"] for n in names), (item["kind"], item["id"], names, item["next"]))
+
+    def test_related_only_lists_open_items(self):
+        open_ids = {p["number"] for p in self.snapshot["pr"]} | {i["number"] for i in self.snapshot["issue"]}
+        for item in self.items:
+            closed = sorted(set(item["related"]) - open_ids)
+            self.assertEqual(closed, [], (item["kind"], item["id"]))
+
     def test_every_triage_and_tag_has_a_label(self):
         for item in self.items:
             self.assertIn(item["triage"], board.TRIAGE_LABEL, item["id"])

@@ -102,7 +102,9 @@ report of what 1971 left.
 
 **Board tests:** the Node suite now picks its sample rows from the current
 snapshot instead of hard-coding 1970 and 1971, so a refresh that retires
-those rows no longer breaks it.
+those rows no longer breaks it. Two Python checks enforce runbook rules that
+had drifted: a row with an upstream assignee must name them in its next
+step (14 rows were fixed), and `related` may only list open items.
 
 ---
 

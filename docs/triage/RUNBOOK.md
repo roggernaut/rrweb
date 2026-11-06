@@ -72,6 +72,10 @@ assignees, and filters by assignee. Keep the overlays consistent with them:
   `reproduction needed`), the bucket and message agree with it.
 - Never copy a label into an overlay's `tags`. Labels show on their own.
 
+`test_board.py` enforces two of these: a bucketed row with an assignee must
+name that person in `next_step`, and `related=` may only list open items
+(merged or closed numbers belong in the `reason` text instead).
+
 #### Buckets
 
 | Bucket | Use it when |
