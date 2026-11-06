@@ -41,6 +41,23 @@ const expectedIds = [
   'canvas-webgl',
   'canvas-sampled',
   'media-play-pause',
+  // Privacy
+  'privacy-mask-all-inputs',
+  'privacy-mask-text-class',
+  'privacy-mask-text-selector',
+  'privacy-block-class',
+  'privacy-block-selector',
+  'privacy-password-default',
+  'privacy-mask-input-options',
+  'privacy-mutation-after-snapshot',
+  'privacy-attribute-mutation',
+  'privacy-autofill',
+  'privacy-shadow-dom',
+  'privacy-adopted-stylesheet-shadow',
+  'privacy-input-types',
+  // 'privacy-canvas-block' is left out: rrweb main records property sets
+  // such as fillStyle on a blocked 2d canvas, because the setter hook in
+  // observers/canvas/2d.ts skips the isBlocked test that methods get.
 ];
 
 /**
