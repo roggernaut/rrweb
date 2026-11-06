@@ -1,0 +1,68 @@
+{
+  "schema": 1,
+  "targetId": "chrome-canary",
+  "engine": "chromium",
+  "channel": "upcoming",
+  "pairGroup": "chrome",
+  "perf": "compare",
+  "ceilingMs": 1000,
+  "browser": {
+    "browserName": "chrome",
+    "browserVersion": "132.0.0.0",
+    "platform": "linux",
+    "userAgent": "Mozilla/5.0 Chrome/132.0.0.0"
+  },
+  "launch": {
+    "ok": true
+  },
+  "rrwebCommit": "abc123",
+  "startedAt": "2026-11-06T00:00:00.000Z",
+  "finishedAt": "2026-11-06T00:10:00.000Z",
+  "incomplete": false,
+  "checks": {
+    "snapshot-basic": {
+      "kind": "functional",
+      "status": "pass",
+      "attempts": 1
+    },
+    "css-nested-rules": {
+      "kind": "functional",
+      "status": "fail",
+      "attempts": 3,
+      "message": "nested rule lost in the recorded stylesheet",
+      "eventsFile": "chrome-canary/css-nested-rules.events.json"
+    },
+    "privacy-mask-all-inputs": {
+      "kind": "privacy",
+      "status": "pass",
+      "attempts": 1
+    },
+    "perf-snapshot-5k": {
+      "kind": "performance",
+      "status": "pass",
+      "attempts": 5,
+      "samples": [
+        {
+          "durationMs": 100,
+          "maxBlockMs": 40
+        },
+        {
+          "durationMs": 102,
+          "maxBlockMs": 40
+        },
+        {
+          "durationMs": 98,
+          "maxBlockMs": 40
+        },
+        {
+          "durationMs": 101,
+          "maxBlockMs": 40
+        },
+        {
+          "durationMs": 99,
+          "maxBlockMs": 40
+        }
+      ]
+    }
+  }
+}

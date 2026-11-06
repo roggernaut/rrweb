@@ -43,13 +43,36 @@ export async function writeResult(dir: string, r: TargetResult): Promise<void> {
   );
 }
 
-/** Reads every `<dir>/*.json` target result, sorted by file name. */
+/**
+ * Reads every `<dir>/*.json` target result, sorted by file name. A missing
+ * directory reads as no results. A file that is not valid JSON or not schema 1
+ * is skipped with a warning, so the target shows up as missing in the report
+ * instead of failing the whole run.
+ */
 export async function readResults(dir: string): Promise<TargetResult[]> {
-  const names = (await readdir(dir)).filter((n) => n.endsWith('.json')).sort();
-  return Promise.all(
-    names.map(
-      async (name) =>
-        JSON.parse(await readFile(join(dir, name), 'utf8')) as TargetResult,
-    ),
-  );
+  let names: string[];
+  try {
+    names = (await readdir(dir)).filter((n) => n.endsWith('.json')).sort();
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw err;
+  }
+  const results: TargetResult[] = [];
+  for (const name of names) {
+    try {
+      const parsed = JSON.parse(await readFile(join(dir, name), 'utf8'));
+      if (
+        typeof parsed !== 'object' ||
+        parsed === null ||
+        parsed.schema !== 1
+      ) {
+        console.warn(`skipping ${name}: not a schema 1 target result`);
+        continue;
+      }
+      results.push(parsed as TargetResult);
+    } catch (err) {
+      console.warn(`skipping ${name}: ${(err as Error).message}`);
+    }
+  }
+  return results;
 }

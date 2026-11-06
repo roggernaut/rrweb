@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
+import { median } from '../report/compare.ts';
 import type { PerfSample } from '../types.ts';
 import {
   browserStackIds,
@@ -21,12 +22,6 @@ import { applyPortOffset, findTarget } from './targets.ts';
 const deadlineMinutes = 105;
 
 const perfMetrics = ['durationMs', 'maxBlockMs', 'heapDeltaBytes'] as const;
-
-function median(xs: number[]): number {
-  const sorted = [...xs].sort((a, b) => a - b);
-  const mid = sorted.length >> 1;
-  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-}
 
 /** One line per metric: the median, then every sample in run order. */
 function describeSamples(samples: PerfSample[]): string[] {
