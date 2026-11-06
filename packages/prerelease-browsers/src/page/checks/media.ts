@@ -60,6 +60,9 @@ const canvasSampled: CheckDefinition = {
   id: 'canvas-sampled',
   kind: 'functional',
   tier: 'full',
+  // rrweb starts its snapshot worker from a blob: URL, which WebKit blocks
+  // on the null origin of a page loaded with setContent.
+  needsHttp: true,
   async run(ctx) {
     document.body.innerHTML = '<canvas id="c" width="64" height="64"></canvas>';
     const canvas = document.getElementById('c') as HTMLCanvasElement;
