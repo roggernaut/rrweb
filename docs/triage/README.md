@@ -16,7 +16,7 @@ the changelog for each refresh are in `2026-09-03-open-prs-and-issues.md`.
 To refresh the board, follow [RUNBOOK.md](RUNBOOK.md). `refresh.py` fetches a
 new snapshot, records the outgoing buckets in `previous-buckets.json` (behind
 the board's **Changed** filter) and prints the change report the runbook works
-from. The `Triage refresh` workflow runs it and opens a draft PR.
+from. The `Triage refresh` workflow runs it every second Thursday and opens a PR with the report.
 `post_messages.py` posts the suggested comments for rows marked Done.
 
 ## Done marks

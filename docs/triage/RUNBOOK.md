@@ -44,12 +44,17 @@ it outside the repo) with four sections:
   each review's inline comments under it
 
 The `Triage refresh` workflow (`.github/workflows/triage-refresh.yml`) does
-this step on a runner and opens a draft PR against the board branch with the
-report as its body. GitHub only runs its schedule from the default branch, so
-on this fork start it by hand:
+this step on its own. Every second Thursday from 2026-11-19 at 06:00 UTC,
+the day before a triage Friday, it checks out the board branch, runs the
+refresh, tries the build and tests, and opens a PR against the board branch
+with the report as its body, mentioning Eoghan and Justin. When nothing
+opened or closed upstream the PR is ready to merge; otherwise it is a draft
+and its body lists what the build is missing. GitHub only runs schedules
+from the default branch, so the same file sits on `main` of the fork; keep
+the two copies identical. To run it out of turn:
 
 ```sh
-gh workflow run triage-refresh.yml --ref cursor/pr-issue-triage-d529
+gh workflow run triage-refresh.yml --repo roggernaut/rrweb --ref main
 ```
 
 Check out that PR's branch and continue from step 3.

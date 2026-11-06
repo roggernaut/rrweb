@@ -1,15 +1,29 @@
 name: Triage refresh
 
-# Step 2 of docs/triage/RUNBOOK.md: fetch a new upstream snapshot and open a
-# draft PR carrying the change report. The overlays are still edited by hand.
+# Step 2 of docs/triage/RUNBOOK.md on a schedule. The Thursday before each
+# biweekly triage meeting (alternate Fridays from 2026-11-20) it fetches a new
+# upstream snapshot, writes the change report, and opens a PR against the
+# board branch with the report as its body. When the build and tests still
+# pass (no new PRs, nothing closed) the PR is ready to merge; otherwise it is
+# a draft listing what a person or an agent still has to do from step 3.
 #
-# GitHub only runs `schedule` from the default branch, so on a fork where the
-# board lives on its own branch, start it by hand:
-#   gh workflow run triage-refresh.yml --ref cursor/pr-issue-triage-d529
+# GitHub runs `schedule` only from the default branch, so this file lives on
+# `main` of the fork as well as on the board branch. Start it by hand with:
+#   gh workflow run triage-refresh.yml --repo roggernaut/rrweb --ref main
 on:
   workflow_dispatch:
+    inputs:
+      board_branch:
+        description: Branch that carries the board
+        default: cursor/pr-issue-triage-d529
   schedule:
-    - cron: '0 6 * * 3' # Wednesdays 06:00 UTC; the job skips odd ISO weeks
+    - cron: '0 6 * * 4' # every Thursday 06:00 UTC; the job itself keeps every second week
+
+env:
+  BOARD_BRANCH: ${{ inputs.board_branch || 'cursor/pr-issue-triage-d529' }}
+  # The Thursday before the first meeting this schedule serves. Runs land
+  # every 14 days from here.
+  ANCHOR: '2026-11-19'
 
 permissions:
   contents: write
@@ -19,37 +33,52 @@ jobs:
   refresh:
     runs-on: ubuntu-latest
     steps:
-      - name: Only every second week on the schedule
-        if: github.event_name == 'schedule'
+      - name: Keep only the Thursday before a triage Friday
+        id: gate
         run: |
-          if [ $(( $(date -u +%V) % 2 )) -ne 0 ]; then
-            echo "odd ISO week, skipping" && exit 0
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "go=1" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
-          echo "GO=1" >> "$GITHUB_ENV"
-      - name: Always go when started by hand
-        if: github.event_name == 'workflow_dispatch'
-        run: echo "GO=1" >> "$GITHUB_ENV"
+          days=$(( ( $(date -u +%s) - $(date -u -d "$ANCHOR" +%s) ) / 86400 ))
+          if [ $(( days % 14 )) -eq 0 ]; then
+            echo "go=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "off week: $days days since $ANCHOR, skipping"
+          fi
 
       - uses: actions/checkout@v4
-        if: env.GO == '1'
+        if: steps.gate.outputs.go == '1'
         with:
+          ref: ${{ env.BOARD_BRANCH }}
           fetch-depth: 0
 
       - name: Fetch the snapshot and write the report
-        if: env.GO == '1'
+        if: steps.gate.outputs.go == '1'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           python3 docs/triage/refresh.py > "$RUNNER_TEMP/triage-report.md"
           echo "DATE=$(date -u +%F)" >> "$GITHUB_ENV"
 
-      - name: Open a draft PR against the board branch
-        if: env.GO == '1'
+      - name: Try to build and test the board
+        if: steps.gate.outputs.go == '1'
+        run: |
+          set +e
+          {
+            python3 docs/triage/build_board.py \
+              && python3 docs/triage/test_board.py \
+              && node docs/triage/test_board.cjs
+          } > "$RUNNER_TEMP/build.log" 2>&1
+          echo "BUILD_OK=$?" >> "$GITHUB_ENV"
+          cat "$RUNNER_TEMP/build.log"
+
+      - name: Open a PR against the board branch
+        if: steps.gate.outputs.go == '1'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -eu
-          base="${GITHUB_REF_NAME}"
           branch="triage/refresh-${DATE}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -59,12 +88,26 @@ jobs:
             echo "nothing changed since the last snapshot" && exit 0
           fi
           git commit -m "docs: triage snapshot ${DATE}"
-          git push -u origin "$branch"
+          git push -f -u origin "$branch"
+          if [ -n "$(gh pr list --head "$branch" --base "$BOARD_BRANCH" --json number --jq '.[].number')" ]; then
+            echo "a PR for $branch is already open" && exit 0
+          fi
           {
-            echo "Snapshot ${DATE}. Work this report into the overlays per \`docs/triage/RUNBOOK.md\` step 3, then build, test, update the notes and merge into \`${base}\`."
+            if [ "$BUILD_OK" = "0" ]; then
+              echo "Snapshot ${DATE}. Nothing opened or closed upstream, the board rebuilt and both test suites pass: merge this into \`${BOARD_BRANCH}\` and GitHub Pages redeploys the board."
+            else
+              echo "Snapshot ${DATE}, for the triage meeting tomorrow. The board does not build until the new PRs have rows and the closed items lose theirs (\`docs/triage/RUNBOOK.md\` step 3). Check out \`${branch}\`, work the report below into \`build_board.py\`, build, test, update the notes, then mark this ready and merge it into \`${BOARD_BRANCH}\`."
+              echo
+              echo '```'
+              tail -n 5 "$RUNNER_TEMP/build.log"
+              echo '```'
+            fi
+            echo
+            echo "@eoghanmurray @Juice10"
             echo
             head -c 60000 "$RUNNER_TEMP/triage-report.md"
           } > "$RUNNER_TEMP/pr-body.md"
-          gh pr create --draft --base "$base" --head "$branch" \
+          if [ "$BUILD_OK" = "0" ]; then draft=""; else draft="--draft"; fi
+          gh pr create $draft --base "$BOARD_BRANCH" --head "$branch" \
             --title "docs: triage refresh ${DATE}" \
             --body-file "$RUNNER_TEMP/pr-body.md"
