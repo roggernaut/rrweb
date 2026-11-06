@@ -56,31 +56,31 @@ budgets for rrweb.
 
 ## Where it runs
 
-| Constraint | Value |
-|---|---|
-| GitHub-hosted runners | Free because rrweb is public. At most 5 macOS jobs at once. |
-| BrowserStack | Open-source plan: 5 parallel sessions, 5 queued. About 600 device-minutes per 2-hour run. Plan for about 450 to leave room for retries. |
-| What gets tested | The current `main` of rrweb-io/rrweb, built at run time. |
+| Constraint            | Value                                                                                                                                   |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| GitHub-hosted runners | Free because rrweb is public. At most 5 macOS jobs at once.                                                                             |
+| BrowserStack          | Open-source plan: 5 parallel sessions, 5 queued. About 600 device-minutes per 2-hour run. Plan for about 450 to leave room for retries. |
+| What gets tested      | The current `main` of rrweb-io/rrweb, built at run time.                                                                                |
 
 GitHub runners have no session limit, so they take the earliest channels and
 run every check. BrowserStack's minutes are limited, so it covers the real
 devices and real browsers GitHub can't provide, with a focused set of checks.
 
-| Target | Where | Checks |
-|---|---|---|
-| Chrome Canary and Chrome Dev | GitHub Linux | All |
-| Edge Dev | GitHub Linux | All |
-| Firefox Nightly | GitHub Linux | All |
-| Playwright WebKit, built from WebKit main | GitHub Linux | All |
-| Safari Technology Preview, with stable Safari next to it | GitHub macOS 26 | All |
-| Firefox Nightly on Android | Android 14 emulator on GitHub Linux | Functional and privacy |
-| Chrome Beta and Edge Beta, each with stable | BrowserStack, Windows 11 | Focused |
-| Firefox Beta, with stable | BrowserStack, Windows 11 | Focused |
-| Safari on a newer macOS than GitHub has, when there is one | BrowserStack | Focused |
-| Newest iOS or iOS beta, with the previous iOS on the same iPhone | BrowserStack real devices | Focused |
-| Chrome on the newest Android, with the previous Android on the same Pixel | BrowserStack real devices | Focused |
-| Chrome on a low-end Android phone | BrowserStack real device | Focused, ceilings only |
-| Samsung Internet on a Galaxy | BrowserStack real device | Focused, ceilings only |
+| Target                                                                    | Where                               | Checks                 |
+| ------------------------------------------------------------------------- | ----------------------------------- | ---------------------- |
+| Chrome Canary and Chrome Dev                                              | GitHub Linux                        | All                    |
+| Edge Dev                                                                  | GitHub Linux                        | All                    |
+| Firefox Nightly                                                           | GitHub Linux                        | All                    |
+| Playwright WebKit, built from WebKit main                                 | GitHub Linux                        | All                    |
+| Safari Technology Preview, with stable Safari next to it                  | GitHub macOS 26                     | All                    |
+| Firefox Nightly on Android                                                | Android 14 emulator on GitHub Linux | Functional and privacy |
+| Chrome Beta and Edge Beta, each with stable                               | BrowserStack, Windows 11            | Focused                |
+| Firefox Beta, with stable                                                 | BrowserStack, Windows 11            | Focused                |
+| Safari on a newer macOS than GitHub has, when there is one                | BrowserStack                        | Focused                |
+| Newest iOS or iOS beta, with the previous iOS on the same iPhone          | BrowserStack real devices           | Focused                |
+| Chrome on the newest Android, with the previous Android on the same Pixel | BrowserStack real devices           | Focused                |
+| Chrome on a low-end Android phone                                         | BrowserStack real device            | Focused, ceilings only |
+| Samsung Internet on a Galaxy                                              | BrowserStack real device            | Focused, ceilings only |
 
 Pairs use the same device model, because a speed ratio between two different
 phones means nothing. BrowserStack's live list on 2026-11-06 allowed this: the
@@ -142,10 +142,10 @@ Each scenario runs on the upcoming build and on stable, on the same device, in
 the same run. Nothing is stored between runs. Starting limits, to be tuned
 against real runs:
 
-| Rule | Starting value |
-|---|---|
+| Rule                                                 | Starting value      |
+| ---------------------------------------------------- | ------------------- |
 | Upcoming build slower than stable, median of samples | more than 1.5 times |
-| Longest single main-thread block, any target | more than 1 second |
+| Longest single main-thread block, any target         | more than 1 second  |
 
 Targets with no upcoming build to compare get only the 1-second ceiling.
 
@@ -199,10 +199,10 @@ recorded a test page with `rrweb@2.2.0` on both targets GitHub alone can
 reach. It checked for snapshot, mutation and input events, and confirmed that
 planted private strings never appeared.
 
-| Target | Result | Job time |
-|---|---|---|
+| Target                                                                      | Result | Job time  |
+| --------------------------------------------------------------------------- | ------ | --------- |
 | Safari Technology Preview 27.0 on `macos-26`, stable Safari 27.2 as control | Passed | 2 minutes |
-| Firefox Nightly 162 on an Android 14 emulator | Passed | 2 minutes |
+| Firefox Nightly 162 on an Android 14 emulator                               | Passed | 2 minutes |
 
 The same in-page test worked through both drivers unchanged.
 
