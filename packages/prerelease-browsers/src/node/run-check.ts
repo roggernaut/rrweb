@@ -1,6 +1,6 @@
 import type { AttemptResult, CheckMeta, RunOptions } from '../types.ts';
 import type { PageDriver } from './drivers/types.ts';
-import type { CheckStatus } from './results.ts';
+import type { CheckOutcome, CheckStatus } from './results.ts';
 import { composePage } from './page-source.ts';
 
 const pollIntervalMs = 250;
@@ -94,17 +94,27 @@ export async function runAttempt(
   }
 }
 
+export function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+const pastDeadline = (deadline?: Date) =>
+  deadline !== undefined && Date.now() >= deadline.getTime();
+
 /**
  * Applies the 2-of-3 rule: stop at a first pass, at two failures, or after a
- * third attempt breaks the tie.
+ * third attempt breaks the tie. No attempt starts once `deadline` has passed;
+ * a check stopped that way is `not-run`, keeping the attempts it took.
  */
 export async function runWithRetry(
   attempt: () => Promise<AttemptResult>,
+  deadline?: Date,
 ): Promise<{ status: CheckStatus; attempts: AttemptResult[] }> {
   const attempts: AttemptResult[] = [];
   let failures = 0;
   let passes = 0;
   while (attempts.length < 3) {
+    if (pastDeadline(deadline)) return { status: 'not-run', attempts };
     const result = await attempt();
     attempts.push(result);
     if (result.ok) {
@@ -119,4 +129,57 @@ export async function runWithRetry(
     if (failures === 2) return { status: 'fail', attempts };
   }
   return { status: passes === 2 ? 'flaky' : 'fail', attempts };
+}
+
+/**
+ * Takes `samples` samples of one performance scenario, each on a fresh page.
+ * There is no retry rule: the scenario fails only when two samples error (or
+ * its single sample does), and otherwise passes with every sample, leaving
+ * the limits to the report. No sample starts once `deadline` has passed; a
+ * scenario stopped that way is `not-run`, keeping the samples it took.
+ */
+export async function runScenario(
+  driver: PageDriver,
+  meta: CheckMeta,
+  src: { bundle: string; rrweb: string; httpOrigin?: string },
+  opts: { samples: number; timeoutMs: number; scale?: number; deadline?: Date },
+): Promise<CheckOutcome> {
+  const outcome: CheckOutcome = {
+    kind: meta.kind,
+    status: 'pass',
+    attempts: 0,
+    samples: [],
+    compare: meta.compare ?? ['durationMs'],
+  };
+  const samples = outcome.samples!;
+  const errorLimit = Math.min(2, opts.samples);
+  let errors = 0;
+  while (outcome.attempts < opts.samples) {
+    if (pastDeadline(opts.deadline)) {
+      outcome.status = 'not-run';
+      break;
+    }
+    const result = await runAttempt(driver, meta, src, {
+      timeoutMs: opts.timeoutMs,
+      scale: opts.scale,
+    }).catch(
+      (err): AttemptResult => ({ ok: false, message: errorMessage(err) }),
+    );
+    outcome.attempts++;
+    if (result.skipped !== undefined && outcome.attempts === 1) {
+      return { ...outcome, status: 'skipped', message: result.skipped };
+    }
+    if (result.ok && result.sample) {
+      samples.push(result.sample);
+      continue;
+    }
+    outcome.message = result.ok
+      ? 'scenario returned no sample'
+      : result.message ?? 'scenario failed';
+    if (++errors >= errorLimit) {
+      outcome.status = 'fail';
+      break;
+    }
+  }
+  return outcome;
 }

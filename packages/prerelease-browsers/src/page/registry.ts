@@ -3,6 +3,7 @@ import { cssChecks } from './checks/css.ts';
 import { domChecks } from './checks/dom.ts';
 import { inputChecks } from './checks/inputs.ts';
 import { mediaChecks } from './checks/media.ts';
+import { perfChecks } from './checks/perf.ts';
 import { privacyChecks } from './checks/privacy.ts';
 import type { CheckDefinition } from './harness.ts';
 
@@ -74,6 +75,7 @@ export const checks: CheckDefinition[] = [
   ...inputChecks,
   ...mediaChecks,
   ...privacyChecks,
+  ...perfChecks,
   ...(typeof window !== 'undefined' && window.__prerelease_test === true
     ? protocolTestChecks
     : []),

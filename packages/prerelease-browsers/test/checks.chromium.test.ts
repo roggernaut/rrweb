@@ -1,4 +1,4 @@
-import { runAttempt } from '../src/node/run-check.ts';
+import { runAttempt, runScenario } from '../src/node/run-check.ts';
 import { buildPageBundle, readRrwebUmd } from '../src/node/page-source.ts';
 import { launchPlaywright } from '../src/node/drivers/playwright.ts';
 import type { PageDriver } from '../src/node/drivers/types.ts';
@@ -60,6 +60,17 @@ const expectedIds = [
   // observers/canvas/2d.ts skips the isBlocked test that methods get.
 ];
 
+/** Every performance scenario, run once each at a small scale. */
+const perfIds = [
+  'perf-large-stylesheet',
+  'perf-snapshot-5k',
+  'perf-snapshot-20k',
+  'perf-snapshot-50k',
+  'perf-mutation-burst-10k',
+  'perf-sampled-canvases',
+  'perf-record-stop-cycles',
+];
+
 /**
  * The only checks that may skip, each with its one allowed reason: an engine
  * without WebGL, or one that refuses to play audio.
@@ -89,9 +100,22 @@ afterAll(async () => {
   await server?.close();
 });
 
+test('chromium reports precise heap sizes and exposes gc', async () => {
+  await driver.loadHtml('<!doctype html><body></body>');
+  const grew = await driver.evaluate<number>(`(() => {
+    const before = performance.memory.usedJSHeapSize;
+    window.__keep = new Array(1e6).fill(1);
+    return performance.memory.usedJSHeapSize - before;
+  })()`);
+  expect(grew).toBeGreaterThan(1e6);
+  expect(await driver.evaluate('typeof gc')).toBe('function');
+});
+
 test('every expected check is registered', () => {
   const registered = checks.map((check) => check.id);
-  for (const id of expectedIds) expect(registered).toContain(id);
+  for (const id of [...expectedIds, ...perfIds]) {
+    expect(registered).toContain(id);
+  }
 });
 
 describe.each(expectedIds)('%s', (id) => {
@@ -128,6 +152,36 @@ describe.each(expectedIds)('%s', (id) => {
       );
       expect(result.ok).toBe(false);
       expect(result.message).toMatch(/^(privacy leak|public control missing)/);
+    },
+  );
+});
+
+describe.each(perfIds)('%s', (id) => {
+  test(
+    'gives one finite sample on chromium',
+    { timeout: timeoutMs + 10_000 },
+    async () => {
+      const meta = checks.find((check) => check.id === id);
+      expect(meta, `scenario ${id} is not registered`).toBeDefined();
+      expect(meta!.kind).toBe('performance');
+      const outcome = await runScenario(
+        driver,
+        meta!,
+        { bundle, rrweb, httpOrigin: server.origin },
+        { samples: 1, timeoutMs, scale: 0.02 },
+      );
+      expect(outcome.message ?? '').toBe('');
+      expect(outcome.status).toBe('pass');
+      expect(outcome.samples).toHaveLength(1);
+      const [sample] = outcome.samples!;
+      expect(Number.isFinite(sample.durationMs)).toBe(true);
+      expect(sample.durationMs).toBeGreaterThanOrEqual(0);
+      expect(Number.isFinite(sample.maxBlockMs)).toBe(true);
+      expect(sample.maxBlockMs).toBeGreaterThanOrEqual(0);
+      if (meta!.compare?.includes('heapDeltaBytes')) {
+        // Chromium exposes performance.memory, so the delta must be there.
+        expect(Number.isFinite(sample.heapDeltaBytes)).toBe(true);
+      }
     },
   );
 });

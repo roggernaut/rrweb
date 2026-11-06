@@ -6,6 +6,7 @@ import { runTarget } from '../src/node/run-targets.ts';
 import { findTarget } from '../src/node/targets.ts';
 import type { PageDriver } from '../src/node/drivers/types.ts';
 import { launchPlaywright } from '../src/node/drivers/playwright.ts';
+import { scriptedDriver } from './fake-driver.ts';
 
 let tmp: string;
 const future = new Date(Date.now() + 60 * 60 * 1000);
@@ -145,4 +146,92 @@ test('events of the last failing attempt are written under the results dir', asy
     await readFile(join(tmp, outcome.eventsFile!), 'utf8'),
   );
   expect(events.some((e: { type: number }) => e.type === 2)).toBe(true);
+});
+
+test('a deadline passing during an attempt stops its retries and the run', async () => {
+  const deadline = new Date(future);
+  const driver = scriptedDriver(
+    () => ({ ok: false, message: 'bad' }),
+    () => deadline.setTime(0),
+  );
+  const r = await runTarget(
+    { ...findTarget('local-chromium'), connect: async () => driver },
+    {
+      resultsDir: tmp,
+      deadline,
+      rrwebCommit: 'abc',
+      only: ['snapshot-basic', 'shadow-dom-open'],
+    },
+  );
+  expect(driver.loads).toBe(1);
+  expect(r.checks['snapshot-basic']).toEqual({
+    kind: 'functional',
+    status: 'not-run',
+    attempts: 1,
+    message: 'bad',
+  });
+  expect(r.checks['shadow-dom-open']).toMatchObject({
+    status: 'not-run',
+    attempts: 0,
+  });
+  expect(r.incomplete).toBe(true);
+});
+
+test('performance scenarios take perfSamples samples and leave the run complete', async () => {
+  const target = { ...findTarget('local-chromium'), perfSamples: 4 };
+  const driver = scriptedDriver((n) => ({
+    ok: true,
+    sample: { durationMs: n, maxBlockMs: n },
+  }));
+  const r = await runTarget(
+    { ...target, connect: async () => driver },
+    {
+      resultsDir: tmp,
+      deadline: future,
+      rrwebCommit: 'abc',
+      only: ['snapshot-basic', 'perf-snapshot-5k', 'perf-mutation-burst-10k'],
+    },
+  );
+  expect(r.incomplete).toBe(false);
+  expect(r.checks['perf-snapshot-5k']).toMatchObject({
+    kind: 'performance',
+    status: 'pass',
+    attempts: 4,
+    compare: ['durationMs'],
+  });
+  expect(r.checks['perf-snapshot-5k'].samples).toHaveLength(4);
+  expect(r.checks['perf-mutation-burst-10k'].compare).toEqual([
+    'durationMs',
+    'maxBlockMs',
+  ]);
+  expect(await readResults(tmp)).toEqual([r]);
+});
+
+test('a deadline passing mid-scenario stops sampling and marks the run incomplete', async () => {
+  const deadline = new Date(future);
+  const driver = scriptedDriver(
+    (n) => ({ ok: true, sample: { durationMs: n, maxBlockMs: n } }),
+    (n) => {
+      if (n === 2) deadline.setTime(0);
+    },
+  );
+  const r = await runTarget(
+    { ...findTarget('local-chromium'), connect: async () => driver },
+    {
+      resultsDir: tmp,
+      deadline,
+      rrwebCommit: 'abc',
+      only: ['perf-snapshot-5k'],
+    },
+  );
+  expect(driver.loads).toBe(2);
+  expect(r.checks['perf-snapshot-5k']).toMatchObject({
+    status: 'not-run',
+    attempts: 2,
+    samples: [
+      { durationMs: 1, maxBlockMs: 1 },
+      { durationMs: 2, maxBlockMs: 2 },
+    ],
+  });
+  expect(r.incomplete).toBe(true);
 });

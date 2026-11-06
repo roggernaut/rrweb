@@ -11,6 +11,7 @@ export interface CheckOutcome {
   message?: string; // from the last failing attempt
   attempts: number;
   samples?: PerfSample[]; // performance only
+  compare?: Array<'durationMs' | 'maxBlockMs' | 'heapDeltaBytes'>; // performance only
   eventsFile?: string; // relative to the results dir, last failing attempt's events
 }
 

@@ -18,6 +18,15 @@ async function loadPlaywright(path?: string): Promise<PlaywrightModule> {
   return createRequire(import.meta.url)(resolve(path)) as PlaywrightModule;
 }
 
+/**
+ * Chromium rounds performance.memory and refreshes it rarely unless asked
+ * for precise values; gc() lets a scenario collect before it reads the heap.
+ */
+export const chromiumHeapArgs = [
+  '--enable-precise-memory-info',
+  '--js-flags=--expose-gc',
+];
+
 export async function launchPlaywright(opts: {
   engine: Engine;
   channel?: string;
@@ -29,7 +38,10 @@ export async function launchPlaywright(opts: {
   const browser = await playwright[browserTypeName[opts.engine]].launch({
     channel: opts.channel,
     executablePath: opts.executablePath,
-    args: opts.args,
+    args:
+      opts.engine === 'chromium'
+        ? [...chromiumHeapArgs, ...(opts.args ?? [])]
+        : opts.args,
   });
   try {
     const page = await (await browser.newContext()).newPage();

@@ -8,7 +8,12 @@ import { startFixtureServer } from './fixture-server.ts';
 import { buildPageBundle, readRrwebUmd } from './page-source.ts';
 import type { CheckOutcome, TargetResult } from './results.ts';
 import { writeResult } from './results.ts';
-import { runAttempt, runWithRetry } from './run-check.ts';
+import {
+  errorMessage,
+  runAttempt,
+  runScenario,
+  runWithRetry,
+} from './run-check.ts';
 import type { TargetDefinition } from './targets.ts';
 
 const functionalTimeoutMs = 60_000;
@@ -16,10 +21,6 @@ const performanceTimeoutMs = 180_000;
 
 function attemptTimeoutMs(kind: CheckKind): number {
   return kind === 'performance' ? performanceTimeoutMs : functionalTimeoutMs;
-}
-
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }
 
 /** Plain metadata for every registered check, without the in-page code. */
@@ -100,6 +101,7 @@ export async function runTarget(
     for (const meta of metas) {
       const outcome = await runCheck(meta, src);
       result.checks[meta.id] = outcome;
+      // Only the deadline leaves a check not-run.
       if (outcome.status === 'not-run') result.incomplete = true;
     }
     result.sessionUrl = await markSession(driver, result);
@@ -113,19 +115,20 @@ export async function runTarget(
     meta: CheckMeta,
     src: { bundle: string; rrweb: string; httpOrigin?: string },
   ): Promise<CheckOutcome> {
-    const notRun: CheckOutcome = {
-      kind: meta.kind,
-      status: 'not-run',
-      attempts: 0,
-    };
-    if (Date.now() >= opts.deadline.getTime()) return notRun;
-    // Performance scenarios arrive with runScenario; until then they never run.
-    if (meta.kind === 'performance') return notRun;
     const timeoutMs = attemptTimeoutMs(meta.kind) * t.timeScale;
-    const { status, attempts } = await runWithRetry(() =>
-      runAttempt(driver, meta, src, { timeoutMs }).catch(
-        (err): AttemptResult => ({ ok: false, message: errorMessage(err) }),
-      ),
+    if (meta.kind === 'performance') {
+      return runScenario(driver, meta, src, {
+        samples: t.perfSamples,
+        timeoutMs,
+        deadline: opts.deadline,
+      });
+    }
+    const { status, attempts } = await runWithRetry(
+      () =>
+        runAttempt(driver, meta, src, { timeoutMs }).catch(
+          (err): AttemptResult => ({ ok: false, message: errorMessage(err) }),
+        ),
+      opts.deadline,
     );
     const outcome: CheckOutcome = {
       kind: meta.kind,
