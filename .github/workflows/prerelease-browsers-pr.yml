@@ -58,15 +58,26 @@ jobs:
           if-no-files-found: error
           overwrite: true
 
+  # The base build is the first parent of the merge commit that `build`
+  # checks out, so the two differ by exactly the pull request's changes.
   build-base:
     name: Build rrweb from the base branch
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    outputs:
+      sha: ${{ steps.base.outputs.sha }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 2
           persist-credentials: false
+
+      - name: Check out the merge commit's first parent
+        id: base
+        run: |
+          set -euo pipefail
+          git checkout HEAD^1
+          echo "sha=$(git rev-parse HEAD)" | tee -a "$GITHUB_OUTPUT"
 
       - name: Setup Node.js 24
         uses: actions/setup-node@v4
@@ -102,7 +113,7 @@ jobs:
         target: [chrome-stable, edge-stable, firefox-stable, local-webkit]
     env:
       T: ${{ matrix.target }}
-      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      BASE_SHA: ${{ needs.build-base.outputs.sha }}
     steps:
       # Measured from the start of the job, so both roles finish inside its
       # 30 minutes with time left to upload the results.
@@ -168,7 +179,7 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 30
     env:
-      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      BASE_SHA: ${{ needs.build-base.outputs.sha }}
     steps:
       - name: Set the deadline
         run: echo "PRERELEASE_DEADLINE=$(date -u -v+25M +%FT%TZ)" >> "$GITHUB_ENV"

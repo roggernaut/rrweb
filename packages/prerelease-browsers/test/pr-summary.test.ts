@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import type { TargetResult } from '../src/node/results.ts';
 import { writeResult } from '../src/node/results.ts';
 import { summarizePr } from '../src/report/pr-summary.ts';
 import {
@@ -110,6 +111,95 @@ test('PR rrweb 1.6x slower than base fails', () => {
   expect(v.failures[0].key).toBe('perf-snapshot-5k:performance');
 });
 
+/** Sets every sample's longest block on the result's one perf check. */
+function blocking(r: TargetResult, maxBlockMs: number): TargetResult {
+  for (const c of Object.values(r.checks)) {
+    c.samples = c.samples?.map((x) => ({ ...x, maxBlockMs }));
+  }
+  return r;
+}
+
+test('a base ceiling breach does not excuse a PR slowdown', () => {
+  const v = summarizePr(
+    [
+      blocking(perf('chrome-stable@pr', 'upcoming', [160, 170, 165], pr), 1200),
+      blocking(
+        perf('chrome-stable@base', 'stable', [100, 105, 102], base),
+        1200,
+      ),
+    ],
+    expected,
+    [],
+  );
+  expect(v.failures).toEqual([
+    expect.objectContaining({
+      targetId: 'chrome-stable',
+      key: 'perf-snapshot-5k:performance',
+      message: 'durationMs 165 vs stable 102 (1.62x)',
+    }),
+  ]);
+  expect(v.warnings).toEqual([
+    expect.objectContaining({
+      message: 'also fails on base: longest block 1200 ms over 1000 ms ceiling',
+    }),
+  ]);
+});
+
+test('a slowdown alone fails even when only base breaches the ceiling', () => {
+  const v = summarizePr(
+    [
+      perf('chrome-stable@pr', 'upcoming', [160, 170, 165], pr),
+      blocking(
+        perf('chrome-stable@base', 'stable', [100, 105, 102], base),
+        1200,
+      ),
+    ],
+    expected,
+    [],
+  );
+  expect(v.failures.map((f) => f.message)).toEqual([
+    'durationMs 165 vs stable 102 (1.62x)',
+  ]);
+  expect(v.warnings.map((f) => f.message)).toEqual([
+    'fails only on base: longest block 1200 ms over 1000 ms ceiling',
+  ]);
+  expect(v.markdown).toMatch(/^Fail: 1 failing/m);
+});
+
+test('a ceiling breach on both builds is only a warning', () => {
+  const v = summarizePr(
+    [
+      blocking(perf('chrome-stable@pr', 'upcoming', [100, 105, 102], pr), 1200),
+      blocking(
+        perf('chrome-stable@base', 'stable', [100, 105, 102], base),
+        1200,
+      ),
+    ],
+    expected,
+    [],
+  );
+  expect(v.failures).toEqual([]);
+  expect(v.warnings.map((f) => f.message)).toEqual([
+    'also fails on base: longest block 1200 ms over 1000 ms ceiling',
+  ]);
+});
+
+test('notes, such as a skipped comparison, are shown as code', () => {
+  const v = summarizePr(
+    [
+      perf('chrome-stable@pr', 'upcoming', [160, 170, 165], pr),
+      passing('chrome-stable@base', 'css-nested-rules', base),
+    ],
+    expected,
+    [],
+  );
+  expect(v.markdown).toContain('### Notes');
+  expect(v.markdown).toContain(
+    '- `perf-snapshot-5k: chrome-stable＠base has no samples, so chrome-stable＠pr was not compared`',
+  );
+  expect(v.markdown).not.toMatch(/@[a-z0-9]/i);
+});
+
 test('a missing base result makes the run incomplete', () => {
   const v = summarizePr(
     [passing('chrome-stable@pr', 'css-nested-rules', pr)],
@@ -133,7 +223,21 @@ test('a role stopped by the deadline makes the run incomplete', () => {
   expect(v.markdown).toMatch(/^Incomplete/m);
 });
 
-test('a browser that fails to launch for one role is a warning', () => {
+test('an incomplete reason is shown as code', () => {
+  const v = summarizePr(
+    [
+      passing('chrome-stable@pr', 'css-nested-rules', pr),
+      incomplete('chrome-stable@base', { ...base, reason: 'odd `x` @team' }),
+    ],
+    expected,
+    [],
+  );
+  expect(v.markdown).toContain(
+    "- chrome-stable@<!-- -->base: stopped early (`odd 'x' ＠team`)",
+  );
+});
+
+test('a browser that fails to launch only with the base rrweb is a warning', () => {
   const v = summarizePr(
     [
       passing('chrome-stable@pr', 'css-nested-rules', pr),
@@ -151,6 +255,27 @@ test('a browser that fails to launch for one role is a warning', () => {
     }),
   ]);
   expect(v.markdown).toMatch(/^Pass/m);
+});
+
+test('a browser that fails to launch with the PR rrweb makes the run incomplete', () => {
+  const v = summarizePr(
+    [
+      launchFailed('chrome-stable@pr', 'no binary', pr),
+      failing('chrome-stable@base', 'css-nested-rules', base),
+    ],
+    expected,
+    [],
+  );
+  expect(v.failures).toEqual([]);
+  expect(v.incomplete).toEqual(['chrome-stable@pr']);
+  // Base failures say nothing about a PR whose rrweb never ran.
+  expect(v.warnings).toEqual([
+    expect.objectContaining({
+      targetId: 'chrome-stable',
+      message: 'browser failed to launch: no binary',
+    }),
+  ]);
+  expect(v.markdown).toMatch(/^Incomplete/m);
 });
 
 test('a browser that fails to launch for both roles makes the run incomplete', () => {

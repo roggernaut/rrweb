@@ -103,22 +103,29 @@ pull request that changes `packages/rrweb`, `rrweb-snapshot`, `rrdom`,
 checks on stable Chrome, Edge and Firefox and on Playwright's bundled WebKit
 (`local-webkit`). It opens no issues and uses no secrets.
 
-Each target runs twice on the same runner. `<target>@pr` uses the pull
-request's rrweb, and `<target>@base` uses the base branch's. The
+Each target runs twice on the same runner. `<target>@pr` uses rrweb built from
+the pull request's merge commit, and `<target>@base` uses rrweb built from
+that commit's first parent, the base branch as the pull request merges into
+it. The
 **Pre-release browsers summary** job compares the two and writes the verdict
 to the run's summary page:
 
 - **Fail** when a check fails with the pull request's rrweb but passes with
   the base branch's, or when the pull request's rrweb is more than 1.5 times
   slower than the base branch's on the same target, or when its longest block
-  is over the 1000 ms ceiling and the base branch's isn't. The pull request
-  fails only for what it caused.
-- **Warning** when a check fails with both builds, or only with the base
-  branch's, or when the browser fails to launch for one of the two runs.
-  Warnings don't fail the pull request.
+  is over the 1000 ms ceiling and the base branch's isn't. A slowdown against
+  the base branch always fails, even when the base branch breaks the ceiling
+  on that check. The pull request fails only for what it caused.
+- **Warning** when a check fails with both builds, or both break the
+  ceiling, or a check fails only with the base branch's rrweb, or the browser
+  fails to launch only for the base branch's run. Warnings don't fail the
+  pull request.
 - **Incomplete** when a run is missing, stopped at its deadline, or its
-  browser launched for neither build. An incomplete run fails the summary job,
-  because it proves nothing. Re-run the jobs.
+  browser didn't launch with the pull request's rrweb. An incomplete run
+  fails the summary job, because it proves nothing. Re-run the jobs.
+
+Notes, such as a performance comparison that was skipped because the base
+run has no samples, are listed under **Notes**.
 
 Failures parked in `known-failures.json` count for neither.
 

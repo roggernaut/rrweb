@@ -4,6 +4,7 @@ import { parseArgs } from 'node:util';
 import type { TargetResult } from '../node/results.ts';
 import { readResults } from '../node/results.ts';
 import type { KnownFailure } from './failures.ts';
+import { evaluatePerf } from './compare.ts';
 import { collectFailures, parseKnownFailures } from './failures.ts';
 import {
   capBody,
@@ -43,16 +44,64 @@ const reproduce = (target: string, role: Role, checkId?: string): string =>
     checkId === undefined ? '' : ` --check ${checkId}`
   }`;
 
+/** What made a check count as failing on one target. */
+type FindingKind = 'fail' | 'ceiling' | 'ratio';
+
+interface Part {
+  kind: FindingKind;
+  message: string;
+}
+
+/**
+ * Every finding per `<targetId>\0<checkId>`, the way collectFailures builds
+ * its messages: the check's own failure, then each performance limit it
+ * breached. A ratio finding compares the PR build with base, so it only ever
+ * appears on `@pr`.
+ */
+function findingParts(results: TargetResult[]): Map<string, Part[]> {
+  const parts = new Map<string, Part[]>();
+  const add = (targetId: string, checkId: string, part: Part) => {
+    const id = `${targetId}\0${checkId}`;
+    parts.set(id, [...(parts.get(id) ?? []), part]);
+  };
+  const counted = (targetId: string, checkId: string) => {
+    const r = results.find((x) => x.targetId === targetId);
+    const status = r?.launch.ok ? r.checks[checkId]?.status : undefined;
+    return status !== undefined && status !== 'skipped' && status !== 'not-run';
+  };
+  for (const r of results) {
+    if (!r.launch.ok) continue;
+    for (const [checkId, c] of Object.entries(r.checks)) {
+      if (c.status === 'fail') {
+        add(r.targetId, checkId, {
+          kind: 'fail',
+          message: c.message ?? 'check failed',
+        });
+      }
+    }
+  }
+  for (const f of evaluatePerf(results)) {
+    if (!counted(f.targetId, f.checkId)) continue;
+    add(f.targetId, f.checkId, {
+      kind: f.message.startsWith('longest block ') ? 'ceiling' : 'ratio',
+      message: f.message,
+    });
+  }
+  return parts;
+}
+
 /**
  * Judges a pull request run, in which every target ran once as `<id>@pr`
  * with the pull request's rrweb and once as `<id>@base` with the base
  * branch's (see asPrRole).
  *
- * Only a check that fails with the pull request's rrweb, and not with the
- * base branch's on the same target, is a failure. A check failing on both,
- * or only on base, and a browser that did not launch for one role, are
- * warnings. A missing or stopped-early result, or a browser that launched
- * for neither role, makes the run incomplete.
+ * A finding with the pull request's rrweb is a failure unless base has a
+ * finding of the same kind on the same check and target: a check failure on
+ * both, or a ceiling breach on both, is only a warning. A slowdown against
+ * base is never excused. Findings only on base, and a browser that did not
+ * launch with the base rrweb, are warnings. A missing or stopped-early
+ * result, or a browser that did not launch with the pull request's rrweb,
+ * makes the run incomplete.
  */
 export function summarizePr(
   results: TargetResult[],
@@ -60,6 +109,10 @@ export function summarizePr(
   known: KnownFailure[],
 ): PrVerdict {
   const s = collectFailures(results, expectedTargets, known);
+  const parts = findingParts(results);
+  const partsOf = (targetId: string, checkId: string) =>
+    parts.get(`${targetId}\0${checkId}`) ?? [];
+  const notLaunched = new Set(s.launchFailures.map((l) => l.targetId));
   const failures: PrFinding[] = [];
   const warnings: PrFinding[] = [];
 
@@ -73,19 +126,36 @@ export function summarizePr(
         message,
         reproduce: reproduce(target, 'pr', f.checkId),
       });
+      const join = (ps: Part[]) => ps.map((p) => p.message).join('; ');
       if (role === 'pr') {
-        if (failingOn.has(`${target}@base`)) {
-          warnings.push(finding(`also fails on base: ${t.message}`));
-        } else {
-          failures.push(finding(t.message));
+        const mine = partsOf(t.targetId, f.checkId);
+        const onBase = failingOn.has(`${target}@base`)
+          ? partsOf(`${target}@base`, f.checkId)
+          : [];
+        const shared = mine.filter((p) =>
+          onBase.some((b) => b.kind === p.kind),
+        );
+        const own = mine.filter((p) => !shared.includes(p));
+        if (own.length > 0 || mine.length === 0) {
+          failures.push(finding(own.length > 0 ? join(own) : t.message));
         }
-      } else if (!failingOn.has(`${target}@pr`)) {
-        warnings.push(finding(`fails only on base: ${t.message}`));
+        if (shared.length > 0) {
+          warnings.push(finding(`also fails on base: ${join(shared)}`));
+        }
+      } else if (!notLaunched.has(`${target}@pr`)) {
+        const onPr = failingOn.has(`${target}@pr`)
+          ? partsOf(`${target}@pr`, f.checkId)
+          : [];
+        const only = partsOf(t.targetId, f.checkId).filter(
+          (b) => !onPr.some((p) => p.kind === b.kind),
+        );
+        if (only.length > 0) {
+          warnings.push(finding(`fails only on base: ${join(only)}`));
+        }
       }
     }
   }
 
-  const notLaunched = new Set(s.launchFailures.map((l) => l.targetId));
   for (const l of s.launchFailures) {
     const { target, role } = splitRole(l.targetId);
     warnings.push({
@@ -100,15 +170,22 @@ export function summarizePr(
   for (const id of s.missingTargets) reasons.set(id, 'no results');
   for (const id of s.incompleteTargets) {
     const reason = results.find((r) => r.targetId === id)?.incompleteReason;
-    reasons.set(id, `stopped early${reason ? ` (${reason})` : ''}`);
+    reasons.set(
+      id,
+      `stopped early${
+        reason ? ` (${untrusted(reason, MESSAGE_LIMIT, false)})` : ''
+      }`,
+    );
   }
   for (const id of notLaunched) {
-    const { target } = splitRole(id);
-    const both = [`${target}@pr`, `${target}@base`];
-    if (both.every((b) => notLaunched.has(b))) {
-      for (const b of both) {
-        reasons.set(b, 'the browser launched with neither build');
-      }
+    const { target, role } = splitRole(id);
+    if (notLaunched.has(`${target}@base`) && notLaunched.has(`${target}@pr`)) {
+      reasons.set(id, 'the browser launched with neither build');
+    } else if (role === 'pr') {
+      reasons.set(
+        id,
+        "the browser didn't launch with this pull request's rrweb",
+      );
     }
   }
   const order = (id: string) => {
@@ -153,6 +230,14 @@ export function summarizePr(
     ...table('Failures', failures),
     ...table('Warnings', warnings),
   ];
+  if (s.notes.length > 0) {
+    lines.push(
+      '### Notes',
+      '',
+      ...s.notes.map((n) => `- ${untrusted(n, MESSAGE_LIMIT, false)}`),
+      '',
+    );
+  }
   if (incomplete.length > 0) {
     lines.push(
       '### Incomplete targets',
