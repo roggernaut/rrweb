@@ -191,8 +191,10 @@ When a failure is a browser bug that's already reported upstream, park it in
   Without it, the entry parks the failure on every engine. With it, a failure
   on any other engine still opens or updates the issue.
 - `upstream` must be an `https:` link to the upstream report.
-- `expires` is a date. A plain `YYYY-MM-DD` date stays active through the end
-  of that day, UTC. After that, the report step logs a warning and reports the
+- `expires` is a `YYYY-MM-DD` date, or an ISO timestamp with a time zone
+  such as `2027-01-31T12:00:00Z`. A date has to exist: `2027-02-31` is
+  rejected. A plain date stays active through the end of that day, UTC.
+  After that, the report step logs a warning and reports the
   failure again, so the entry has to be renewed or removed.
 - `note` is optional.
 

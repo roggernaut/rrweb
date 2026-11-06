@@ -46,7 +46,27 @@ export interface RunSummary {
 
 const keyPattern = /^[a-z0-9-]+:(functional|privacy|performance)$/;
 const engineNames: Engine[] = ['chromium', 'gecko', 'webkit'];
-const dateOnly = /^\d{4}-\d{2}-\d{2}$/;
+const expiresPattern =
+  /^(\d{4}-\d{2}-\d{2})(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2}))?$/;
+
+/**
+ * The instant an expires value ends, or undefined when it is neither
+ * YYYY-MM-DD nor an ISO timestamp with a time zone. Date.parse alone takes
+ * '1' or rolls 2027-02-31 over into March, so the date must round-trip. A
+ * date-only value lasts through the end of that day (UTC).
+ */
+function expiryEnd(expires: string): number | undefined {
+  const match = expiresPattern.exec(expires);
+  if (!match) return undefined;
+  const [, date, time] = match;
+  const day = new Date(date);
+  if (Number.isNaN(day.getTime()) || !day.toISOString().startsWith(date)) {
+    return undefined;
+  }
+  if (time === undefined) return day.getTime() + 24 * 3600_000;
+  const at = Date.parse(expires);
+  return Number.isNaN(at) ? undefined : at;
+}
 
 /**
  * Validates known-failures.json and splits it by expiry. An entry dated
@@ -87,8 +107,14 @@ export function parseKnownFailures(
     if (url?.protocol !== 'https:') {
       throw new Error(`${where}: upstream must be an https: URL`);
     }
-    if (typeof e.expires !== 'string' || Number.isNaN(Date.parse(e.expires))) {
-      throw new Error(`${where}: expires is not a valid date`);
+    const endMs =
+      typeof e.expires === 'string' ? expiryEnd(e.expires) : undefined;
+    if (typeof e.expires !== 'string' || endMs === undefined) {
+      throw new Error(
+        `${where}: expires must be YYYY-MM-DD or an ISO timestamp with a time zone, got ${JSON.stringify(
+          e.expires,
+        )}`,
+      );
     }
     if (
       e.engines !== undefined &&
@@ -109,8 +135,6 @@ export function parseKnownFailures(
       expires: e.expires,
       ...(e.note === undefined ? {} : { note: e.note }),
     };
-    const endMs =
-      Date.parse(e.expires) + (dateOnly.test(e.expires) ? 24 * 3600_000 : 0);
     (now.getTime() >= endMs ? expired : active).push(entry);
   });
   return { active, expired };

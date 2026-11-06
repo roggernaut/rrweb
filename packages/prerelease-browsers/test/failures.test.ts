@@ -309,6 +309,29 @@ describe('parseKnownFailures', () => {
       parseKnownFailures([{ ...ok, upstream: 'nonsense' }], now),
     ).toThrow();
   });
+  test.each([
+    ['a bare number', '1'],
+    ['a day the month does not have', '2027-02-31'],
+    ['an unpadded month', '2027-1-15'],
+    ['an impossible day in a timestamp', '2027-02-31T00:00:00Z'],
+    ['a timestamp without a time zone', '2027-01-15T12:00:00'],
+  ])('expires as %s is rejected', (_, expires) => {
+    expect(() => parseKnownFailures([{ ...ok, expires }], now)).toThrow(
+      /expires must be YYYY-MM-DD or an ISO timestamp/,
+    );
+  });
+  test('a date-only expiry lasts through the end of that day, UTC', () => {
+    const entry = { ...ok, expires: '2027-01-15' };
+    const at = (iso: string) => parseKnownFailures([entry], new Date(iso));
+    expect(at('2027-01-15T23:59:59Z').active).toEqual([entry]);
+    expect(at('2027-01-16T00:00:00Z').expired).toEqual([entry]);
+  });
+  test('a timestamp expiry ends at that instant', () => {
+    const entry = { ...ok, expires: '2027-01-15T12:00:00+01:00' };
+    const at = (iso: string) => parseKnownFailures([entry], new Date(iso));
+    expect(at('2027-01-15T10:59:59Z').active).toEqual([entry]);
+    expect(at('2027-01-15T11:00:00Z').expired).toEqual([entry]);
+  });
   test('the shipped known-failures.json parses', async () => {
     const file = fileURLToPath(
       new URL('../known-failures.json', import.meta.url),
