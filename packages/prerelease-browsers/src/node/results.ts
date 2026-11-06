@@ -34,6 +34,9 @@ export interface TargetResult {
   checks: Record<string, CheckOutcome>;
 }
 
+const isObject = (x: unknown): x is object =>
+  typeof x === 'object' && x !== null && !Array.isArray(x);
+
 /** Writes `<dir>/<targetId>.json`, creating the directory when needed. */
 export async function writeResult(dir: string, r: TargetResult): Promise<void> {
   await mkdir(dir, { recursive: true });
@@ -45,8 +48,8 @@ export async function writeResult(dir: string, r: TargetResult): Promise<void> {
 
 /**
  * Reads every `<dir>/*.json` target result, sorted by file name. A missing
- * directory reads as no results. A file that is not valid JSON or not schema 1
- * is skipped with a warning, so the target shows up as missing in the report
+ * directory reads as no results. A file that is not valid JSON, not schema 1,
+ * or lacks its `launch` or `checks` object is skipped with a warning, so the target shows up as missing in the report
  * instead of failing the whole run.
  */
 export async function readResults(dir: string): Promise<TargetResult[]> {
@@ -60,13 +63,16 @@ export async function readResults(dir: string): Promise<TargetResult[]> {
   const results: TargetResult[] = [];
   for (const name of names) {
     try {
-      const parsed = JSON.parse(await readFile(join(dir, name), 'utf8'));
-      if (
-        typeof parsed !== 'object' ||
-        parsed === null ||
-        parsed.schema !== 1
-      ) {
+      const parsed: unknown = JSON.parse(
+        await readFile(join(dir, name), 'utf8'),
+      );
+      if (!isObject(parsed) || (parsed as { schema?: unknown }).schema !== 1) {
         console.warn(`skipping ${name}: not a schema 1 target result`);
+        continue;
+      }
+      const { launch, checks } = parsed as Partial<TargetResult>;
+      if (!isObject(launch) || !isObject(checks)) {
+        console.warn(`skipping ${name}: no launch or checks object`);
         continue;
       }
       results.push(parsed as TargetResult);

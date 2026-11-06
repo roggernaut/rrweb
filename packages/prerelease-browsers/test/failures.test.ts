@@ -327,6 +327,24 @@ describe('readResults', () => {
     const s = collectFailures(rs, ['chrome-stable', 'broken'], []);
     expect(s.missingTargets).toEqual(['broken']);
   });
+
+  test('a schema 1 file without a launch or checks object is skipped too', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const { launch: _launch, ...noLaunch } = passing('chrome-dev', 'a-check');
+    const { checks: _checks, ...noChecks } = passing('edge-dev', 'a-check');
+    await writeResult(tmp, passing('chrome-stable', 'a-check'));
+    await writeFile(join(tmp, 'chrome-dev.json'), JSON.stringify(noLaunch));
+    await writeFile(join(tmp, 'edge-dev.json'), JSON.stringify(noChecks));
+    await writeFile(
+      join(tmp, 'firefox-nightly.json'),
+      JSON.stringify({ ...passing('firefox-nightly', 'a-check'), checks: [] }),
+    );
+    const rs = await readResults(tmp);
+    expect(ids(rs)).toEqual(['chrome-stable']);
+    expect(warn.mock.calls.map((c) => String(c[0])).join('\n')).toMatch(
+      /chrome-dev\.json[\s\S]*edge-dev\.json[\s\S]*firefox-nightly\.json/,
+    );
+  });
 });
 
 describe('fixtures', () => {

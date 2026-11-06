@@ -1,0 +1,445 @@
+import type { TargetResult } from '../node/results.ts';
+import type { Engine } from '../types.ts';
+import type { Failure, RunSummary } from './failures.ts';
+import type { IssuePlan, IssueRecord } from './issues-plan.ts';
+
+export interface RunMeta {
+  runUrl: string;
+  date: string; // YYYY-MM-DD
+  rrwebCommit: string;
+}
+
+export const STATUS_MARKER = '<!-- prerelease:status -->';
+export const RUN_BROKEN_MARKER = '<!-- prerelease:run-broken -->';
+const HISTORY_OPEN = '<!-- prerelease:history -->';
+const HISTORY_CLOSE = '<!-- /prerelease:history -->';
+
+/** GitHub allows 65,536 characters; stay well clear of it. */
+export const MAX_BODY = 60_000;
+const SHORT_MESSAGE = 500;
+const HISTORY_ROWS = 10;
+const engineNames: Engine[] = ['chromium', 'gecko', 'webkit'];
+
+/**
+ * An `@` followed by a letter would mention a user or team when the body is
+ * saved, so every edit would notify someone. An empty HTML comment between
+ * the two keeps the text readable and inert.
+ */
+export const noMentions = (text: string): string =>
+  text.replace(/@(?=[a-z])/gi, '@<!-- -->');
+
+/** The text of one table cell: no HTML, no column breaks, one line. */
+function cell(text: string, limit = Infinity): string {
+  let t = text;
+  if (t.length > limit) {
+    let end = limit;
+    const code = t.charCodeAt(end - 1);
+    if (code >= 0xd800 && code <= 0xdbff) end--; // keep surrogate pairs whole
+    t = t.slice(0, end) + '…';
+  }
+  return t
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\|/g, '\\|')
+    .replace(/\r?\n/g, '<br>');
+}
+
+const code = (text: string) => '`' + text.replace(/`/g, "'") + '`';
+
+/** A session link without its query string, which can carry a share token. */
+function sessionLink(url: string | undefined): string {
+  if (!url) return '–';
+  try {
+    const { origin, pathname } = new URL(url);
+    return `[session](${origin}${pathname})`;
+  } catch {
+    return '–';
+  }
+}
+
+export const runLink = (run: RunMeta): string =>
+  `[the run of ${run.date}](${run.runUrl})`;
+
+/**
+ * The reproduce command, runnable from the repository root. The workspace
+ * name starts with `@`, and the escape `noMentions` adds would show verbatim
+ * inside a code block, so the command goes through the package directory.
+ */
+const reproduceLine = (command: string) =>
+  command.replace(
+    /^yarn workspace @rrweb\/prerelease-browsers /,
+    'yarn --cwd packages/prerelease-browsers ',
+  );
+
+export function parseMarkers(body: string): {
+  key?: string;
+  engines: Engine[];
+  targets: string[];
+  history: string[];
+} {
+  const key = /<!-- prerelease:key=([^\s>]+) -->/.exec(body)?.[1];
+  const list = (name: string) =>
+    (new RegExp(`<!-- prerelease:${name}=([^\\s>]*) -->`).exec(body)?.[1] ?? '')
+      .split(',')
+      .filter((x) => x !== '');
+  const open = body.indexOf(HISTORY_OPEN);
+  const close = body.indexOf(HISTORY_CLOSE, open);
+  const history =
+    open < 0 || close < 0
+      ? []
+      : body
+          .slice(open + HISTORY_OPEN.length, close)
+          .split('\n')
+          .filter((l) => l.startsWith('| ') && !/^\| (Date|---) /.test(l));
+  return {
+    ...(key ? { key } : {}),
+    engines: list('engines').filter((e): e is Engine =>
+      engineNames.includes(e as Engine),
+    ),
+    targets: list('targets'),
+    history,
+  };
+}
+
+export function issueTitle(f: Failure): string {
+  return `[pre-release] ${f.kind}: ${f.checkId} fails on ${f.engines.join(
+    ', ',
+  )}`;
+}
+
+export function labelsFor(f: Failure): string[] {
+  return [
+    'prerelease',
+    `prerelease:${f.kind}`,
+    ...f.engines.map((e) => `engine:${e}`),
+    ...(f.kind === 'privacy' ? ['privacy', 'severity:critical'] : []),
+    ...(f.alsoFailsOnStable ? ['prerelease:also-fails-on-stable'] : []),
+  ];
+}
+
+const historyRow = (run: RunMeta) => `| ${run.date} | [run](${run.runUrl}) |`;
+
+/**
+ * The issue for one failing check. `record` is what the markers keep: for an
+ * update or a reopen, the planner's recorded targets and engines, which can
+ * include earlier targets this run did not confirm. The history carries over
+ * from `previousBody`, newest first, and a re-run of the same run replaces
+ * its row instead of adding one.
+ */
+export function issueBody(
+  f: Failure,
+  run: RunMeta,
+  previousBody?: string,
+  record?: IssueRecord,
+): string {
+  const recordTargets =
+    record?.recordTargets ?? f.targets.map((t) => t.targetId);
+  const recordEngines = record?.recordEngines ?? f.engines;
+  const failingNow = f.targets.map((t) => t.targetId);
+  const carried = recordTargets.filter((t) => !failingNow.includes(t));
+
+  const row = `${historyRow(run)} ${code(run.rrwebCommit)} | ${failingNow
+    .map((t) => cell(t))
+    .join(', ')} |`;
+  const earlier = (
+    previousBody ? parseMarkers(previousBody).history : []
+  ).filter((r) => !r.startsWith(historyRow(run)));
+  const history = [row, ...earlier].slice(0, HISTORY_ROWS);
+
+  const build = (messageLimit: number, rows: string[]) => {
+    const lines = [
+      `<!-- prerelease:key=${f.key} -->`,
+      `<!-- prerelease:engines=${recordEngines.join(',')} -->`,
+      `<!-- prerelease:targets=${recordTargets.join(',')} -->`,
+      '',
+      `${code(f.checkId)} (${f.kind}) fails on ${recordEngines.join(
+        ', ',
+      )} in ${runLink(run)}, with rrweb at commit ${code(run.rrwebCommit)}.`,
+      '',
+      '| Target | Browser | Platform or device | Message | Session |',
+      '| --- | --- | --- | --- | --- |',
+      ...f.targets.map((t) =>
+        [
+          '',
+          cell(t.targetId),
+          t.browser
+            ? cell(`${t.browser.browserName} ${t.browser.browserVersion}`)
+            : '–',
+          t.browser
+            ? cell(
+                t.browser.device
+                  ? `${t.browser.device} (${t.browser.platform})`
+                  : t.browser.platform,
+              )
+            : '–',
+          cell(t.message, messageLimit),
+          sessionLink(t.sessionUrl),
+          '',
+        ]
+          .join(' | ')
+          .trim(),
+      ),
+      '',
+    ];
+    if (carried.length > 0) {
+      lines.push(
+        `Still tracked from earlier runs, not confirmed passing since: ${carried
+          .map((t) => cell(t))
+          .join(', ')}.`,
+        '',
+      );
+    }
+    if (f.kind === 'privacy') {
+      lines.push(
+        'Content that rrweb should mask or block appeared in the recording.',
+        '',
+      );
+    }
+    if (f.alsoFailsOnStable) {
+      lines.push(
+        'It fails on a stable browser too, which points at rrweb or the check rather than the browser.',
+        '',
+      );
+    }
+    const events = f.targets.flatMap((t) =>
+      t.eventsFile ? [code(t.eventsFile)] : [],
+    );
+    lines.push(
+      '### Reproduce',
+      '',
+      'From the repository root, after building rrweb:',
+      '',
+      '```bash',
+      ...f.targets.map((t) => reproduceLine(t.reproduce)),
+      '```',
+      '',
+      `The recorded events are in the artifacts of ${runLink(run)}${
+        events.length > 0 ? `: ${events.join(', ')}` : ''
+      }.`,
+      '',
+      '### History',
+      '',
+      HISTORY_OPEN,
+      '| Date | Run | rrweb | Failing targets |',
+      '| --- | --- | --- | --- |',
+      ...rows,
+      HISTORY_CLOSE,
+      '',
+    );
+    return noMentions(lines.join('\n'));
+  };
+
+  let body = build(Infinity, history);
+  if (body.length > MAX_BODY) body = build(SHORT_MESSAGE, history);
+  let rows = history;
+  while (body.length > MAX_BODY && rows.length > 1) {
+    rows = rows.slice(0, -1);
+    body = build(SHORT_MESSAGE, rows);
+  }
+  return body;
+}
+
+export const statusTitle = '[pre-release] Status of the latest run';
+
+export const runBrokenTitle = (failures: Failure[]): string =>
+  `[pre-release] Run broken: ${failures.length} checks failed`;
+
+/** The single run-broken issue: what failed, without per-check issues. */
+export function runBrokenBody(
+  failures: Failure[],
+  s: RunSummary,
+  run: RunMeta,
+): string {
+  return noMentions(
+    [
+      RUN_BROKEN_MARKER,
+      '',
+      `${failures.length} of the ${
+        s.totalKeys
+      } checks that ran failed in ${runLink(run)}, with rrweb at commit ${code(
+        run.rrwebCommit,
+      )}.`,
+      'That usually means a broken build, a BrowserStack outage or a sweeping engine change, so no per-check issue was opened or changed.',
+      '',
+      '| Check | Failing targets | First message |',
+      '| --- | --- | --- |',
+      ...failures.map(
+        (f) =>
+          `| ${code(f.key)} | ${f.targets
+            .map((t) => cell(t.targetId))
+            .join(', ')} | ${cell(f.targets[0]?.message ?? '', 200)} |`,
+      ),
+      '',
+    ].join('\n'),
+  );
+}
+
+const issueRef = (n: number | undefined) => (n ? `#${n}` : 'new issue');
+
+const bullets = (items: string[]) =>
+  items.length > 0 ? items.map((i) => `- ${i}`) : ['None.'];
+
+/**
+ * The pinned status issue: the run, every target's counts, then one section
+ * per thing a maintainer may need to act on. `issueLinks` maps a failing key
+ * to its issue number, including issues this run just opened.
+ */
+export function statusBody(
+  s: RunSummary,
+  plan: IssuePlan,
+  run: RunMeta,
+  results: TargetResult[],
+  issueLinks: Record<string, number>,
+  opts: { browserstackMissing?: boolean } = {},
+): string {
+  const complete =
+    s.missingTargets.length === 0 &&
+    s.incompleteTargets.length === 0 &&
+    !opts.browserstackMissing;
+
+  const failing = new Map<string, Set<string>>();
+  for (const f of [...s.failures, ...s.parked.map((p) => p.failure)]) {
+    for (const t of f.targets) {
+      const set = failing.get(t.targetId) ?? new Set<string>();
+      set.add(f.checkId);
+      failing.set(t.targetId, set);
+    }
+  }
+  const sorted = [...results].sort((a, b) =>
+    a.targetId < b.targetId ? -1 : a.targetId > b.targetId ? 1 : 0,
+  );
+  const targetRows = sorted.map((r) => {
+    const fails = failing.get(r.targetId) ?? new Set<string>();
+    const outcomes = Object.entries(r.checks);
+    const count = (status: string) =>
+      outcomes.filter(([id, c]) => c.status === status && !fails.has(id))
+        .length;
+    const name = r.incomplete
+      ? `${r.targetId} (incomplete: ${r.incompleteReason ?? 'unknown reason'})`
+      : r.targetId;
+    const version = r.browser
+      ? `${r.browser.browserName} ${r.browser.browserVersion} (${
+          r.browser.device ?? r.browser.platform
+        })`
+      : '–';
+    return `| ${cell(name)} | ${cell(version)} | ${
+      r.launch.ok ? 'ok' : 'failed'
+    } | ${count('pass')} | ${fails.size} | ${count('flaky')} | ${count(
+      'skipped',
+    )} | ${count('not-run')} |`;
+  });
+
+  const open: string[] = [];
+  const recovered: string[] = [];
+  let broken: string[] = [];
+  for (const a of plan.actions) {
+    if (a.type === 'create' || a.type === 'update' || a.type === 'reopen') {
+      // No "opened" or "reopened" note: a re-run of the report then
+      // leaves this body as it was.
+      const n =
+        issueLinks[a.failure.key] ??
+        (a.type === 'create' ? undefined : a.issue);
+      open.push(
+        `${issueRef(n)} ${code(a.failure.key)} on ${a.failure.targets
+          .map((t) => cell(t.targetId))
+          .join(', ')}`,
+      );
+    } else if (a.type === 'close' || a.type === 'mark-recovered') {
+      recovered.push(`#${a.issue} ${code(a.key)}`);
+    } else if (a.type === 'run-broken') {
+      broken = [
+        `${a.failures.length} of the ${
+          s.totalKeys
+        } checks that ran failed, so no per-check issue was opened or changed. See ${issueRef(
+          a.issue ?? issueLinks['run-broken'],
+        )}.`,
+        '',
+      ];
+    }
+  }
+
+  const missing = [
+    ...s.missingTargets.map((t) => `${cell(t)}: no results`),
+    ...(opts.browserstackMissing ? ['BrowserStack: no results'] : []),
+  ];
+  const incompleteReasons = sorted
+    .filter((r) => r.incomplete)
+    .map(
+      (r) =>
+        `${cell(r.targetId)}: ${cell(r.incompleteReason ?? 'unknown reason')}`,
+    );
+
+  const lines = [
+    STATUS_MARKER,
+    `## Latest run: ${run.date}`,
+    '',
+    `[The run of ${run.date}](${run.runUrl}), with rrweb at commit ${code(
+      run.rrwebCommit,
+    )}, is **${complete ? 'complete' : 'incomplete'}**.`,
+    '',
+    'This issue is rewritten after every scheduled run. An old date means a run did not happen.',
+    '',
+    '### Targets',
+    '',
+    '| Target | Version | Launch | Pass | Fail | Flaky | Skipped | Not run |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- |',
+    ...targetRows,
+    '',
+    ...(broken.length > 0 ? ['### Run broken', '', ...broken] : []),
+    '### Open failures',
+    '',
+    ...bullets(open),
+    '',
+    '### Closed after recovering',
+    '',
+    ...bullets(recovered),
+    '',
+    '### Closed but still failing',
+    '',
+    ...bullets(plan.closedButFailing.map((c) => `#${c.issue} ${code(c.key)}`)),
+    '',
+    '### Parked',
+    '',
+    ...bullets(
+      s.parked.map(
+        (p) =>
+          `${code(p.failure.key)} on ${p.failure.targets
+            .map((t) => cell(t.targetId))
+            .join(', ')}, parked until ${cell(p.entry.expires)}: [upstream](${
+            p.entry.upstream
+          })`,
+      ),
+    ),
+    '',
+    '### Flaky',
+    '',
+    ...bullets(s.flaky.map((f) => `${code(f.key)} on ${cell(f.targetId)}`)),
+    '',
+    '### Launch failures',
+    '',
+    ...bullets(
+      s.launchFailures.map(
+        (l) => `${cell(l.targetId)}: ${cell(l.error, SHORT_MESSAGE)}`,
+      ),
+    ),
+    '',
+    '### Missing',
+    '',
+    ...bullets(missing),
+    '',
+    '### Incomplete',
+    '',
+    ...bullets(incompleteReasons),
+    '',
+    ...(s.notes.length > 0
+      ? [
+          '### Notes',
+          '',
+          ...s.notes.map((n) => `- ${cell(n, SHORT_MESSAGE)}`),
+          '',
+        ]
+      : []),
+  ];
+  return noMentions(lines.join('\n'));
+}

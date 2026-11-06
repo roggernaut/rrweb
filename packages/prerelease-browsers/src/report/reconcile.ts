@@ -1,0 +1,372 @@
+/* eslint-disable camelcase -- GitHub's REST API names its fields in snake_case */
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { parseArgs } from 'node:util';
+import { readResults, type TargetResult } from '../node/results.ts';
+import type { Engine } from '../types.ts';
+import {
+  collectFailures,
+  parseKnownFailures,
+  type Failure,
+  type KnownFailure,
+} from './failures.ts';
+import { GitHub, type IssueData } from './github.ts';
+import {
+  planIssueActions,
+  RECOVERED_LABEL,
+  type ExistingIssue,
+  type IssuePlan,
+} from './issues-plan.ts';
+import {
+  issueBody,
+  issueTitle,
+  labelsFor,
+  parseMarkers,
+  RUN_BROKEN_MARKER,
+  runBrokenBody,
+  runBrokenTitle,
+  runLink,
+  STATUS_MARKER,
+  statusBody,
+  statusTitle,
+  type RunMeta,
+} from './render.ts';
+
+export type GitHubLike = Pick<
+  GitHub,
+  | 'listIssues'
+  | 'createIssue'
+  | 'updateIssue'
+  | 'comment'
+  | 'ensureLabels'
+  | 'pinIssue'
+>;
+
+export interface ReconcileOptions {
+  gh: GitHubLike;
+  results: TargetResult[];
+  expected: string[];
+  apply: boolean;
+  known?: KnownFailure[];
+  run?: RunMeta;
+  /** BrowserStack was due, but its job wrote no list of expected targets. */
+  browserstackMissing?: boolean;
+  log?: (line: string) => void;
+}
+
+const RUN_BROKEN_LABEL = 'prerelease:run-broken';
+const STATUS_LABEL = 'prerelease:status';
+const BASE_LABELS = [
+  'prerelease',
+  RECOVERED_LABEL,
+  RUN_BROKEN_LABEL,
+  STATUS_LABEL,
+];
+
+/** Labels the reporter derives from a failure, so it may take them away. */
+const derived = (label: string) =>
+  label.startsWith('engine:') ||
+  label === 'prerelease:also-fails-on-stable' ||
+  label === RECOVERED_LABEL;
+
+/** The issue's labels with the derived ones replaced by `wanted`. */
+function mergeLabels(current: string[], wanted: string[]): string[] {
+  const kept = current.filter((l) => !derived(l));
+  return [...kept, ...wanted.filter((w) => !kept.includes(w))];
+}
+
+const sameSet = (a: string[], b: string[]) =>
+  a.length === b.length &&
+  [...a].sort().join('\n') === [...b].sort().join('\n');
+
+const withLabel = (labels: string[], label: string) =>
+  labels.includes(label) ? labels : [...labels, label];
+
+/** Open before closed, then the newest. */
+const preferred = (issues: IssueData[]): IssueData | undefined =>
+  [...issues].sort((a, b) =>
+    a.state !== b.state ? (a.state === 'open' ? -1 : 1) : b.number - a.number,
+  )[0];
+
+/**
+ * Sorts the `prerelease` issues by their markers: per-check issues carry a
+ * key; the status and run-broken issues carry their own marker. Anything else
+ * is left alone.
+ */
+function classify(listed: IssueData[]) {
+  const existing: ExistingIssue[] = [];
+  const status: IssueData[] = [];
+  const broken: IssueData[] = [];
+  for (const i of listed) {
+    const m = parseMarkers(i.body);
+    if (m.key) {
+      existing.push({
+        number: i.number,
+        state: i.state,
+        labels: i.labels,
+        body: i.body,
+        key: m.key,
+        engines: m.engines,
+        failingTargets: m.targets,
+      });
+    } else if (i.body.includes(STATUS_MARKER)) {
+      status.push(i);
+    } else if (i.body.includes(RUN_BROKEN_MARKER)) {
+      broken.push(i);
+    }
+  }
+  const b = preferred(broken);
+  const runBroken: ExistingIssue | undefined = b && {
+    number: b.number,
+    state: b.state,
+    labels: b.labels,
+    body: b.body,
+    key: 'run-broken',
+    engines: [],
+    failingTargets: [],
+  };
+  return { existing, status: preferred(status), runBroken };
+}
+
+/** Run details from the Actions environment, falling back to the results. */
+export function runMetaFromEnv(
+  results: TargetResult[],
+  env: NodeJS.ProcessEnv = process.env,
+): RunMeta {
+  const server = env.GITHUB_SERVER_URL ?? 'https://github.com';
+  const repo = env.GITHUB_REPOSITORY ?? 'rrweb-io/rrweb';
+  const started = results.map((r) => r.startedAt).sort()[0];
+  const commits = [...new Set(results.map((r) => r.rrwebCommit))].sort();
+  return {
+    runUrl: env.GITHUB_RUN_ID
+      ? `${server}/${repo}/actions/runs/${env.GITHUB_RUN_ID}`
+      : `${server}/${repo}/actions`,
+    date: (started ?? new Date().toISOString()).slice(0, 10),
+    rrwebCommit:
+      commits.length > 0 ? commits.join(', ') : env.GITHUB_SHA ?? 'unknown',
+  };
+}
+
+const withEngines = (f: Failure, engines: Engine[]): Failure => ({
+  ...f,
+  engines,
+});
+
+/**
+ * Reads the issue tracker, plans what this run changes, and applies the plan
+ * when `apply` is set. Only creates, reopens and comments notify anyone; an
+ * update that would change nothing is skipped.
+ */
+export async function reconcile(opts: ReconcileOptions): Promise<IssuePlan> {
+  const { gh, results, expected, apply } = opts;
+  const log = opts.log ?? (() => undefined);
+  const run = opts.run ?? runMetaFromEnv(results);
+  const summary = collectFailures(results, expected, opts.known ?? []);
+  const listed = await gh.listIssues('prerelease');
+  const { existing, status, runBroken } = classify(listed);
+
+  // Without BrowserStack's results the run is not complete, which keeps an
+  // open run-broken issue open. The status issue names BrowserStack itself.
+  const planned = opts.browserstackMissing
+    ? {
+        ...summary,
+        missingTargets: [...summary.missingTargets, 'browserstack'],
+      }
+    : summary;
+  const plan = planIssueActions(planned, existing, runBroken);
+  if (!apply) return plan;
+
+  const byNumber = new Map(listed.map((i) => [i.number, i]));
+  const current = (n: number) => {
+    const i = byNumber.get(n);
+    if (!i) throw new Error(`issue #${n} is not among the listed issues`);
+    return i;
+  };
+  const links: Record<string, number> = {};
+
+  await gh.ensureLabels([
+    ...BASE_LABELS,
+    ...plan.actions.flatMap((a) =>
+      a.type === 'create'
+        ? labelsFor(a.failure)
+        : a.type === 'update' || a.type === 'reopen'
+        ? labelsFor(withEngines(a.failure, a.recordEngines))
+        : [],
+    ),
+  ]);
+
+  for (const a of plan.actions) {
+    switch (a.type) {
+      case 'create': {
+        const created = await gh.createIssue({
+          title: issueTitle(a.failure),
+          body: issueBody(a.failure, run),
+          labels: labelsFor(a.failure),
+        });
+        links[a.failure.key] = created.number;
+        log(`opened #${created.number} for ${a.failure.key}`);
+        break;
+      }
+      case 'update':
+      case 'reopen': {
+        const prev = current(a.issue);
+        const f = withEngines(a.failure, a.recordEngines);
+        const title = issueTitle(f);
+        const body = issueBody(a.failure, run, prev.body, a);
+        const labels = mergeLabels(prev.labels, labelsFor(f));
+        links[a.failure.key] = a.issue;
+        if (a.type === 'reopen') {
+          await gh.updateIssue(a.issue, { state: 'open', title, body, labels });
+          await gh.comment(a.issue, `Failing again in ${runLink(run)}.`);
+          log(`reopened #${a.issue} for ${a.failure.key} (${a.reason})`);
+        } else if (
+          title !== prev.title ||
+          body !== prev.body ||
+          !sameSet(labels, prev.labels)
+        ) {
+          await gh.updateIssue(a.issue, { title, body, labels });
+          log(`updated #${a.issue} for ${a.failure.key}`);
+        }
+        break;
+      }
+      case 'close': {
+        const prev = current(a.issue);
+        await gh.comment(
+          a.issue,
+          `Passed on every target that failed before, in ${runLink(run)}.`,
+        );
+        await gh.updateIssue(a.issue, {
+          state: 'closed',
+          state_reason: 'completed',
+          labels: withLabel(prev.labels, RECOVERED_LABEL),
+        });
+        log(`closed #${a.issue} for ${a.key}`);
+        break;
+      }
+      case 'mark-recovered': {
+        const prev = current(a.issue);
+        await gh.updateIssue(a.issue, {
+          labels: withLabel(prev.labels, RECOVERED_LABEL),
+        });
+        log(`marked #${a.issue} recovered for ${a.key}`);
+        break;
+      }
+      case 'run-broken': {
+        const title = runBrokenTitle(a.failures);
+        const body = runBrokenBody(a.failures, summary, run);
+        if (a.issue === undefined) {
+          const created = await gh.createIssue({
+            title,
+            body,
+            labels: ['prerelease', RUN_BROKEN_LABEL],
+          });
+          links['run-broken'] = created.number;
+          log(`opened run-broken #${created.number}`);
+          break;
+        }
+        const prev = current(a.issue);
+        const labels = withLabel(
+          withLabel(prev.labels, 'prerelease'),
+          RUN_BROKEN_LABEL,
+        );
+        links['run-broken'] = a.issue;
+        if (prev.state === 'closed') {
+          await gh.updateIssue(a.issue, { state: 'open', title, body, labels });
+          await gh.comment(a.issue, `Broken again in ${runLink(run)}.`);
+          log(`reopened run-broken #${a.issue}`);
+        } else if (
+          title !== prev.title ||
+          body !== prev.body ||
+          !sameSet(labels, prev.labels)
+        ) {
+          await gh.updateIssue(a.issue, { title, body, labels });
+          log(`updated run-broken #${a.issue}`);
+        }
+        break;
+      }
+      case 'close-run-broken': {
+        await gh.comment(a.issue, `Run healthy again in ${runLink(run)}.`);
+        await gh.updateIssue(a.issue, {
+          state: 'closed',
+          state_reason: 'completed',
+        });
+        log(`closed run-broken #${a.issue}`);
+        break;
+      }
+    }
+  }
+
+  const body = statusBody(summary, plan, run, results, links, {
+    browserstackMissing: opts.browserstackMissing,
+  });
+  if (status) {
+    if (status.body !== body) {
+      await gh.updateIssue(status.number, { body });
+      log(`updated status #${status.number}`);
+    }
+  } else {
+    const created = await gh.createIssue({
+      title: statusTitle,
+      body,
+      labels: ['prerelease', STATUS_LABEL],
+    });
+    await gh.pinIssue(created.node_id);
+    log(`opened and pinned status #${created.number}`);
+  }
+  return plan;
+}
+
+async function main(argv: string[]): Promise<void> {
+  const { values } = parseArgs({
+    args: argv,
+    options: {
+      results: { type: 'string' },
+      expected: { type: 'string', default: '' },
+      known: { type: 'string' },
+      apply: { type: 'boolean', default: false },
+      'browserstack-missing': { type: 'boolean', default: false },
+    },
+  });
+  if (!values.results) throw new Error('--results <dir> is required');
+  const expected = (values.expected ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s !== '');
+  const results = await readResults(values.results);
+  const knownPath =
+    values.known ??
+    fileURLToPath(new URL('../../known-failures.json', import.meta.url));
+  const { active, expired } = parseKnownFailures(
+    JSON.parse(await readFile(knownPath, 'utf8')),
+    new Date(),
+  );
+  for (const e of expired) {
+    console.warn(
+      `known failure ${e.key} expired on ${e.expires}; reporting it again`,
+    );
+  }
+  const gh = new GitHub();
+  if (values.apply && !gh.hasToken) {
+    throw new Error('GITHUB_TOKEN is required with --apply');
+  }
+  const plan = await reconcile({
+    gh,
+    results,
+    expected,
+    apply: values.apply === true,
+    known: active,
+    browserstackMissing: values['browserstack-missing'] === true,
+    log: (line) => console.log(line),
+  });
+  if (!values.apply) console.log(JSON.stringify(plan, null, 2));
+}
+
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
+  main(process.argv.slice(2)).catch((err: unknown) => {
+    console.error(err instanceof Error ? err.message : String(err));
+    process.exitCode = 1;
+  });
+}
