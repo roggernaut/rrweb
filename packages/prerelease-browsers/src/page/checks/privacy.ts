@@ -346,17 +346,13 @@ const adoptedStylesheetShadow: CheckDefinition = {
     const recording = ctx.record({ maskTextClass: 'rr-mask' });
     await ctx.nextFrame();
     const { changed, added } = changeShadowRoot(ctx, root);
-    // The replacement sheet carries a control, so it must be recorded.
-    const sheetControl = ctx.control('sheet');
+    // Replaced in the same task as the text change. Whether the replacement
+    // is recorded is covered functionally by css-adopted-stylesheets.
     const next = new CSSStyleSheet();
-    next.replaceSync(`#pub::after { content: "${sheetControl}"; }`);
+    next.replaceSync('#pub { color: rgb(0, 128, 0); }');
     root.adoptedStyleSheets = [next];
     const events = await recording.stop();
-    return ctx.assertPrivate(
-      events,
-      [secret, changed],
-      [control, added, sheetControl],
-    );
+    return ctx.assertPrivate(events, [secret, changed], [control, added]);
   },
 };
 

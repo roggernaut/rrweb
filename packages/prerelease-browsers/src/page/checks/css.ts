@@ -136,7 +136,23 @@ const adoptedStylesheets: CheckDefinition = {
 
     const recording = ctx.record();
     await ctx.nextFrame();
+    // Replaced after record(), so the replay must apply the new sheet.
+    const replacement = new CSSStyleSheet();
+    replacement.replaceSync('.sh{color:rgb(13,14,15)}');
+    root.adoptedStyleSheets = [replacement];
     const events = await recording.stop();
+    const hasAdoptedEvent = events.some(
+      (e) =>
+        e.type === 3 /* IncrementalSnapshot */ &&
+        e.data.source === 15 /* AdoptedStyleSheet */,
+    );
+    if (!hasAdoptedEvent) {
+      return {
+        ok: false,
+        message: 'no AdoptedStyleSheet event for the replaced shadow sheet',
+        events,
+      };
+    }
     return ctx.compareComputed(events, [
       { selector: '.ad', props: ['color'] },
       { selector: '.sh', props: ['color'], shadowHost: '#host' },
