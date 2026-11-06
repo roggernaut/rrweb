@@ -120,6 +120,18 @@ test('the reproduce command runs without a mention', () => {
   );
 });
 
+test('a BrowserStack reproduce command runs without a mention', () => {
+  const canary = results.find((r) => r.targetId === 'chrome-canary')!;
+  const [bs] = collectFailures(
+    [{ ...canary, targetId: 'bs-android-upcoming' }],
+    ['bs-android-upcoming'],
+    [],
+  ).failures;
+  expect(issueBody(bs, run)).toContain(
+    '```bash\nyarn --cwd packages/prerelease-browsers run-browserstack --only bs-android-upcoming --check css-nested-rules\n```',
+  );
+});
+
 test('the markers record what the caller passes, not only this run', () => {
   const body = issueBody(failure, run, undefined, {
     recordTargets: ['chrome-canary', 'firefox-nightly'],

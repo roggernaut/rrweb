@@ -163,7 +163,9 @@ export function fail(key: string, targetIds: string[]): Failure {
     engine: engineOf(targetId),
     channel: targetId.endsWith('-stable') ? 'stable' : 'upcoming',
     message: `${checkId} broke`,
-    reproduce: `yarn workspace @rrweb/prerelease-browsers run-target --target ${targetId} --check ${checkId}`,
+    reproduce: targetId.startsWith('bs-')
+      ? `yarn workspace @rrweb/prerelease-browsers run-browserstack --only ${targetId} --check ${checkId}`
+      : `yarn workspace @rrweb/prerelease-browsers run-target --target ${targetId} --check ${checkId}`,
   }));
   return {
     key,

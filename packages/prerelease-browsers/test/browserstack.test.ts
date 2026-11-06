@@ -1,4 +1,6 @@
+import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { webkit } from 'playwright';
 import {
   browserStackIds,
@@ -596,4 +598,32 @@ describe('single-tab Playwright driver', () => {
       await browser.close();
     }
   }, 60_000);
+});
+
+describe('run-browserstack command line', () => {
+  const cli = fileURLToPath(new URL('../src/node/cli.ts', import.meta.url));
+  const runCli = (...args: string[]) =>
+    spawnSync(process.execPath, [cli, 'run-browserstack', ...args], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        BROWSERSTACK_USERNAME: '',
+        BROWSERSTACK_ACCESS_KEY: '',
+      },
+    });
+
+  test('passes --check through, checked before any session', () => {
+    const known = runCli(
+      '--only',
+      'bs-chrome-beta',
+      '--check',
+      'css-nested-rules',
+    );
+    expect(known.status).toBe(1);
+    expect(known.stderr).toContain('BROWSERSTACK_USERNAME');
+
+    const unknown = runCli('--check', 'no-such-check');
+    expect(unknown.status).toBe(1);
+    expect(unknown.stderr).toContain('unknown check "no-such-check"');
+  }, 30_000);
 });

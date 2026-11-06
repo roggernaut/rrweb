@@ -39,17 +39,23 @@ function checkMetas(): CheckMeta[] {
   );
 }
 
+/** Throws when any of `ids` names no registered check. */
+export function assertKnownChecks(ids: string[]): void {
+  const metas = checkMetas();
+  const unknown = ids.filter((id) => !metas.some((m) => m.id === id));
+  if (unknown.length > 0) {
+    throw new Error(
+      `unknown check ${unknown
+        .map((id) => `"${id}"`)
+        .join(', ')}; known checks: ${metas.map((m) => m.id).join(', ')}`,
+    );
+  }
+}
+
 function selectChecks(t: TargetDefinition, only?: string[]): CheckMeta[] {
   let metas = checkMetas();
   if (only) {
-    const unknown = only.filter((id) => !metas.some((m) => m.id === id));
-    if (unknown.length > 0) {
-      throw new Error(
-        `unknown check ${unknown
-          .map((id) => `"${id}"`)
-          .join(', ')}; known checks: ${metas.map((m) => m.id).join(', ')}`,
-      );
-    }
+    assertKnownChecks(only);
     metas = metas.filter((m) => only.includes(m.id));
   }
   if (t.checks === 'focused') metas = metas.filter((m) => m.tier === 'focused');

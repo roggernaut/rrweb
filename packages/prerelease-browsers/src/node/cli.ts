@@ -16,7 +16,11 @@ import {
 } from './browserstack.ts';
 import type { TargetResult } from './results.ts';
 import { errorMessage } from './run-check.ts';
-import { runTarget, runTargetOrRecordCrash } from './run-targets.ts';
+import {
+  assertKnownChecks,
+  runTarget,
+  runTargetOrRecordCrash,
+} from './run-targets.ts';
 import { applyPortOffset, findTarget } from './targets.ts';
 
 const deadlineMinutes = 105;
@@ -40,7 +44,7 @@ function describeSamples(samples: PerfSample[]): string[] {
 }
 
 const usage = `usage: cli.ts run-target --target <id> [--check <id>]... [--results <dir>] [--deadline <iso>] [--port-offset <n>]
-       cli.ts run-browserstack [--results <dir>] [--deadline <iso>] [--only <id>]...`;
+       cli.ts run-browserstack [--results <dir>] [--deadline <iso>] [--only <id>]... [--check <id>]...`;
 
 function parseDeadline(value: string | undefined): Date {
   const deadline = value
@@ -137,8 +141,11 @@ async function runBrowserStackCommand(argv: string[]): Promise<void> {
       results: { type: 'string', default: 'results' },
       deadline: { type: 'string' },
       only: { type: 'string', multiple: true },
+      check: { type: 'string', multiple: true },
     },
   });
+  // A typo would otherwise turn into a crash on every target.
+  if (values.check) assertKnownChecks(values.check);
   const unknown = (values.only ?? []).filter(
     (id) => !(browserStackIds as readonly string[]).includes(id),
   );
@@ -194,6 +201,7 @@ async function runBrowserStackCommand(argv: string[]): Promise<void> {
       const result = await runTargetOrRecordCrash(waiting, {
         resultsDir,
         deadline,
+        only: values.check,
         rrwebCommit,
       });
       console.log(summarize(result));

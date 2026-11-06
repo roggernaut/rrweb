@@ -99,6 +99,17 @@ test('a failure carries the target details and a reproduce command', () => {
   ]);
 });
 
+test('a BrowserStack failure reproduces through run-browserstack', () => {
+  const s = collectFailures(
+    [failing('bs-android-upcoming', 'css-nested-rules')],
+    ['bs-android-upcoming'],
+    [],
+  );
+  expect(s.failures[0].targets[0].reproduce).toBe(
+    'yarn workspace @rrweb/prerelease-browsers run-browserstack --only bs-android-upcoming --check css-nested-rules',
+  );
+});
+
 test('passing, flaky and totalKeys', () => {
   const stable = passing('chrome-stable', 'a-check');
   Object.assign(stable.checks, passing('x', 'c-check').checks);

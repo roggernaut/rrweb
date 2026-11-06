@@ -116,8 +116,11 @@ export function parseKnownFailures(
   return { active, expired };
 }
 
+/** run-target knows only the GitHub-runner targets; BrowserStack ids go through run-browserstack. */
 const reproduceCommand = (targetId: string, checkId: string) =>
-  `yarn workspace @rrweb/prerelease-browsers run-target --target ${targetId} --check ${checkId}`;
+  targetId.startsWith('bs-')
+    ? `yarn workspace @rrweb/prerelease-browsers run-browserstack --only ${targetId} --check ${checkId}`
+    : `yarn workspace @rrweb/prerelease-browsers run-target --target ${targetId} --check ${checkId}`;
 
 function buildFailure(
   key: string,
