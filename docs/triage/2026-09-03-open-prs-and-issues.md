@@ -95,11 +95,25 @@ frames (1722).
 1580/1600" to Eoghan deciding between 1735 and 1322; 1680 joins the
 cross-origin discussion; 1609, 1315, 1720 and 1567 follow their PRs.
 
-**Calls the analysts flagged as least certain:** 1745 (review vs discuss),
-1688 and 1462/1798 (reject relies on Eoghan saying 1673 covers them), 1726
-(reject relies on 1991 covering the nested case), 1300 (not benchmarked
-against 2.2.0), 1586 (Chromium bug may be fixed), 1892 (kept Discuss as a
-plugin-contract decision), 1413 and 1235 (kept Reject in favor of 1428).
+**Least-certain calls, checked against primary evidence the same day:**
+
+- 1688, 1462, 1798 stay Reject: main's record handler drops events whose
+  target is not an HTMLMediaElement and the replayer wraps play and pause in
+  try/catch, so neither half of the fix is still needed.
+- 1726 stays Reject: under 1991 a middle frame with collectFromOrigins and no
+  emitToOrigin emits locally and collects from its children, which is the
+  flag's case.
+- 1413 and 1235 stay Reject in favor of 1428, which covers shadow-root and
+  iframe canvases through the ShadowDomManager and addWindow, with tests.
+- 1300 and 1302 stay Reject: 1652's merged description names the repeated
+  pushAdd case and cites 1302 as the prior attempt. Not benchmarked.
+- 1586 stays Review but the ask changed: Chrome 152 serializes
+  grid-template-areas, repeat() rows and the grid-template shorthand
+  correctly, so Eoghan decides whether the supported Chrome range still
+  needs the workaround. Issue 1395 follows.
+- 1892 moves to Review: Justin documented the options and picked no host
+  peer; a second maintainer's yes or no is what is missing, not a meeting.
+- 1745 stays Review: nothing new since Eoghan's 2026-10-27 scope suggestion.
 
 ---
 
