@@ -1,3 +1,4 @@
+import { builtinChecks } from './checks/builtins.ts';
 import { cssChecks } from './checks/css.ts';
 import { domChecks } from './checks/dom.ts';
 import type { CheckDefinition } from './harness.ts';
@@ -65,6 +66,7 @@ const protocolTestChecks: CheckDefinition[] = [
 /** Every check, in run order. */
 export const checks: CheckDefinition[] = [
   ...cssChecks,
+  ...builtinChecks,
   ...domChecks,
   ...(typeof window !== 'undefined' && window.__prerelease_test === true
     ? protocolTestChecks

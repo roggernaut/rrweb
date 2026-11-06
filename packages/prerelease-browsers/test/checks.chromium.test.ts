@@ -2,6 +2,8 @@ import { runAttempt } from '../src/node/run-check.ts';
 import { buildPageBundle, readRrwebUmd } from '../src/node/page-source.ts';
 import { launchPlaywright } from '../src/node/drivers/playwright.ts';
 import type { PageDriver } from '../src/node/drivers/types.ts';
+import { startFixtureServer } from '../src/node/fixture-server.ts';
+import type { FixtureServer } from '../src/node/fixture-server.ts';
 import { checks } from '../src/page/registry.ts';
 
 /** Every check that must exist; later tasks extend this list. */
@@ -14,21 +16,38 @@ const expectedIds = [
   'css-adopted-stylesheets',
   'css-insert-rule',
   'css-nested-rules',
+  // Built-in APIs
+  'patched-mutation-observer',
+  // 'tainted-input-getters' is left out: rrweb main reads input.value
+  // through the page's own getter, so a tainted getter records no text.
+  'missing-webgl-types',
+  'missing-css-grouping-rule',
+  // DOM
+  'shadow-dom-open',
+  'custom-elements',
+  'iframe-same-origin',
+  'iframe-cross-origin',
+  'dialog-top-layer',
 ];
 
 const timeoutMs = 60_000;
 let driver: PageDriver;
 let bundle: string;
 let rrweb: string;
+let server: FixtureServer;
 
 beforeAll(async () => {
   bundle = await buildPageBundle();
   rrweb = readRrwebUmd();
+  // Free ports, so parallel test files never collide on 8123.
+  process.env.PRERELEASE_HTTP_PORT ??= '0';
+  server = await startFixtureServer({ bundle, rrweb });
   driver = await launchPlaywright({ engine: 'chromium' });
 }, 60_000);
 
 afterAll(async () => {
   await driver?.close();
+  await server?.close();
 });
 
 test('every expected check is registered', () => {
@@ -45,15 +64,10 @@ describe.each(expectedIds)('%s', (id) => {
     const result = await runAttempt(
       driver,
       check!,
-      { bundle, rrweb },
+      { bundle, rrweb, httpOrigin: server.origin },
       { timeoutMs },
     );
-    if (result.skipped) {
-      // Until the fixture server exists, only needsHttp checks may skip.
-      expect(check!.needsHttp).toBe(true);
-      expect(result.skipped).toBe('needs http');
-      return;
-    }
+    expect(result.skipped, 'no check may skip here').toBeUndefined();
     expect(result.message ?? '').toBe('');
     expect(result.ok).toBe(true);
   });
@@ -67,7 +81,7 @@ describe.each(expectedIds)('%s', (id) => {
       const result = await runAttempt(
         driver,
         check,
-        { bundle, rrweb },
+        { bundle, rrweb, httpOrigin: server.origin },
         { timeoutMs, disableMasking: true },
       );
       expect(result.ok).toBe(false);

@@ -3,6 +3,8 @@ import { dirname, join } from 'node:path';
 import { checks as registeredChecks } from '../page/registry.ts';
 import type { AttemptResult, CheckKind, CheckMeta } from '../types.ts';
 import type { BrowserInfo, PageDriver } from './drivers/types.ts';
+import type { FixtureServer } from './fixture-server.ts';
+import { startFixtureServer } from './fixture-server.ts';
 import { buildPageBundle, readRrwebUmd } from './page-source.ts';
 import type { CheckOutcome, TargetResult } from './results.ts';
 import { writeResult } from './results.ts';
@@ -86,9 +88,15 @@ export async function runTarget(
     return finish(result, opts.resultsDir);
   }
 
+  let server: FixtureServer | undefined;
   try {
     result.browser = await describeBrowser(driver);
-    const src = { bundle: await buildPageBundle(), rrweb: readRrwebUmd() };
+    const bundle = await buildPageBundle();
+    const rrweb = readRrwebUmd();
+    if (driver.canReachLocalhost && metas.some((m) => m.needsHttp)) {
+      server = await startFixtureServer({ bundle, rrweb });
+    }
+    const src = { bundle, rrweb, httpOrigin: server?.origin };
     for (const meta of metas) {
       const outcome = await runCheck(meta, src);
       result.checks[meta.id] = outcome;
@@ -96,13 +104,14 @@ export async function runTarget(
     }
     result.sessionUrl = await markSession(driver, result);
   } finally {
+    await server?.close().catch(() => undefined);
     await driver.close().catch(() => undefined);
   }
   return finish(result, opts.resultsDir);
 
   async function runCheck(
     meta: CheckMeta,
-    src: { bundle: string; rrweb: string },
+    src: { bundle: string; rrweb: string; httpOrigin?: string },
   ): Promise<CheckOutcome> {
     const notRun: CheckOutcome = {
       kind: meta.kind,
