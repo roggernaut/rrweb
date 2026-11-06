@@ -46,7 +46,7 @@ function truncate(text: string, limit: number): string {
  * mention-shaped `@` becomes a full-width `＠` instead, and `<!--` is broken
  * up so the text cannot forge a marker. In a table, `|` stays escaped.
  */
-function untrusted(text: string, limit: number, inTable = true): string {
+export function untrusted(text: string, limit: number, inTable = true): string {
   let t = truncate(text, limit)
     .replace(/`/g, "'")
     .replace(/<!--/g, '< !--')
@@ -73,7 +73,7 @@ export function capBody(body: string, max = MAX_BODY): string {
 }
 
 /** Trusted short text in a table cell: no HTML, no column breaks, one line. */
-function cell(text: string): string {
+export function cell(text: string): string {
   return text
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -103,7 +103,7 @@ export const runLink = (run: RunMeta): string =>
  * name starts with `@`, and the escape `noMentions` adds would show verbatim
  * inside a code block, so the command goes through the package directory.
  */
-const reproduceLine = (command: string) =>
+export const reproduceLine = (command: string): string =>
   command.replace(
     /^yarn workspace @rrweb\/prerelease-browsers /,
     'yarn --cwd packages/prerelease-browsers ',

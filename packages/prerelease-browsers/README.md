@@ -95,6 +95,70 @@ after you sign in to BrowserStack.
 A check counts as failed only when it fails at least 2 of its 3 attempts. One
 failure out of 3 is listed under **Flaky** in the status issue.
 
+## Per-PR runs
+
+The workflow `.github/workflows/prerelease-browsers-pr.yml` runs on every
+pull request that changes `packages/rrweb`, `rrweb-snapshot`, `rrdom`,
+`types`, `utils`, this package, or the workflow itself. It runs the focused
+checks on stable Chrome, Edge and Firefox and on Playwright's bundled WebKit
+(`local-webkit`). It opens no issues and uses no secrets.
+
+Each target runs twice on the same runner. `<target>@pr` uses the pull
+request's rrweb, and `<target>@base` uses the base branch's. The
+**Pre-release browsers summary** job compares the two and writes the verdict
+to the run's summary page:
+
+- **Fail** when a check fails with the pull request's rrweb but passes with
+  the base branch's, or when the pull request's rrweb is more than 1.5 times
+  slower than the base branch's on the same target, or when its longest block
+  is over the 1000 ms ceiling and the base branch's isn't. The pull request
+  fails only for what it caused.
+- **Warning** when a check fails with both builds, or only with the base
+  branch's, or when the browser fails to launch for one of the two runs.
+  Warnings don't fail the pull request.
+- **Incomplete** when a run is missing, stopped at its deadline, or its
+  browser launched for neither build. An incomplete run fails the summary job,
+  because it proves nothing. Re-run the jobs.
+
+Failures parked in `known-failures.json` count for neither.
+
+Safari doesn't run by default, because macOS runners are slow to start. Add
+the `safari` label to the pull request to run `safari-stable` on macOS as
+well. Adding the label starts a new run.
+
+### Reproduce a pull request failure
+
+Each row in the summary has a command, such as:
+
+```bash
+yarn --cwd packages/prerelease-browsers run-target --target chrome-stable --pr-role pr --check css-nested-rules
+```
+
+Run it from the repository root on the pull request's branch, after building
+rrweb and installing the browser as described above. `--pr-role pr` names
+the results `chrome-stable@pr`. To compare with the base branch, build rrweb
+on the base branch, copy `packages/rrweb/dist` somewhere, and run the same
+target with that build:
+
+```bash
+yarn --cwd packages/prerelease-browsers run-target --target chrome-stable --pr-role base --rrweb-dist /tmp/base-dist --rrweb-commit <base sha>
+node packages/prerelease-browsers/src/report/pr-summary.ts --results packages/prerelease-browsers/results --expected chrome-stable@pr,chrome-stable@base
+```
+
+`--rrweb-dist <dir>` reads `rrweb.umd.cjs` from that directory, and
+`--rrweb-commit <sha>` records that commit in the results instead of
+`git rev-parse HEAD`. `pr-summary.ts` prints the verdict and exits 1 on any
+failure or an incomplete run.
+
+### Before making the summary a required check
+
+The workflow runs only on pull requests that touch the paths above. GitHub
+never reports a required status check for a workflow its `paths` filter
+skips, so a pull request that touches none of those paths would wait for the
+check forever and couldn't merge. Make **Pre-release browsers summary** a
+required check only after removing the `paths` filter, or after adding an
+always-run no-op job that reports under the same name.
+
 ## Park a known failure
 
 When a failure is a browser bug that's already reported upstream, park it in

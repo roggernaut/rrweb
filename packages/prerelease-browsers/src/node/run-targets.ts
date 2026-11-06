@@ -99,6 +99,8 @@ export async function runTarget(
     deadline: Date;
     only?: string[];
     rrwebCommit: string;
+    /** The rrweb build to test, for both composed pages and the fixture server. */
+    rrwebDist?: string;
   },
 ): Promise<TargetResult> {
   const metas = selectChecks(t, opts.only);
@@ -136,7 +138,7 @@ export async function runTarget(
   try {
     result.browser = await describeBrowser(driver);
     const bundle = await buildPageBundle();
-    const rrweb = readRrwebUmd();
+    const rrweb = readRrwebUmd(opts.rrwebDist);
     if (driver.canReachLocalhost && metas.some((m) => m.needsHttp)) {
       server = await startFixtureServer({ bundle, rrweb });
     }

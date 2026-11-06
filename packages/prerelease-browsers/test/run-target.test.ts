@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,6 +7,7 @@ import { DeadlineReached } from '../src/node/run-check.ts';
 import { runTarget, runTargetOrRecordCrash } from '../src/node/run-targets.ts';
 import {
   applyPortOffset,
+  asPrRole,
   findTarget,
   githubTargets,
   localTargets,
@@ -168,6 +169,53 @@ test('a crash around the checks still leaves a results file', async () => {
   expect(r.startedAt >= started).toBe(true);
   expect(r.finishedAt >= r.startedAt).toBe(true);
   expect(await readResults(tmp)).toEqual([r]);
+});
+
+test('rrwebDist feeds both the composed pages and the fixture server', async () => {
+  const dist = join(tmp, 'other-dist');
+  await mkdir(dist);
+  await writeFile(
+    join(dist, 'rrweb.umd.cjs'),
+    'var rrweb = {}; /* rrweb from rrwebDist */',
+  );
+  const pages: string[] = [];
+  const driver = scriptedDriver(() => ({ ok: true }));
+  const loadHtml = driver.loadHtml;
+  const open = driver.open;
+  driver.loadHtml = async (html) => {
+    pages.push(html);
+    await loadHtml(html);
+  };
+  driver.open = async (url) => {
+    pages.push(await (await fetch(url)).text());
+    await open(url);
+  };
+  const port = process.env.PRERELEASE_HTTP_PORT;
+  process.env.PRERELEASE_HTTP_PORT = '0';
+  try {
+    const r = await runTarget(
+      { ...findTarget('local-chromium'), connect: async () => driver },
+      {
+        resultsDir: tmp,
+        deadline: future,
+        rrwebCommit: 'abc',
+        only: ['snapshot-basic', 'css-early-linked-stylesheet'],
+        rrwebDist: dist,
+      },
+    );
+    expect(Object.values(r.checks).map((c) => c.status)).toEqual([
+      'pass',
+      'pass',
+    ]);
+  } finally {
+    if (port === undefined) delete process.env.PRERELEASE_HTTP_PORT;
+    else process.env.PRERELEASE_HTTP_PORT = port;
+  }
+  // One page composed in memory, one served by the fixture server.
+  expect(pages).toHaveLength(2);
+  for (const page of pages) {
+    expect(page).toContain('rrweb from rrwebDist');
+  }
 });
 
 test('only runs the selected check', async () => {
@@ -406,6 +454,24 @@ describe('GitHub-runner targets', () => {
   test('ids are unique across local and GitHub targets', () => {
     const ids = [...localTargets, ...githubTargets].map((t) => t.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  test('asPrRole pairs the two builds for comparison', () => {
+    const pr = asPrRole(findTarget('chrome-stable'), 'pr');
+    const base = asPrRole(findTarget('chrome-stable'), 'base');
+    expect([pr.id, pr.channel, base.id, base.channel]).toEqual([
+      'chrome-stable@pr',
+      'upcoming',
+      'chrome-stable@base',
+      'stable',
+    ]);
+    expect(pr.pairGroup).toBe(base.pairGroup);
+    expect(pr.pairGroup).toBe('pr-chrome-stable');
+    expect([pr.checks, pr.perf]).toEqual(['focused', 'compare']);
+    expect([base.checks, base.perf]).toEqual(['focused', 'compare']);
+    // The browser and its launch are the target's own.
+    expect(pr.connect).toBe(findTarget('chrome-stable').connect);
+    expect(findTarget('chrome-stable').id).toBe('chrome-stable');
   });
 
   test('findTarget finds GitHub targets', () => {

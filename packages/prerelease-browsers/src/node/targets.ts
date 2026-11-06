@@ -279,6 +279,26 @@ export const githubTargets: TargetDefinition[] = [
 
 const targets: TargetDefinition[] = [...localTargets, ...githubTargets];
 
+/**
+ * One half of a pull request run: `t` with the pull request's rrweb (`pr`)
+ * or the base branch's (`base`). The two halves share a pair group, and the
+ * pull request half counts as upcoming, so `evaluatePerf` holds it against
+ * the base half with the scheduled run's rules. Both run the focused checks.
+ */
+export function asPrRole(
+  t: TargetDefinition,
+  role: 'pr' | 'base',
+): TargetDefinition {
+  return {
+    ...t,
+    id: `${t.id}@${role}`,
+    channel: role === 'pr' ? 'upcoming' : 'stable',
+    pairGroup: `pr-${t.id}`,
+    checks: 'focused',
+    perf: 'compare',
+  };
+}
+
 export function findTarget(id: string): TargetDefinition {
   const found = targets.find((t) => t.id === id);
   if (!found) {

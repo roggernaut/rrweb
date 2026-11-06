@@ -21,7 +21,7 @@ import {
   runTarget,
   runTargetOrRecordCrash,
 } from './run-targets.ts';
-import { applyPortOffset, findTarget } from './targets.ts';
+import { applyPortOffset, asPrRole, findTarget } from './targets.ts';
 
 const deadlineMinutes = 105;
 
@@ -44,6 +44,7 @@ function describeSamples(samples: PerfSample[]): string[] {
 }
 
 const usage = `usage: cli.ts run-target --target <id> [--check <id>]... [--results <dir>] [--deadline <iso>] [--port-offset <n>]
+                          [--pr-role pr|base] [--rrweb-dist <dir>] [--rrweb-commit <sha>]
        cli.ts run-browserstack [--results <dir>] [--deadline <iso>] [--only <id>]... [--check <id>]...`;
 
 function parseDeadline(value: string | undefined): Date {
@@ -71,20 +72,31 @@ async function runTargetCommand(argv: string[]): Promise<void> {
       results: { type: 'string', default: 'results' },
       deadline: { type: 'string' },
       'port-offset': { type: 'string' },
+      'pr-role': { type: 'string' },
+      'rrweb-dist': { type: 'string' },
+      'rrweb-commit': { type: 'string' },
     },
   });
   if (!values.target) throw new Error(`--target is required\n${usage}`);
+  const role = values['pr-role'];
+  if (role !== undefined && role !== 'pr' && role !== 'base') {
+    throw new Error(`--pr-role must be pr or base, got "${role}"`);
+  }
   if (values['port-offset'] !== undefined) {
     applyPortOffset(Number(values['port-offset']));
   }
   const deadline = parseDeadline(values.deadline);
-  const rrwebCommit = headCommit();
-  const target = findTarget(values.target);
+  const rrwebCommit = values['rrweb-commit'] ?? headCommit();
+  const found = findTarget(values.target);
+  const target = role === undefined ? found : asPrRole(found, role);
   const result = await runTarget(target, {
     resultsDir: resolve(values.results ?? 'results'),
     deadline,
     only: values.check,
     rrwebCommit,
+    ...(values['rrweb-dist'] === undefined
+      ? {}
+      : { rrwebDist: resolve(values['rrweb-dist']) }),
   });
   if (!result.launch.ok) {
     console.log(`${target.id} launch failed: ${result.launch.error}`);
