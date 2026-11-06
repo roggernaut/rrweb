@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** A scheduled GitHub workflow that records test pages with rrweb `main` on upcoming browser builds every two weeks and reports functional, performance and privacy failures as GitHub issues.
+**Goal:** A scheduled GitHub workflow that records test pages with rrweb `main` on upcoming browser builds every two weeks and reports functional, performance and privacy failures as GitHub issues. The same checks also run on every pull request against today's main browsers, comparing the pull request's rrweb with the base branch's.
 
 **Architecture:** A new private workspace package, `packages/prerelease-browsers`, holds everything. Checks run inside the page from one esbuild bundle and talk to Node through a small polling protocol. That protocol works the same over Playwright, Selenium and BrowserStack's iOS bridge. Each runner writes one results file per target. A final step turns all results into issue actions through pure functions, then applies them through a thin GitHub REST client.
 
@@ -23,6 +23,8 @@
 - rrweb under test is `main`, built in the run from `packages/rrweb`, and read from `packages/rrweb/dist/rrweb.umd.cjs` on disk. Package exports hide that file.
 - Recording only. No replay checks, except using `rrweb.Replayer` in the page to verify what was recorded.
 - The package is private, so it needs no changeset.
+- Per-PR runs use stable Chrome, stable Edge, stable Firefox and Playwright's bundled WebKit, plus real Safari only when the pull request has the `safari` label. They run the focused set, once with the pull request's rrweb and once with the base branch's, on the same runner.
+- A per-PR failure fails the job and never opens an issue. A check that also fails with the base branch's rrweb is a warning. Per-PR runs use no secrets and no BrowserStack.
 - Node code uses only erasable TypeScript syntax: no enums, no namespaces, no parameter properties. Relative imports carry the `.ts` extension.
 - Commit messages carry no `Co-Authored-By` or other Claude attribution lines.
 - Write every file from this plan and the spec. Do not copy code from any other repository.
@@ -75,6 +77,7 @@ packages/prerelease-browsers/
       render.ts             issue titles, bodies, markers, status body
       github.ts             REST + GraphQL client over fetch
       reconcile.ts          report entry point
+      pr-summary.ts         per-PR verdict and job summary
   test/
     page-source.test.ts  protocol.test.ts  checks.chromium.test.ts
     retry.test.ts  run-target.test.ts  selenium.test.ts
@@ -82,6 +85,7 @@ packages/prerelease-browsers/
     issues-plan.test.ts  render.test.ts  reconcile.test.ts
     fixtures/browserstack-browsers.json  fixtures/results/*.json
 .github/workflows/prerelease-browsers.yml
+.github/workflows/prerelease-browsers-pr.yml
 ```
 
 `src/page/**` runs only in browsers. `src/node/**` and `src/report/**` run only in Node. `src/types.ts` holds types only, so both sides can import it.
@@ -1415,7 +1419,166 @@ README sections:
 
 ---
 
-### Task 17: First real run and tuning
+### Task 17: Per-PR runs
+
+**Files:**
+
+- Create: `src/report/pr-summary.ts`, `test/pr-summary.test.ts`, `.github/workflows/prerelease-browsers-pr.yml`
+- Modify: `src/node/targets.ts` (add `asPrRole`), `src/node/run-targets.ts` (add `rrwebDist`), `src/node/cli.ts` (add flags), `test/run-target.test.ts`, `README.md`
+
+**Interfaces:**
+
+- Consumes: `TargetDefinition`, `findTarget`, `runTarget` (Task 3), `githubTargets` (Task 10), `collectFailures`, `evaluatePerf` and `parseKnownFailures` (Task 13), `readResults` (Task 3).
+- Produces `asPrRole(t: TargetDefinition, role: 'pr' | 'base'): TargetDefinition` in `targets.ts`. It returns a copy with:
+  - `id` set to `` `${t.id}@${role}` ``
+  - `channel` set to `'upcoming'` for `pr` and `'stable'` for `base`, so that `evaluatePerf` compares the pull request's rrweb against the base branch's with the existing rules
+  - `pairGroup` set to `` `pr-${t.id}` ``
+  - `checks` set to `'focused'` and `perf` to `'compare'`
+- `runTarget` options gain `rrwebDist?: string`, which is passed to `readRrwebUmd`. The fixture server uses the same rrweb source.
+- `cli.ts run-target` gains `--pr-role pr|base`, which wraps the target with `asPrRole`, plus `--rrweb-dist <dir>` and `--rrweb-commit <sha>`. Without `--rrweb-commit`, the commit stays `git rev-parse HEAD`.
+- Produces in `pr-summary.ts`:
+
+```ts
+export interface PrFinding {
+  targetId: string;
+  key: string;
+  message: string;
+  reproduce: string;
+} // targetId without the @role suffix
+export interface PrVerdict {
+  failures: PrFinding[];
+  warnings: PrFinding[];
+  incomplete: string[];
+  markdown: string;
+}
+export function summarizePr(
+  results: TargetResult[],
+  expectedTargets: string[],
+  known: KnownFailure[],
+): PrVerdict;
+```
+
+Rules, applied to `collectFailures(results, expectedTargets, known)`:
+
+- For each failure, each `@pr` target whose `@base` counterpart is also among that failure's targets becomes a warning with the message prefix `also fails on base: `. A `@pr` target without one becomes a failure.
+- Targets that fail only as `@base` become warnings.
+- Launch failures become warnings with the message prefix `browser failed to launch: `.
+- Missing and incomplete targets go in `incomplete`.
+- `reproduce` is `yarn workspace @rrweb/prerelease-browsers run-target --target <id> --pr-role pr --check <checkId>`.
+- `markdown` is the job summary. It has a one-line verdict: `Pass`, `Fail: <n> failing` or `Incomplete`. Then come a failures table and a warnings table, each with target, check, message and reproduce command, and a list of incomplete targets. It never contains `@` followed by a letter, using the same escaping as `render.ts`.
+- CLI: `node src/report/pr-summary.ts --results <dir> --expected <ids,comma>`. It appends `markdown` to the file named by `GITHUB_STEP_SUMMARY` when that is set, and prints it otherwise. It exits 1 when there are failures or incomplete targets, and 0 otherwise.
+
+Workflow `.github/workflows/prerelease-browsers-pr.yml`:
+
+- `on.pull_request.paths`: `packages/rrweb/**`, `packages/rrweb-snapshot/**`, `packages/rrdom/**`, `packages/types/**`, `packages/utils/**`, `packages/prerelease-browsers/**`, `.github/workflows/prerelease-browsers-pr.yml`. It also triggers on `types: [opened, synchronize, reopened, labeled]`, so adding the `safari` label starts a run.
+- `permissions: { contents: read }`. `concurrency: { group: prerelease-pr-${{ github.event.pull_request.number }}, cancel-in-progress: true }`. The workflow references no secrets.
+- Job `build`: build rrweb from the pull request and upload it as `rrweb-dist-pr`. Use the same install and build steps as Task 16's `build` job.
+- Job `build-base`: the same, but check out `${{ github.event.pull_request.base.sha }}`, and upload as `rrweb-dist-base`.
+- Job `linux`, with `needs: [build, build-base]`, `fail-fast: false`, `timeout-minutes: 30`, and matrix target `[chrome-stable, edge-stable, firefox-stable, local-webkit]`:
+  1. Download `rrweb-dist-pr` into `packages/rrweb/dist` and `rrweb-dist-base` into `$RUNNER_TEMP/base-dist`.
+  2. Install the browser. `local-webkit` uses `npx playwright install --with-deps webkit`, and the others use `install.ts`.
+  3. Run `xvfb-run yarn workspace @rrweb/prerelease-browsers run-target --target $T --pr-role pr --deadline <now + 25 min>`.
+  4. Run the same command with `--pr-role base --rrweb-dist $RUNNER_TEMP/base-dist --rrweb-commit ${{ github.event.pull_request.base.sha }}`.
+  5. Upload `results` as `pr-results-$T` with `if: always()`.
+- Job `safari`: runs `if: contains(github.event.pull_request.labels.*.name, 'safari')` on `macos-26`. It enables the stable safaridriver as in Task 16 and runs both roles for `safari-stable`.
+- Job `summary`: `needs: [linux, safari]` and `if: always()`. It downloads every `pr-results-*` artifact into one directory. It runs `pr-summary.ts` with `--expected` listing each matrix target as `@pr` and `@base`, plus `safari-stable@pr` and `safari-stable@base` when the label is set. This is the job a branch rule can require.
+
+- [ ] **Step 1: Write the failing tests**
+
+```ts
+// test/pr-summary.test.ts, with fixtures built by the helpers from Task 13's tests
+const expected = ['chrome-stable@pr', 'chrome-stable@base'];
+test('a check failing only with the PR rrweb fails the run', () => {
+  const v = summarizePr(
+    [
+      failing(
+        'chrome-stable@pr',
+        'css-nested-rules',
+        'upcoming',
+        'pr-chrome-stable',
+      ),
+      passing('chrome-stable@base', 'stable', 'pr-chrome-stable'),
+    ],
+    expected,
+    [],
+  );
+  expect(v.failures).toEqual([
+    expect.objectContaining({
+      targetId: 'chrome-stable',
+      key: 'css-nested-rules:functional',
+    }),
+  ]);
+  expect(v.warnings).toEqual([]);
+  expect(v.markdown).toMatch(/^Fail: 1 failing/m);
+});
+test('a check failing with both builds is only a warning', () => {
+  const v = summarizePr(
+    [
+      failing(
+        'chrome-stable@pr',
+        'css-nested-rules',
+        'upcoming',
+        'pr-chrome-stable',
+      ),
+      failing(
+        'chrome-stable@base',
+        'css-nested-rules',
+        'stable',
+        'pr-chrome-stable',
+      ),
+    ],
+    expected,
+    [],
+  );
+  expect(v.failures).toEqual([]);
+  expect(v.warnings[0].message).toMatch(/^also fails on base: /);
+});
+test('PR rrweb 1.6x slower than base fails', () => {
+  const v = summarizePr(
+    [
+      perf('chrome-stable@pr', 'upcoming', [160, 170, 165], 'pr-chrome-stable'),
+      perf('chrome-stable@base', 'stable', [100, 105, 102], 'pr-chrome-stable'),
+    ],
+    expected,
+    [],
+  );
+  expect(v.failures[0].message).toMatch(/^durationMs 165 vs stable 102/);
+});
+test('a missing base result makes the run incomplete', () => {
+  const v = summarizePr(
+    [passing('chrome-stable@pr', 'upcoming', 'pr-chrome-stable')],
+    expected,
+    [],
+  );
+  expect(v.incomplete).toEqual(['chrome-stable@base']);
+  expect(v.markdown).toMatch(/^Incomplete/m);
+});
+// test/run-target.test.ts
+test('asPrRole pairs the two builds for comparison', () => {
+  const pr = asPrRole(findTarget('chrome-stable'), 'pr'),
+    base = asPrRole(findTarget('chrome-stable'), 'base');
+  expect([pr.id, pr.channel, base.id, base.channel]).toEqual([
+    'chrome-stable@pr',
+    'upcoming',
+    'chrome-stable@base',
+    'stable',
+  ]);
+  expect(pr.pairGroup).toBe(base.pairGroup);
+  expect([pr.checks, pr.perf]).toEqual(['focused', 'compare']);
+});
+```
+
+If the Task 13 helpers don't accept a target id with `@` and an explicit pairGroup, extend them in that test file.
+
+- [ ] **Step 2:** Run `vitest run test/pr-summary.test.ts test/run-target.test.ts` and expect FAIL.
+- [ ] **Step 3:** Implement `asPrRole`, the `rrwebDist` option, the CLI flags and `pr-summary.ts`.
+- [ ] **Step 4:** Run the tests again and expect PASS. Then run both roles locally against `local-chromium`, using a second rrweb build as the base. Copy `packages/rrweb/dist` to a temporary directory and pass it with `--rrweb-dist`. Run `pr-summary.ts` on the results. Expected: `Pass` and exit 0.
+- [ ] **Step 5:** Validate the YAML with `npx -y js-yaml .github/workflows/prerelease-browsers-pr.yml > /dev/null`. Add a README section, "Per-PR runs", covering what fails a pull request, the `safari` label, and how to reproduce locally. Run `yarn lint` and check-types.
+- [ ] **Step 6:** Commit with message `ci(prerelease): run the focused checks on every pull request`.
+
+---
+
+### Task 18: First real run and tuning
 
 **Files:**
 
@@ -1434,4 +1597,5 @@ This task is verification. It ends with evidence, not new features.
   - **An unrealistic ceiling on a slow target:** raise that target's `ceilingMs` and note the measured median.
 - [ ] **Step 4:** With the maintainer's go-ahead and the fork's secrets set, dispatch again with `browserstack: true`. Confirm the BrowserStack job finishes before the deadline with at most 5 concurrent sessions, which the BrowserStack dashboard shows. Confirm the whole run is under 2 hours.
 - [ ] **Step 5:** Run dispatch a second time on the same commit. Confirm no new issues and no new comments appear.
+- [ ] **Step 5a:** With the maintainer's go-ahead, open a throwaway pull request on the fork that changes one comment in `packages/rrweb/src`. Confirm the per-PR workflow runs all four Linux targets in both roles, the summary job passes, and its run time is under 30 minutes. Add the `safari` label and confirm the Safari job runs. Then close the pull request.
 - [ ] **Step 6:** Commit the tuning with message `chore(prerelease): tune limits from first full run`. Then open the pull request to rrweb-io/rrweb only once the maintainer asks.

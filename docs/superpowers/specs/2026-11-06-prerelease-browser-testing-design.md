@@ -31,8 +31,8 @@ browser vendor before the change ships.
   us to ignore it.
 - Finish a full run in under two hours.
 
-**Out of scope:** replay, replacing per-PR CI, and absolute performance
-budgets for rrweb.
+**Out of scope:** replay, replacing the existing per-PR tests, and absolute
+performance budgets for rrweb.
 
 **What would make this a failure even if it works:**
 
@@ -53,6 +53,8 @@ budgets for rrweb.
   Downstream users can watch for them and react faster than we can ship a fix.
 - **Firefox on Android and Safari Technology Preview are included.** Both
   were proven to work on GitHub's free runners.
+- **The same checks also run on every pull request,** on today's main
+  browsers. See "Per-PR runs".
 
 ## Where it runs
 
@@ -168,6 +170,32 @@ points at rrweb or the test rather than the browser.
 
 A run heading past two hours stops starting new work and reports itself as
 incomplete. A partial run never looks like a pass.
+
+## Per-PR runs
+
+The scheduled run asks whether a new browser breaks rrweb. A pull request asks
+a different question: does this change break rrweb on today's browsers? The
+same checks answer both.
+
+- **Browsers:** stable Chrome, stable Edge, stable Firefox and Playwright's
+  WebKit, each in its own job on a free Linux runner. Real Safari on a macOS
+  runner runs only when the pull request has the `safari` label, because only
+  5 macOS jobs run at once across the repository.
+- **Checks:** the focused set, as on BrowserStack.
+- **Each check runs twice:** once with the pull request's rrweb and once with
+  rrweb from the base branch, on the same runner.
+- **What fails the pull request:** a check that fails with the pull request's
+  rrweb but passes with the base branch's. A check failing with both is shown
+  as a warning, not a failure, because the change didn't cause it.
+- **Performance:** the pull request's rrweb against the base branch's, with
+  the same limits as the scheduled run: more than 1.5 times slower, or a
+  block over 1 second that the base branch doesn't also have.
+- **No issues are opened.** Results appear in the job summary, with the
+  recorded events attached as an artifact.
+- **No BrowserStack.** Pull requests from forks get no repository secrets,
+  and the scheduled run needs the session limit.
+- **Runs when recording can change:** on pull requests touching rrweb,
+  rrweb-snapshot, rrdom, the types and utils packages, or this suite.
 
 ## Alerting
 
