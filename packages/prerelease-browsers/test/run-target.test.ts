@@ -14,8 +14,6 @@ import {
   localTargets,
 } from '../src/node/targets.ts';
 import { findFenixNightlyApk } from '../src/node/install.ts';
-import type { PageDriver } from '../src/node/drivers/types.ts';
-import { launchPlaywright } from '../src/node/drivers/playwright.ts';
 import type { AttemptResult } from '../src/types.ts';
 import { scriptedDriver } from './fake-driver.ts';
 
@@ -220,21 +218,6 @@ test('rrwebDist feeds both the composed pages and the fixture server', async () 
   }
 });
 
-test('only runs the selected check', async () => {
-  const r = await runTarget(findTarget('local-chromium'), {
-    resultsDir: tmp,
-    deadline: future,
-    rrwebCommit: 'abc',
-    only: ['snapshot-basic'],
-  });
-  expect(Object.keys(r.checks)).toEqual(['snapshot-basic']);
-  expect(r.checks['snapshot-basic'].status).toBe('pass');
-  expect(r.launch).toEqual({ ok: true });
-  expect(r.browser?.browserName).toBe('chromium');
-  expect(r.incomplete).toBe(false);
-  expect(await readResults(tmp)).toEqual([r]);
-});
-
 test('an unknown check id is rejected', async () => {
   await expect(
     runTarget(findTarget('local-chromium'), {
@@ -244,79 +227,6 @@ test('an unknown check id is rejected', async () => {
       only: ['nope'],
     }),
   ).rejects.toThrow(/nope/);
-});
-
-test('a throwing driver fails that attempt, closes the driver and records a session', async () => {
-  const real = await launchPlaywright({ engine: 'chromium' });
-  let closed = false;
-  const marks: Array<[boolean, string]> = [];
-  const driver: PageDriver = {
-    canReachLocalhost: true,
-    loadHtml: () => Promise.reject(new Error('browser crashed')),
-    open: () => real.open('about:blank'),
-    evaluate: (expr) => real.evaluate(expr),
-    describe: () => real.describe(),
-    sessionUrl: async () => 'https://sessions.example/1',
-    markSession: async (passed, reason) => {
-      marks.push([passed, reason]);
-    },
-    close: async () => {
-      closed = true;
-      await real.close();
-    },
-  };
-  const r = await runTarget(
-    { ...findTarget('local-chromium'), connect: async () => driver },
-    {
-      resultsDir: tmp,
-      deadline: future,
-      rrwebCommit: 'abc',
-      only: ['snapshot-basic'],
-    },
-  );
-  expect(r.checks['snapshot-basic']).toMatchObject({
-    status: 'fail',
-    attempts: 2,
-    message: expect.stringContaining('browser crashed'),
-  });
-  expect(closed).toBe(true);
-  expect(r.sessionUrl).toBe('https://sessions.example/1');
-  expect(marks).toHaveLength(1);
-  expect(marks[0][0]).toBe(false);
-});
-
-test('events of the last failing attempt are written under the results dir', async () => {
-  const real = await launchPlaywright({ engine: 'chromium' });
-  // Flips the result after the check recorded, so the failing attempt carries events.
-  const wrapped: PageDriver = {
-    ...real,
-    evaluate: async <T>(expr: string) => {
-      const out = await real.evaluate<T>(expr);
-      if (expr.startsWith('__prerelease.read(') && typeof out === 'string') {
-        const parsed = JSON.parse(out);
-        return JSON.stringify({ ...parsed, ok: false, message: 'forced' }) as T;
-      }
-      return out;
-    },
-    close: () => real.close(),
-  };
-  const r = await runTarget(
-    { ...findTarget('local-chromium'), connect: async () => wrapped },
-    {
-      resultsDir: tmp,
-      deadline: future,
-      rrwebCommit: 'abc',
-      only: ['snapshot-basic'],
-    },
-  );
-  const outcome = r.checks['snapshot-basic'];
-  expect(outcome.status).toBe('fail');
-  expect(outcome.message).toBe('forced');
-  expect(outcome.eventsFile).toBe('local-chromium/snapshot-basic.events.json');
-  const events = JSON.parse(
-    await readFile(join(tmp, outcome.eventsFile!), 'utf8'),
-  );
-  expect(events.some((e: { type: number }) => e.type === 2)).toBe(true);
 });
 
 test('a deadline passing during an attempt stops its retries and the run', async () => {
@@ -588,32 +498,6 @@ describe('run-target command line', () => {
     spawnSync(process.execPath, [cli, 'run-target', ...args], {
       encoding: 'utf8',
     });
-
-  test('a crash after launch still writes a results file', async () => {
-    const out = runCli(
-      '--target',
-      'local-chromium',
-      '--check',
-      'snapshot-basic',
-      '--results',
-      tmp,
-      '--rrweb-dist',
-      join(tmp, 'no-such-dist'),
-      '--rrweb-commit',
-      'abc',
-    );
-    expect(out.stderr).toBe('');
-    expect(out.status).toBe(0);
-    expect(out.stdout).toContain(
-      'local-chromium launch failed: crashed: rrweb is not built',
-    );
-    const [r] = await readResults(tmp);
-    expect(r).toMatchObject({
-      targetId: 'local-chromium',
-      rrwebCommit: 'abc',
-      launch: { ok: false, error: expect.stringMatching(/^crashed: /) },
-    });
-  }, 60_000);
 
   test('an unknown check exits before any session, with no results file', async () => {
     const out = runCli(

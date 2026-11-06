@@ -101,6 +101,39 @@ jobs:
           if-no-files-found: error
           overwrite: true
 
+  # The package's own browser tests, which the main CI job leaves out. The
+  # summary job does not wait for this one: its result is its own status.
+  package-tests:
+    name: Pre-release browsers package tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'yarn'
+
+      - name: Install Dependencies
+        run: yarn install --frozen-lockfile
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: true
+
+      - name: Build rrweb
+        run: NODE_OPTIONS='--max-old-space-size=4096' yarn turbo run prepublish --filter=rrweb
+
+      # WebKit is for the single-tab driver test in playwright.browser.test.ts.
+      - name: Install Playwright's Chromium and WebKit
+        working-directory: packages/prerelease-browsers
+        run: npx playwright install --with-deps chromium webkit
+
+      - name: Run the browser tests
+        run: xvfb-run --server-args="-screen 0 1920x1080x24" yarn workspace @rrweb/prerelease-browsers test:browser
+
   linux:
     name: Linux ${{ matrix.target }}
     needs: [build, build-base]

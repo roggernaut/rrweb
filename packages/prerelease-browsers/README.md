@@ -73,6 +73,25 @@ targets, and `--check <id>` picks checks:
 yarn run-browserstack --only bs-ios-upcoming --check css-nested-rules
 ```
 
+## Test this package
+
+`yarn test` runs only the tests that need no browser. It is what the
+repository's main CI job runs. The tests that launch a browser run with
+`yarn test:browser`. They need rrweb built, as above, and Playwright's
+Chromium and WebKit:
+
+```bash
+cd packages/prerelease-browsers
+npx playwright install chromium webkit
+yarn test
+yarn test:browser
+```
+
+`vitest.config.ts` lists the browser test files, and `yarn test` leaves them
+out. Add a new test file that launches a browser to that list. The Selenium
+tests on Firefox run only when `GECKODRIVER` and `FIREFOX_BINARY` are set, and
+skip otherwise.
+
 ## Reproduce an issue
 
 Each issue has a **Reproduce** section with one command per failing target,
@@ -101,7 +120,10 @@ The workflow `.github/workflows/prerelease-browsers-pr.yml` runs on every
 pull request that changes `packages/rrweb`, `rrweb-snapshot`, `rrdom`,
 `types`, `utils`, this package, or the workflow itself. It runs the focused
 checks on stable Chrome, Edge and Firefox and on Playwright's bundled WebKit
-(`local-webkit`). It opens no issues and uses no secrets.
+(`local-webkit`). It opens no issues and uses no secrets. Its
+**Pre-release browsers package tests** job runs this package's
+`yarn test:browser`, and its result is its own job status. The summary job
+does not wait for it.
 
 Each target runs twice on the same runner. `<target>@pr` uses rrweb built from
 the pull request's merge commit, and `<target>@base` uses rrweb built from
