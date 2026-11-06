@@ -1,4 +1,9 @@
-import { runScenario, runWithRetry } from '../src/node/run-check.ts';
+import {
+  isProtocolFailure,
+  runAttempt,
+  runScenario,
+  runWithRetry,
+} from '../src/node/run-check.ts';
 import type { AttemptResult, CheckMeta } from '../src/types.ts';
 import { scriptedDriver } from './fake-driver.ts';
 
@@ -173,4 +178,51 @@ describe('runScenario', () => {
       compare: ['durationMs'],
     });
   });
+});
+
+test.each([
+  ['an array', [null, null]],
+  ['null', null],
+  ['an unknown state', { state: 'finished' }],
+  ['a string', 'running'],
+])('a poll result that is %s fails the attempt at once', async (_, poll) => {
+  const driver = scriptedDriver(() => ({ ok: true }));
+  const inner = driver.evaluate;
+  driver.evaluate = async <T>(expression: string): Promise<T> =>
+    expression === '__prerelease.poll()' ? (poll as T) : inner<T>(expression);
+  const meta = {
+    id: 'snapshot-basic',
+    kind: 'functional',
+    tier: 'focused',
+  } as CheckMeta;
+  const started = Date.now();
+  const r = await runAttempt(
+    driver,
+    meta,
+    { bundle: '', rrweb: '' },
+    {
+      timeoutMs: 60_000,
+    },
+  );
+  expect(r).toEqual({
+    ok: false,
+    message: 'malformed poll result from driver',
+  });
+  expect(Date.now() - started).toBeLessThan(5_000);
+});
+
+test('timeouts and garbled polls are protocol failures; check failures are not', () => {
+  expect(
+    isProtocolFailure({ ok: false, message: 'timed out after 300000 ms' }),
+  ).toBe(true);
+  expect(
+    isProtocolFailure({
+      ok: false,
+      message: 'malformed poll result from driver',
+    }),
+  ).toBe(true);
+  expect(
+    isProtocolFailure({ ok: false, message: 'no FullSnapshot event' }),
+  ).toBe(false);
+  expect(isProtocolFailure({ ok: true })).toBe(false);
 });

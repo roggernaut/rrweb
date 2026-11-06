@@ -14,6 +14,48 @@ interface PollState {
 class AttemptTimeout extends Error {}
 
 /**
+ * Thrown by a connect that gave up because the run's deadline came, for
+ * example while waiting for a free BrowserStack session. runTarget records
+ * that as incomplete, not as a launch failure.
+ */
+export class DeadlineReached extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'DeadlineReached';
+  }
+}
+
+export const malformedPoll = 'malformed poll result from driver';
+
+const pollStates: ReadonlySet<unknown> = new Set([
+  'idle',
+  'running',
+  'done',
+  'error',
+]);
+
+function isPollState(value: unknown): value is PollState {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    pollStates.has((value as { state?: unknown }).state)
+  );
+}
+
+const timedOut = /^timed out after \d+ ms$/;
+
+/**
+ * True for a failed attempt that says nothing about rrweb: it timed out, or
+ * the driver mangled the page protocol.
+ */
+export function isProtocolFailure(result: AttemptResult): boolean {
+  return (
+    !result.ok &&
+    (result.message === malformedPoll || timedOut.test(result.message ?? ''))
+  );
+}
+
+/**
  * Runs one attempt of one check: load the page, start the check, poll until
  * it settles, then read the result back in chunks.
  */
@@ -60,8 +102,11 @@ export async function runAttempt(
     }
     for (;;) {
       const status = await call(
-        driver.evaluate<PollState>('__prerelease.poll()'),
+        driver.evaluate<unknown>('__prerelease.poll()'),
       );
+      // A garbled answer would otherwise read as "still running" until the
+      // attempt times out.
+      if (!isPollState(status)) return { ok: false, message: malformedPoll };
       if (status.state === 'error') {
         return { ok: false, message: status.error ?? 'check failed' };
       }
@@ -142,7 +187,13 @@ export async function runScenario(
   driver: PageDriver,
   meta: CheckMeta,
   src: { bundle: string; rrweb: string; httpOrigin?: string },
-  opts: { samples: number; timeoutMs: number; scale?: number; deadline?: Date },
+  opts: {
+    samples: number;
+    timeoutMs: number;
+    scale?: number;
+    deadline?: Date;
+    onAttempt?: (result: AttemptResult) => void;
+  },
 ): Promise<CheckOutcome> {
   const outcome: CheckOutcome = {
     kind: meta.kind,
@@ -166,6 +217,7 @@ export async function runScenario(
       (err): AttemptResult => ({ ok: false, message: errorMessage(err) }),
     );
     outcome.attempts++;
+    opts.onAttempt?.(result);
     if (result.skipped !== undefined && outcome.attempts === 1) {
       return { ...outcome, status: 'skipped', message: result.skipped };
     }

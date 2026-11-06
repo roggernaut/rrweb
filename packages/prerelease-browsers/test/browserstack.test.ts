@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { webkit } from 'playwright';
 import {
   browserStackIds,
+  connectTimeoutFor,
   connectWithBackoff,
   isParallelLimitError,
   jsonTransport,
@@ -18,6 +19,7 @@ import {
   type CatalogueEntry,
 } from '../src/node/browserstack.ts';
 import { playwrightDriver } from '../src/node/drivers/playwright.ts';
+import { DeadlineReached } from '../src/node/run-check.ts';
 import type { PageDriver } from '../src/node/drivers/types.ts';
 import { githubTargets, localTargets } from '../src/node/targets.ts';
 
@@ -388,6 +390,38 @@ describe('connectWithBackoff', () => {
       ),
     ).rejects.toThrow('parallel limit');
   });
+  test('giving up at the deadline is a DeadlineReached, other errors are not', async () => {
+    const cutOff = await connectWithBackoff(
+      () => Promise.reject(new Error('parallel limit')),
+      new Date(Date.now() + 50),
+      1_000,
+      noSleep,
+    ).catch((err: unknown) => err);
+    expect(cutOff).toBeInstanceOf(DeadlineReached);
+    const other = await connectWithBackoff(
+      () => Promise.reject(new Error('bad caps')),
+      new Date(0),
+      1,
+      noSleep,
+    ).catch((err: unknown) => err);
+    expect(other).not.toBeInstanceOf(DeadlineReached);
+  });
+  test('the connect timeout never runs past the deadline', () => {
+    const now = Date.now();
+    expect(connectTimeoutFor(new Date(now + 3_600_000), now)).toEqual({
+      timeoutMs: 600_000,
+      capped: false,
+    });
+    expect(connectTimeoutFor(new Date(now + 90_000), now)).toEqual({
+      timeoutMs: 90_000,
+      capped: true,
+    });
+    expect(connectTimeoutFor(new Date(now - 5), now).timeoutMs).toBe(1);
+    expect(connectTimeoutFor(undefined, now)).toEqual({
+      timeoutMs: 600_000,
+      capped: false,
+    });
+  });
   test('waits waitMs between tries', async () => {
     const waits: number[] = [];
     let n = 0;
@@ -471,8 +505,8 @@ describe('sessions', () => {
       'bstack:options': {
         os: 'Windows',
         osVersion: '11',
-        name: 'bs-firefox-beta',
-        build: 'rrweb prerelease 2026-11-06 #42',
+        sessionName: 'bs-firefox-beta',
+        buildName: 'rrweb prerelease 2026-11-06 #42',
         projectName: 'rrweb prerelease browsers',
         userName: 'someone',
         accessKey: 'k3y/+?',

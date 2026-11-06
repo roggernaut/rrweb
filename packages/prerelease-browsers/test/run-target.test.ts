@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readResults } from '../src/node/results.ts';
+import { DeadlineReached } from '../src/node/run-check.ts';
 import { runTarget, runTargetOrRecordCrash } from '../src/node/run-targets.ts';
 import {
   applyPortOffset,
@@ -25,17 +26,112 @@ afterEach(async () => {
   await rm(tmp, { recursive: true, force: true });
 });
 
-test('past the deadline every check is not-run and the result is incomplete', async () => {
-  const r = await runTarget(findTarget('local-chromium'), {
-    resultsDir: tmp,
-    deadline: new Date(0),
-    rrwebCommit: 'abc',
-  });
+test('past the deadline every check is not-run and no session opens', async () => {
+  let connects = 0;
+  const r = await runTarget(
+    {
+      ...findTarget('local-chromium'),
+      connect: async () => {
+        connects++;
+        return scriptedDriver(() => ({ ok: true }));
+      },
+    },
+    { resultsDir: tmp, deadline: new Date(0), rrwebCommit: 'abc' },
+  );
+  expect(connects).toBe(0);
+  expect(r.launch).toEqual({ ok: true });
   expect(r.incomplete).toBe(true);
+  expect(r.incompleteReason).toBe('deadline');
   expect(Object.keys(r.checks).length).toBeGreaterThan(0);
   expect(Object.values(r.checks).every((c) => c.status === 'not-run')).toBe(
     true,
   );
+  expect(await readResults(tmp)).toEqual([r]);
+});
+
+test('a connect cut off by the deadline is incomplete, not a launch failure', async () => {
+  const r = await runTarget(
+    {
+      ...findTarget('local-chromium'),
+      connect: () =>
+        Promise.reject(
+          new DeadlineReached('BROWSERSTACK_ALL_PARALLELS_IN_USE'),
+        ),
+    },
+    {
+      resultsDir: tmp,
+      deadline: future,
+      rrwebCommit: 'abc',
+      only: ['snapshot-basic', 'shadow-dom-open'],
+    },
+  );
+  expect(r.launch).toEqual({ ok: true });
+  expect(r.incomplete).toBe(true);
+  expect(r.incompleteReason).toBe('deadline');
+  expect(r.checks).toEqual({
+    'snapshot-basic': { kind: 'functional', status: 'not-run', attempts: 0 },
+    'shadow-dom-open': { kind: 'functional', status: 'not-run', attempts: 0 },
+  });
+});
+
+/** A scripted driver whose poll() answers garbage on the loads `broken` picks. */
+function brokenPollDriver(broken: (load: number) => boolean) {
+  const driver = scriptedDriver(() => ({ ok: true }));
+  const inner = driver.evaluate;
+  driver.evaluate = async <T>(expression: string): Promise<T> =>
+    expression === '__prerelease.poll()' && broken(driver.loads)
+      ? ([null, null] as T)
+      : inner<T>(expression);
+  return driver;
+}
+
+test('two checks in a row with a broken protocol stop the target', async () => {
+  let closed = false;
+  const driver = brokenPollDriver(() => true);
+  driver.close = async () => void (closed = true);
+  const r = await runTarget(
+    { ...findTarget('local-chromium'), connect: async () => driver },
+    {
+      resultsDir: tmp,
+      deadline: future,
+      rrwebCommit: 'abc',
+      only: ['snapshot-basic', 'shadow-dom-open', 'iframe-same-origin'],
+    },
+  );
+  expect(driver.loads).toBe(4);
+  expect(r.checks['snapshot-basic']).toMatchObject({
+    status: 'fail',
+    attempts: 2,
+    message: 'malformed poll result from driver',
+  });
+  expect(r.checks['shadow-dom-open'].status).toBe('fail');
+  expect(r.checks['iframe-same-origin']).toEqual({
+    kind: 'functional',
+    status: 'not-run',
+    attempts: 0,
+  });
+  expect(r.incomplete).toBe(true);
+  expect(r.incompleteReason).toBe('protocol broken');
+  expect(closed).toBe(true);
+});
+
+test('a working check between broken ones keeps the target going', async () => {
+  // Loads 1-2: snapshot-basic broken; 3: shadow-dom-open passes; 4-5 broken.
+  const driver = brokenPollDriver((n) => n !== 3);
+  const r = await runTarget(
+    { ...findTarget('local-chromium'), connect: async () => driver },
+    {
+      resultsDir: tmp,
+      deadline: future,
+      rrwebCommit: 'abc',
+      only: ['snapshot-basic', 'shadow-dom-open', 'iframe-same-origin'],
+    },
+  );
+  expect(driver.loads).toBe(5);
+  expect(r.checks['shadow-dom-open'].status).toBe('pass');
+  expect(r.checks['iframe-same-origin'].status).toBe('fail');
+  expect(r.incomplete).toBe(false);
+  expect(r.incompleteReason).toBeUndefined();
 });
 
 test('a launch failure is recorded, not thrown', async () => {

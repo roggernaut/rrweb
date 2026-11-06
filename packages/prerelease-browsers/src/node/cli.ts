@@ -179,6 +179,7 @@ async function runBrowserStackCommand(argv: string[]): Promise<void> {
   );
 
   const run = {
+    deadline,
     build: `rrweb prerelease ${new Date().toISOString().slice(0, 10)} #${
       process.env.GITHUB_RUN_ID ?? 'local'
     }`,

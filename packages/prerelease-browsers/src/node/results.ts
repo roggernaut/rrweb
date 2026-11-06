@@ -28,7 +28,8 @@ export interface TargetResult {
   rrwebCommit: string;
   startedAt: string;
   finishedAt: string;
-  incomplete: boolean; // true when the deadline stopped work
+  incomplete: boolean; // true when the deadline or a broken protocol stopped work
+  incompleteReason?: string; // 'deadline' or 'protocol broken'
   sessionUrl?: string;
   checks: Record<string, CheckOutcome>;
 }

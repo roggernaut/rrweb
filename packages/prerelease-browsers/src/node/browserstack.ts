@@ -5,7 +5,7 @@ import type { Engine } from '../types.ts';
 import { playwrightDriver } from './drivers/playwright.ts';
 import { connectSelenium } from './drivers/selenium.ts';
 import type { BrowserInfo, PageDriver } from './drivers/types.ts';
-import { errorMessage } from './run-check.ts';
+import { DeadlineReached, errorMessage } from './run-check.ts';
 import type { TargetDefinition } from './targets.ts';
 
 /** One row of BrowserStack's Automate `browsers.json`, as the live API returns it. */
@@ -451,8 +451,8 @@ export function sessionCaps(
       ...spec.caps,
       'bstack:options': {
         ...options,
-        name: spec.id,
-        build: run.build,
+        sessionName: spec.id,
+        buildName: run.build,
         projectName: project,
         userName: creds.username,
         accessKey: creds.accessKey,
@@ -480,6 +480,21 @@ const seleniumHub = 'https://hub-cloud.browserstack.com/wd/hub';
 
 /** Long enough for BrowserStack to find a free device. */
 const connectTimeoutMs = 10 * 60_000;
+
+/**
+ * The Playwright connect timeout: the usual one, cut to the time left before
+ * the deadline (at least 1 ms, as 0 would mean no timeout). `capped` says the
+ * deadline set it, so a timeout then means the deadline came.
+ */
+export function connectTimeoutFor(
+  deadline: Date | undefined,
+  now = Date.now(),
+): { timeoutMs: number; capped: boolean } {
+  const left = deadline === undefined ? Infinity : deadline.getTime() - now;
+  return left < connectTimeoutMs
+    ? { timeoutMs: Math.max(1, left), capped: true }
+    : { timeoutMs: connectTimeoutMs, capped: false };
+}
 
 /** BrowserStack caps the reason it stores with a session status. */
 const maxReasonLength = 255;
@@ -591,6 +606,7 @@ async function closeOnError<T>(
 async function connectSpec(
   spec: BrowserStackSpec,
   caps: Record<string, unknown>,
+  timeoutMs: number,
 ): Promise<PageDriver> {
   const endpoint = playwrightEndpoint(caps);
   switch (spec.route) {
@@ -604,7 +620,7 @@ async function connectSpec(
       });
     case 'playwright-desktop': {
       const browser = await chromium.connect(endpoint, {
-        timeout: connectTimeoutMs,
+        timeout: timeoutMs,
       });
       return closeOnError(
         async () => {
@@ -626,7 +642,7 @@ async function connectSpec(
     }
     case 'playwright-ios': {
       const browser = await webkit.connect(endpoint, {
-        timeout: connectTimeoutMs,
+        timeout: timeoutMs,
       });
       return closeOnError(
         async () => {
@@ -654,7 +670,7 @@ async function connectSpec(
     }
     case 'playwright-android': {
       const device = await _android.connect(endpoint, {
-        timeout: connectTimeoutMs,
+        timeout: timeoutMs,
       });
       return closeOnError(
         async () => {
@@ -689,13 +705,14 @@ async function connectSpec(
 /**
  * The target for one resolved spec. Its connect reads the credentials from
  * the environment, so they never sit on the target itself, and strips them
- * from every error the session throws. Pages load with setContent and a null
- * origin there: BrowserStack can't reach this machine, so needsHttp checks
- * skip.
+ * from every error the session throws. With `run.deadline`, a Playwright
+ * connect waits no longer than the time left, and running out is a
+ * DeadlineReached. Pages load with setContent and a null origin there:
+ * BrowserStack can't reach this machine, so needsHttp checks skip.
  */
 export function toTarget(
   spec: BrowserStackSpec,
-  run: { build: string; playwrightVersion: string },
+  run: { build: string; playwrightVersion: string; deadline?: Date },
 ): TargetDefinition {
   return {
     id: spec.id,
@@ -709,13 +726,20 @@ export function toTarget(
     timeScale: 5,
     async connect() {
       const creds = credentialsFromEnv();
+      const { timeoutMs, capped } = connectTimeoutFor(run.deadline);
       try {
         return redacting(
-          await connectSpec(spec, sessionCaps(spec, run, creds)),
+          await connectSpec(spec, sessionCaps(spec, run, creds), timeoutMs),
           creds,
         );
       } catch (err) {
-        throw redactedError(err, creds);
+        const message = redactCredentials(errorMessage(err), creds);
+        if (capped && run.deadline && Date.now() >= run.deadline.getTime()) {
+          throw new DeadlineReached(
+            `deadline reached while connecting: ${message}`,
+          );
+        }
+        throw new Error(message);
       }
     },
   };
@@ -735,8 +759,8 @@ export function isParallelLimitError(err: unknown): boolean {
 
 /**
  * Connects, waiting `waitMs` and trying again while BrowserStack reports its
- * parallel limit. Any other error, or a wait that would pass the deadline,
- * throws the last error.
+ * parallel limit. Any other error throws as it is. When the next wait would
+ * pass the deadline it throws DeadlineReached, carrying the last error.
  */
 export async function connectWithBackoff(
   connect: () => Promise<PageDriver>,
@@ -748,11 +772,13 @@ export async function connectWithBackoff(
     try {
       return await connect();
     } catch (err) {
-      if (
-        !isParallelLimitError(err) ||
-        Date.now() + waitMs > deadline.getTime()
-      ) {
-        throw err;
+      if (!isParallelLimitError(err)) throw err;
+      if (Date.now() + waitMs > deadline.getTime()) {
+        throw new DeadlineReached(
+          `deadline reached while waiting for a free BrowserStack session: ${errorMessage(
+            err,
+          )}`,
+        );
       }
       await sleep(waitMs);
     }

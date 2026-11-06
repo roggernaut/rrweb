@@ -9,12 +9,21 @@ import { buildPageBundle, readRrwebUmd } from './page-source.ts';
 import type { CheckOutcome, TargetResult } from './results.ts';
 import { writeResult } from './results.ts';
 import {
+  DeadlineReached,
   errorMessage,
+  isProtocolFailure,
   runAttempt,
   runScenario,
   runWithRetry,
 } from './run-check.ts';
 import type { TargetDefinition } from './targets.ts';
+
+/**
+ * Consecutive checks whose every failed attempt timed out or got a garbled
+ * poll before the target stops: past that the driver, not rrweb, is broken,
+ * and each further check would only burn its timeouts.
+ */
+const brokenChecksLimit = 2;
 
 const functionalTimeoutMs = 60_000;
 const performanceTimeoutMs = 180_000;
@@ -89,11 +98,31 @@ export async function runTarget(
   const metas = selectChecks(t, opts.only);
   const result = newResult(t, opts.rrwebCommit);
 
+  /** Marks every check not yet run as not-run and the result incomplete. */
+  function stopHere(reason: string): void {
+    for (const meta of metas) {
+      result.checks[meta.id] ??= {
+        kind: meta.kind,
+        status: 'not-run',
+        attempts: 0,
+      };
+    }
+    result.incomplete = true;
+    result.incompleteReason ??= reason;
+  }
+
+  // Past the deadline no session opens: it would only run nothing.
+  if (Date.now() >= opts.deadline.getTime()) {
+    stopHere('deadline');
+    return finish(result, opts.resultsDir);
+  }
+
   let driver: PageDriver;
   try {
     driver = await t.connect();
   } catch (err) {
-    result.launch = { ok: false, error: errorMessage(err) };
+    if (err instanceof DeadlineReached) stopHere('deadline');
+    else result.launch = { ok: false, error: errorMessage(err) };
     return finish(result, opts.resultsDir);
   }
 
@@ -106,11 +135,22 @@ export async function runTarget(
       server = await startFixtureServer({ bundle, rrweb });
     }
     const src = { bundle, rrweb, httpOrigin: server?.origin };
+    let brokenInARow = 0;
     for (const meta of metas) {
-      const outcome = await runCheck(meta, src);
+      const { outcome, broken } = await runCheck(meta, src);
       result.checks[meta.id] = outcome;
-      // Only the deadline leaves a check not-run.
-      if (outcome.status === 'not-run') result.incomplete = true;
+      // runCheck leaves a check not-run only at the deadline.
+      if (outcome.status === 'not-run') {
+        stopHere('deadline');
+        break;
+      }
+      // A skip never touched the browser, so it says nothing either way.
+      if (outcome.status === 'skipped') continue;
+      brokenInARow = broken ? brokenInARow + 1 : 0;
+      if (brokenInARow >= brokenChecksLimit) {
+        stopHere('protocol broken');
+        break;
+      }
     }
     result.sessionUrl = await markSession(driver, result);
   } finally {
@@ -122,14 +162,26 @@ export async function runTarget(
   async function runCheck(
     meta: CheckMeta,
     src: { bundle: string; rrweb: string; httpOrigin?: string },
-  ): Promise<CheckOutcome> {
+  ): Promise<{ outcome: CheckOutcome; broken: boolean }> {
     const timeoutMs = attemptTimeoutMs(meta.kind) * t.timeScale;
+    /** A failed check whose failures all came from the driver, not rrweb. */
+    const brokenBy = (outcome: CheckOutcome, attempts: AttemptResult[]) => {
+      const failed = attempts.filter((a) => !a.ok);
+      return (
+        outcome.status === 'fail' &&
+        failed.length > 0 &&
+        failed.every(isProtocolFailure)
+      );
+    };
     if (meta.kind === 'performance') {
-      return runScenario(driver, meta, src, {
+      const samples: AttemptResult[] = [];
+      const outcome = await runScenario(driver, meta, src, {
         samples: t.perfSamples,
         timeoutMs,
         deadline: opts.deadline,
+        onAttempt: (a) => samples.push(a),
       });
+      return { outcome, broken: brokenBy(outcome, samples) };
     }
     const { status, attempts } = await runWithRetry(
       () =>
@@ -153,7 +205,7 @@ export async function runTarget(
       await mkdir(dirname(file), { recursive: true });
       await writeFile(file, JSON.stringify(lastFailure.events));
     }
-    return outcome;
+    return { outcome, broken: brokenBy(outcome, attempts) };
   }
 }
 
