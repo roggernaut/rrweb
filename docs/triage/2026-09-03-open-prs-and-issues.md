@@ -17,10 +17,10 @@ written as plain numbers, not tracker URLs, so this file does not create
 GitHub cross-references. Look them up under the project's Pull requests
 or Issues tabs.
 
-- Open PRs: **154** (25 drafts). Oldest: 2020-08 (294). Newest: 2026-11-05 (2004).
-  **62 are from core maintainers** (Eoghan 32, Justin 29, Yun 1); the other 92 are community.
-- Open issues: **287**. Oldest: 2019-07 (88). Newest: 2026-10-07 (1955).
-- Upstream `main` HEAD at refresh: `59506da1` (BrowserStack note in the README, 2003).
+- Open PRs: **148** (24 drafts). Oldest: 2020-08 (294). Newest: 2026-11-06 (2006).
+  **59 are from core maintainers** (Eoghan 29, Justin 29, Yun 1); the other 89 are community.
+- Open issues: **286**. Oldest: 2019-07 (88). Newest: 2026-09-15 (1942).
+- Upstream `main` HEAD at refresh: `b74d40f3` (the 2000 dependency bump; snapshot taken the afternoon of 2026-11-06).
   rrweb 2.2.0 shipped on 2026-10-24 with the 1971 teardown work; the 2.2.1
   release PR (1981) is open.
 - This repository also contains privacy-at-capture work that is ahead of
@@ -41,6 +41,33 @@ bounce the rest with a short explanation**. The two already-approved PRs
 can merge as soon as someone presses the button.
 
 ---
+
+## Later on 2026-11-06
+
+The first run of the `Triage refresh` workflow took an afternoon snapshot a
+few hours after the re-triage below and opened roggernaut/rrweb PR 18 with
+the report; this section works that report in. A busy maintainer day
+upstream.
+
+**Merged:** 2000 (Dependabot security bump with the Vite 8 upgrade), 1993
+(fragment-only css urls), 1986 (CI paths-ignore), 1979 (WebKit job in the
+Playwright image), 1977 (iframe navigation regression tests), 1956 (blob:
+urls in css url(), closing issue 1955), 1992 (Blacksmith sponsor note).
+Five of these were in Merge now; 1992 and 1977 were in Adopt.
+
+**Closed without merge:** 1990 (Eoghan's Turborepo remote cache; the team
+is trying Blacksmith first).
+
+**New:** 2006 (Justin, Vitest 5 for Vite 8, Review: Eoghan reviews and
+merges) and 2005 (Dependabot's bump of the same packages plus Svelte 5,
+Reject in favour of 2006; the Svelte migration is its own project).
+
+**State changes:** 1987 approved by Justin (already Merge now). 1735 now
+assigned to Eoghan. 1770 has a pending changeset suggestion from Eoghan
+(still Merge now; apply and merge). Eoghan labelled 1642, 1164 and 1097
+privacy and answered on issues 1644, 1563 and 1581; 1581 is assigned to
+drakonen and its row now names them. 1733 no longer relates to the merged
+1993.
 
 ## Re-triage on 2026-11-06
 
