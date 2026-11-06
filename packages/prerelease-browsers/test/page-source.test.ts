@@ -23,10 +23,16 @@ test('scripts appear in protocol order', () => {
   expect(html).not.toContain('__prerelease.start(');
 });
 test('startDuringLoad adds the start call after rrweb', () => {
-  const html = composePage({ ...meta, startDuringLoad: true }, 'B', 'R');
-  expect(html.indexOf('__prerelease.start("x-check", {})')).toBeGreaterThan(
-    html.indexOf('R'),
+  const html = composePage(
+    { ...meta, startDuringLoad: true },
+    'BUNDLE_STUB',
+    'RRWEB_STUB',
   );
+  const rrwebAt = html.indexOf('RRWEB_STUB');
+  const startAt = html.indexOf('__prerelease.start("x-check", {})');
+  expect(rrwebAt).toBeGreaterThanOrEqual(0);
+  expect(startAt).toBeGreaterThanOrEqual(0);
+  expect(startAt).toBeGreaterThan(rrwebAt);
 });
 test('inlined sources cannot close their script tag', () => {
   expect(escapeInlineScript('a="</script>";b="</SCRIPT >"')).toBe(
