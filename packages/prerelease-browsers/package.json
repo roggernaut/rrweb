@@ -18,9 +18,11 @@
   "devDependencies": {
     "@rrweb/types": "^2.2.0",
     "@types/node": "^18.15.11",
+    "@types/selenium-webdriver": "^4.35.7",
     "esbuild": "0.24.2",
     "playwright": "1.61.1",
     "rrweb": "^2.2.0",
+    "selenium-webdriver": "^4",
     "typescript": "^5.4.5",
     "vitest": "^1.6.1"
   }
