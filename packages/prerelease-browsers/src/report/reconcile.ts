@@ -167,14 +167,18 @@ export async function reconcile(opts: ReconcileOptions): Promise<IssuePlan> {
   const listed = await gh.listIssues('prerelease');
   const { existing, status, runBroken } = classify(listed);
 
-  // Without BrowserStack's results the run is not complete, which keeps an
-  // open run-broken issue open. The status issue names BrowserStack itself.
-  const planned = opts.browserstackMissing
-    ? {
-        ...summary,
-        missingTargets: [...summary.missingTargets, 'browserstack'],
-      }
-    : summary;
+  // A run that is missing BrowserStack's results, or that a maintainer
+  // limited by hand, is not complete. Counting the gaps as missing for
+  // planning keeps an open run-broken issue open; passedOn is untouched, so
+  // per-check planning is the same. The status body names both itself.
+  const gaps = [
+    ...(opts.browserstackMissing ? ['browserstack'] : []),
+    ...(opts.leftOut ?? []),
+  ];
+  const planned =
+    gaps.length > 0
+      ? { ...summary, missingTargets: [...summary.missingTargets, ...gaps] }
+      : summary;
   const plan = planIssueActions(planned, existing, runBroken);
   if (!apply) return plan;
 

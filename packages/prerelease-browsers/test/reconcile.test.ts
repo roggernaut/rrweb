@@ -424,6 +424,38 @@ test('a partial run plans as before, keeps a left-out issue open, and says parti
   );
 });
 
+test('a clean partial run leaves the run-broken issue open', async () => {
+  const gh = fakeGitHub([
+    {
+      labels: ['prerelease', 'prerelease:run-broken'],
+      body: '<!-- prerelease:run-broken -->\nold',
+    },
+  ]);
+  const args = {
+    gh,
+    results: [passing('chrome-canary', 'css-nested-rules')],
+    expected: ['chrome-canary'],
+    run,
+  };
+  // Without the left-out list, the same run would close it.
+  expect((await reconcile({ ...args, apply: false })).actions).toEqual([
+    { type: 'close-run-broken', issue: 1 },
+  ]);
+  const plan = await reconcile({
+    ...args,
+    apply: true,
+    leftOut: ['safari-tp', 'browserstack'],
+  });
+  expect(plan.actions).toEqual([]);
+  expect(gh.issues[0].state).toBe('open');
+  expect(gh.comments).toEqual([]);
+  const body = statusIssues(gh)[0].body;
+  expect(body).toMatch(/### Missing\n\nNone\./);
+  expect(body).toMatch(
+    /### Not covered by this run\n\n- safari-tp\n- BrowserStack/,
+  );
+});
+
 test('an existing status issue is rewritten in place, not pinned again', async () => {
   const gh = fakeGitHub([
     {
