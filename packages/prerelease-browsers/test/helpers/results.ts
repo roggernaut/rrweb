@@ -4,7 +4,7 @@ import type {
   FailureTarget,
   RunSummary,
 } from '../../src/report/failures.ts';
-import type { ExistingIssue } from '../../src/report/issues-plan.ts';
+import type { ExistingIssue, IssuePlan } from '../../src/report/issues-plan.ts';
 import type { CheckKind, Engine } from '../../src/types.ts';
 
 /** Optional overrides; each is derived from the target id when absent. */
@@ -225,4 +225,43 @@ export function issue(
     engines: issueEngines,
     failingTargets,
   };
+}
+
+/**
+ * The issues as they stand after `plan` is applied, the way the reconciler
+ * applies it: markers rewritten from the recorded targets and engines, auto
+ * closes and mark-recovered adding `prerelease:recovered`, reopens dropping it.
+ * Created issues get the next free number. Run-broken actions are ignored.
+ */
+export function applyPlan(
+  issues: ExistingIssue[],
+  plan: IssuePlan,
+): ExistingIssue[] {
+  const next = issues.map((i) => ({ ...i, labels: [...i.labels] }));
+  const find = (n: number) => next.find((i) => i.number === n)!;
+  const recovered = 'prerelease:recovered';
+  for (const a of plan.actions) {
+    if (a.type === 'create') {
+      next.push({
+        number: Math.max(0, ...next.map((i) => i.number)) + 1,
+        state: 'open',
+        labels: [],
+        body: `issue for ${a.failure.key}`,
+        key: a.failure.key,
+        engines: [...a.failure.engines],
+        failingTargets: a.failure.targets.map((t) => t.targetId),
+      });
+    } else if (a.type === 'update' || a.type === 'reopen') {
+      const i = find(a.issue);
+      i.state = 'open';
+      i.engines = [...a.recordEngines];
+      i.failingTargets = [...a.recordTargets];
+      i.labels = i.labels.filter((l) => l !== recovered);
+    } else if (a.type === 'close' || a.type === 'mark-recovered') {
+      const i = find(a.issue);
+      i.state = 'closed';
+      if (!i.labels.includes(recovered)) i.labels.push(recovered);
+    }
+  }
+  return next;
 }

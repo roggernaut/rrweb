@@ -3,7 +3,7 @@ import {
   MASS_FAILURE_SHARE,
   planIssueActions,
 } from '../src/report/issues-plan.ts';
-import { fail, issue, summary } from './helpers/results.ts';
+import { applyPlan, fail, issue, summary } from './helpers/results.ts';
 
 test('new failure creates; second run on the same results only updates', () => {
   const s = summary([fail('css-nested-rules:functional', ['chrome-canary'])]);
@@ -20,7 +20,13 @@ test('new failure creates; second run on the same results only updates', () => {
     ),
   ];
   expect(planIssueActions(s, afterFirst).actions).toEqual([
-    { type: 'update', issue: 1, failure: s.failures[0] },
+    {
+      type: 'update',
+      issue: 1,
+      failure: s.failures[0],
+      recordTargets: ['chrome-canary'],
+      recordEngines: ['chromium'],
+    },
   ]);
 });
 test('ten failing checks out of twenty collapse into one run-broken action', () => {
@@ -225,16 +231,6 @@ describe('mass failure', () => {
       closedButFailing: [],
     });
   });
-  test('a healthy run leaves the run-broken issue alone', () => {
-    const broken = issue(50, 'open', 'run-broken', [], []);
-    expect(
-      planIssueActions(
-        summary([fail('k:functional', ['chrome-canary'])]),
-        [],
-        broken,
-      ).actions,
-    ).toEqual([{ type: 'create', failure: expect.anything() }]);
-  });
 });
 
 describe('matching existing issues', () => {
@@ -259,7 +255,14 @@ describe('matching existing issues', () => {
         issue(4, 'closed', 'k:functional', ['webkit'], ['safari-tp']),
       ]).actions,
     ).toEqual([
-      { type: 'reopen', issue: 4, failure: s.failures[0], reason: 'spread' },
+      {
+        type: 'reopen',
+        issue: 4,
+        failure: s.failures[0],
+        reason: 'spread',
+        recordTargets: ['chrome-canary', 'safari-tp'],
+        recordEngines: ['chromium', 'webkit'],
+      },
     ]);
   });
   test('the recovered label wins over the engine check', () => {
@@ -276,7 +279,14 @@ describe('matching existing issues', () => {
         ),
       ]).actions,
     ).toEqual([
-      { type: 'reopen', issue: 4, failure: s.failures[0], reason: 'regressed' },
+      {
+        type: 'reopen',
+        issue: 4,
+        failure: s.failures[0],
+        reason: 'regressed',
+        recordTargets: ['safari-tp'],
+        recordEngines: ['webkit'],
+      },
     ]);
   });
   test('several issues for one key prefer the open one', () => {
@@ -294,7 +304,13 @@ describe('matching existing issues', () => {
       issue(9, 'closed', 'k:functional', ['webkit'], ['safari-tp']),
     ];
     expect(planIssueActions(s, existing).actions).toEqual([
-      { type: 'update', issue: 2, failure: s.failures[0] },
+      {
+        type: 'update',
+        issue: 2,
+        failure: s.failures[0],
+        recordTargets: ['safari-tp'],
+        recordEngines: ['webkit'],
+      },
     ]);
   });
   test('several closed issues for one key prefer the highest number', () => {
@@ -311,11 +327,18 @@ describe('matching existing issues', () => {
       issue(3, 'closed', 'k:functional', ['webkit'], ['safari-tp']),
     ];
     expect(planIssueActions(s, existing).actions).toEqual([
-      { type: 'reopen', issue: 9, failure: s.failures[0], reason: 'regressed' },
+      {
+        type: 'reopen',
+        issue: 9,
+        failure: s.failures[0],
+        reason: 'regressed',
+        recordTargets: ['safari-tp'],
+        recordEngines: ['webkit'],
+      },
     ]);
   });
-  test('closed issues for keys that did not fail are left alone', () => {
-    const s = summary([], { passedOn: { 'k:functional': ['safari-tp'] } });
+  test('closed issues for keys that did not run are left alone', () => {
+    const s = summary([], { passedOn: { 'other:functional': ['safari-tp'] } });
     expect(
       planIssueActions(s, [
         issue(4, 'closed', 'k:functional', ['webkit'], ['safari-tp']),
@@ -428,5 +451,196 @@ describe('determinism', () => {
       'update',
     ]);
     expect(plan.closedButFailing).toEqual([{ issue: 3, key: 'e:functional' }]);
+  });
+});
+
+describe('recorded targets and engines', () => {
+  const A = 'chrome-canary';
+  const B = 'safari-tp';
+
+  test('a target that never confirmed a pass stays recorded until it does', () => {
+    // Run 1: fails on A and B.
+    let issues = applyPlan(
+      [],
+      planIssueActions(summary([fail('k:functional', [A, B])]), []),
+    );
+    expect(issues).toMatchObject([
+      {
+        number: 1,
+        state: 'open',
+        engines: ['chromium', 'webkit'],
+        failingTargets: [A, B],
+      },
+    ]);
+
+    // Run 2: fails on A; B is incomplete, so it neither failed nor passed.
+    const run2 = summary([fail('k:functional', [A])], {
+      incompleteTargets: [B],
+    });
+    const plan2 = planIssueActions(run2, issues);
+    expect(plan2.actions).toEqual([
+      {
+        type: 'update',
+        issue: 1,
+        failure: run2.failures[0],
+        recordTargets: [A, B],
+        recordEngines: ['chromium', 'webkit'],
+      },
+    ]);
+    issues = applyPlan(issues, plan2);
+
+    // Run 3: A passes; B is missing. B never passed, so no close.
+    const run3 = summary([], {
+      passedOn: { 'k:functional': [A] },
+      missingTargets: [B],
+    });
+    expect(planIssueActions(run3, issues).actions).toEqual([]);
+  });
+  test('an earlier target that passed this run drops out, with its engine', () => {
+    const s = summary([fail('k:functional', [A])], {
+      passedOn: { 'k:functional': [B] },
+    });
+    const open = [
+      issue(1, 'open', 'k:functional', ['chromium', 'webkit'], [A, B]),
+    ];
+    expect(planIssueActions(s, open).actions).toMatchObject([
+      { type: 'update', recordTargets: [A], recordEngines: ['chromium'] },
+    ]);
+  });
+  test('a reopen keeps earlier unconfirmed targets too', () => {
+    const s = summary([fail('k:functional', [A])], { missingTargets: [B] });
+    const closed = [
+      issue(
+        1,
+        'closed',
+        'k:functional',
+        ['webkit'],
+        [B],
+        ['prerelease:recovered'],
+      ),
+    ];
+    expect(planIssueActions(s, closed).actions).toMatchObject([
+      {
+        type: 'reopen',
+        reason: 'regressed',
+        recordTargets: [A, B],
+        recordEngines: ['chromium', 'webkit'],
+      },
+    ]);
+  });
+});
+
+describe('issues closed by hand or by a fixing PR', () => {
+  test('a closed issue whose failing targets all passed is marked recovered', () => {
+    const s = summary([], {
+      passedOn: { 'k:functional': ['chrome-canary', 'safari-tp'] },
+    });
+    const closed = [
+      issue(4, 'closed', 'k:functional', ['webkit'], ['safari-tp']),
+    ];
+    expect(planIssueActions(s, closed)).toEqual({
+      actions: [{ type: 'mark-recovered', issue: 4, key: 'k:functional' }],
+      closedButFailing: [],
+    });
+  });
+  test('a later failure on the same engine then reopens as regressed', () => {
+    let issues = [
+      issue(4, 'closed', 'k:functional', ['webkit'], ['safari-tp']),
+    ];
+    issues = applyPlan(
+      issues,
+      planIssueActions(
+        summary([], { passedOn: { 'k:functional': ['safari-tp'] } }),
+        issues,
+      ),
+    );
+    expect(
+      planIssueActions(summary([fail('k:functional', ['safari-tp'])]), issues)
+        .actions,
+    ).toMatchObject([{ type: 'reopen', issue: 4, reason: 'regressed' }]);
+  });
+  test('is not marked recovered while a failing target is unconfirmed', () => {
+    const s = summary([], {
+      passedOn: { 'k:functional': ['chrome-canary'] },
+      incompleteTargets: ['safari-tp'],
+    });
+    const closed = [
+      issue(
+        4,
+        'closed',
+        'k:functional',
+        ['chromium', 'webkit'],
+        ['chrome-canary', 'safari-tp'],
+      ),
+    ];
+    expect(planIssueActions(s, closed).actions).toEqual([]);
+  });
+  test('is not marked recovered with no recorded failing targets', () => {
+    const s = summary([], { passedOn: { 'k:functional': ['safari-tp'] } });
+    expect(
+      planIssueActions(s, [issue(4, 'closed', 'k:functional', [], [])]).actions,
+    ).toEqual([]);
+  });
+  test('an issue already marked recovered is left alone', () => {
+    const s = summary([], { passedOn: { 'k:functional': ['safari-tp'] } });
+    const closed = [
+      issue(
+        4,
+        'closed',
+        'k:functional',
+        ['webkit'],
+        ['safari-tp'],
+        ['prerelease:recovered'],
+      ),
+    ];
+    expect(planIssueActions(s, closed).actions).toEqual([]);
+  });
+});
+
+describe('closing a healed run-broken issue', () => {
+  const healthy = (o: Parameters<typeof summary>[1] = {}) =>
+    summary([fail('k:functional', ['chrome-canary'])], {
+      passedOn: { 'j:functional': ['chrome-canary'] },
+      ...o,
+    });
+  const broken = (state: 'open' | 'closed') =>
+    issue(50, state, 'run-broken', [], []);
+
+  test('a complete, healthy run closes an open run-broken issue', () => {
+    expect(planIssueActions(healthy(), [], broken('open')).actions).toEqual([
+      { type: 'create', failure: expect.anything() },
+      { type: 'close-run-broken', issue: 50 },
+    ]);
+  });
+  test('is sorted alongside the other actions by key', () => {
+    const s = summary([fail('z:functional', ['chrome-canary'])]);
+    expect(
+      planIssueActions(s, [], broken('open')).actions.map((a) => a.type),
+    ).toEqual(['close-run-broken', 'create']);
+  });
+  test('not while a target is incomplete', () => {
+    expect(
+      planIssueActions(
+        healthy({ incompleteTargets: ['safari-tp'] }),
+        [],
+        broken('open'),
+      ).actions.map((a) => a.type),
+    ).toEqual(['create']);
+  });
+  test('not while a target is missing', () => {
+    expect(
+      planIssueActions(
+        healthy({ missingTargets: ['safari-tp'] }),
+        [],
+        broken('open'),
+      ).actions.map((a) => a.type),
+    ).toEqual(['create']);
+  });
+  test('not when it is already closed', () => {
+    expect(
+      planIssueActions(healthy(), [], broken('closed')).actions.map(
+        (a) => a.type,
+      ),
+    ).toEqual(['create']);
   });
 });
