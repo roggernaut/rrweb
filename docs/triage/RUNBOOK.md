@@ -169,8 +169,9 @@ check the header date.
 Shared Done marks persist from one meeting to the next. A row marked Done
 last time that is still open stays hidden. At the start of the meeting,
 turn on **Show done** and unmark anything that needs another look. Start the
-meeting on the **Changed** filter: it lists the rows that are new or moved
-bucket since the previous snapshot.
+meeting with the **Changed** pill on and no bucket selected: that lists the
+rows that are new or moved since the previous snapshot. Bucket pills combine
+as OR, the narrowing row as AND.
 
 ### 8. After the meeting: post the messages
 

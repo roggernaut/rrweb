@@ -111,7 +111,10 @@ clean-up PR with changes requested upstream carries a hand-written message.
 since the previous snapshot, from `previous-buckets.json`), the refresh
 report now quotes inline review comments and shows new PRs' assignees and
 labels, a `Triage refresh` workflow opens the snapshot PR, and
-`post_messages.py` posts the chosen messages after the meeting.
+`post_messages.py` posts the chosen messages after the meeting. The filter
+pills sit on two rows and multi-select: buckets combine as OR, the narrowing
+row (Changed, privacy, waiting, vendors, maintainer close) as AND; the choice
+persists in the browser.
 
 ---
 

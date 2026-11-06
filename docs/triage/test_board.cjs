@@ -50,18 +50,30 @@ function openBoard({ storage = memoryStorage(), claude } = {}) {
 }
 
 (async () => {
-  // Filters, search and sorting.
+  // Filters, search and sorting. Buckets OR together; narrowing pills AND.
   const b = openBoard();
   const total = b.run("ITEMS.length");
-  assert.equal(b.run("state.pre"), "adopt");
-  assert.equal(b.rows(), b.run('ITEMS.filter((i) => i.triage === "adopt").length'));
+  const count = (fn) => b.run(`ITEMS.filter(${fn}).length`);
+  assert.equal(b.run("JSON.stringify([...state.buckets])"), '["adopt"]');
+  assert.equal(b.rows(), count('(i) => i.triage === "adopt"'));
   assert.ok(b.rows() > 0, "the default filter must not open on an empty list");
-  b.run('state.pre = "changed"; render()');
-  assert.equal(b.rows(), b.run("ITEMS.filter((i) => i.change).length"));
+  b.run('state.buckets.add("merge-now"); render()');
+  assert.equal(b.rows(), count('(i) => i.triage === "adopt" || i.triage === "merge-now"'));
+  b.run('state.buckets = new Set(["discuss"]); state.narrow = new Set(["changed"]); render()');
+  assert.equal(b.rows(), count('(i) => i.triage === "discuss" && i.change'));
+  b.run('state.narrow.add("privacy"); render()');
+  assert.equal(b.rows(), count('(i) => i.triage === "discuss" && i.change && i.tags.includes("strengthens-privacy")'));
+  b.run('state.buckets.clear(); state.narrow = new Set(["changed"]); render()');
+  assert.equal(b.rows(), count("(i) => i.change"));
   assert.ok(b.rows() > 0, "the refresh must leave some rows new or moved");
   assert.equal((b.elements.board.innerHTML.match(/class="tag change"/g) || []).length, b.rows());
-  b.run('state.pre = "all"; render()');
+  // Every pill renders with its state, and Clear shows only while something is selected.
+  assert.equal((b.elements.buckets.innerHTML.match(/class="pill bucket"/g) || []).length, b.run("BUCKETS.length"));
+  assert.match(b.elements.narrows.innerHTML, /data-id="changed" aria-pressed="true"/);
+  assert.match(b.elements.narrows.innerHTML, /data-id="clear"/);
+  b.run('state.narrow.clear(); render()');
   assert.equal(b.rows(), total);
+  assert.doesNotMatch(b.elements.narrows.innerHTML, /data-id="clear"/);
   for (const sort of ["number", "triage", "tags", "recency"]) {
     b.run(`state.sort = "${sort}"; render()`);
     assert.equal(b.rows(), total);
@@ -82,6 +94,13 @@ function openBoard({ storage = memoryStorage(), claude } = {}) {
   b.run('state.assignee = "all"; render()');
   assert.equal((b.elements.board.innerHTML.match(/class="copy-msg"/g) || []).length, total);
 
+  // Filter choices persist in this browser.
+  b.run('state.buckets = new Set(["review", "reject"]); state.narrow = new Set(["waiting"]); saveFilters()');
+  const again = openBoard({ storage: b.storage });
+  assert.equal(again.run("JSON.stringify([...state.buckets].sort())"), '["reject","review"]');
+  assert.equal(again.run("JSON.stringify([...state.narrow])"), '["waiting"]');
+  b.run('state.buckets.clear(); state.narrow.clear(); saveFilters(); render()');
+
   // Two open PRs from the current snapshot, so the test survives refreshes.
   const [one, two] = b.run('ITEMS.filter((i) => i.kind === "pr").slice(0, 2).map((i) => i.id)');
 
@@ -89,7 +108,7 @@ function openBoard({ storage = memoryStorage(), claude } = {}) {
   b.run(`setDone(ITEMS.find((i) => i.id === ${one}), true); render()`);
   assert.equal(b.rows(), total - 1);
   const reopened = openBoard({ storage: b.storage });
-  reopened.run('state.pre = "done"; render()');
+  reopened.run('state.view = "done"; render()');
   assert.equal(reopened.rows(), 1);
   reopened.run(`setDone(ITEMS.find((i) => i.id === ${one}), false); render()`);
   assert.equal(reopened.rows(), 0);
@@ -98,7 +117,7 @@ function openBoard({ storage = memoryStorage(), claude } = {}) {
   const legacy = openBoard({
     storage: memoryStorage({ "rrweb-triage-done:2026-09-03": JSON.stringify({ [`pr:${two}`]: true }) }),
   });
-  legacy.run('state.pre = "done"; render()');
+  legacy.run('state.view = "done"; render()');
   assert.equal(legacy.rows(), 1);
 
   // Shared Done marks: one editor's mark reaches everyone; view-only stays read-only.
