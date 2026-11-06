@@ -3,11 +3,13 @@
 //      PAGE_HOST (host the browser uses to reach this machine, default 127.0.0.1).
 import http from 'node:http';
 import { readFileSync, writeFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { Builder } from 'selenium-webdriver';
 
-const require = createRequire(import.meta.url);
-const bundle = readFileSync(require.resolve('rrweb/dist/rrweb.umd.cjs'), 'utf8');
+// rrweb's package exports don't expose the UMD file, so read it from disk.
+const bundle = readFileSync(
+  new URL('./node_modules/rrweb/dist/rrweb.umd.cjs', import.meta.url),
+  'utf8',
+);
 const SECRET_TEXT = 'PRIVATE_CANARY_84271';
 const SECRET_INPUT = 'INPUT_CANARY_55120';
 const SECRET_MUTATED = 'MUTATED_CANARY_96321';
