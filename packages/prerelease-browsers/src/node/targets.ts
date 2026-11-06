@@ -97,7 +97,7 @@ async function connectDriver(opts: {
     // Desktop drivers share the machine; on Android, the workflow maps the
     // fixture ports into the emulator with adb reverse.
     canReachLocalhost: true,
-    onClose: proc.stop,
+    onClose: () => proc.stop(),
   });
 }
 

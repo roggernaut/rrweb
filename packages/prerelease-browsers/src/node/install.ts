@@ -236,7 +236,11 @@ function run(cmd: string, args: string[]): Promise<void> {
     child.once('error', reject);
     child.once('close', (code, signal) => {
       if (code === 0) resolvePromise();
-      else reject(new Error(`${cmd} exited with ${signal ?? `code ${code}`}`));
+      else {
+        reject(
+          new Error(`${cmd} exited with ${signal ?? `code ${String(code)}`}`),
+        );
+      }
     });
   });
 }

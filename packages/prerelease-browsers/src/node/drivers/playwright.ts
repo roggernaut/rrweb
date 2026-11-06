@@ -117,7 +117,7 @@ export function playwrightDriver(
       await (await pageForLoad()).goto(url, { waitUntil: 'load' });
     },
     evaluate<T>(expression: string) {
-      return current.evaluate(expression) as Promise<T>;
+      return current.evaluate<T>(expression);
     },
     async describe() {
       const browser = current.context().browser();

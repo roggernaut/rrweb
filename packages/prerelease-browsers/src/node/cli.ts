@@ -48,7 +48,7 @@ function parseDeadline(value: string | undefined): Date {
     ? new Date(value)
     : new Date(Date.now() + deadlineMinutes * 60_000);
   if (Number.isNaN(deadline.getTime())) {
-    throw new Error(`--deadline is not a date: ${value}`);
+    throw new Error(`--deadline is not a date: ${String(value)}`);
   }
   return deadline;
 }
@@ -206,7 +206,7 @@ async function runBrowserStackCommand(argv: string[]): Promise<void> {
     const target = toTarget(spec, run);
     const waiting = {
       ...target,
-      connect: () => connectWithBackoff(target.connect, deadline),
+      connect: () => connectWithBackoff(() => target.connect(), deadline),
     };
     try {
       const result = await runTargetOrRecordCrash(waiting, {

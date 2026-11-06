@@ -426,14 +426,23 @@ function redacting(driver: PageDriver, creds: Credentials): PageDriver {
     };
   return {
     canReachLocalhost: driver.canReachLocalhost,
-    loadHtml: guard(driver.loadHtml),
-    open: guard(driver.open),
+    loadHtml: guard((html: string) => driver.loadHtml(html)),
+    open: guard((url: string) => driver.open(url)),
     evaluate: <T>(expression: string) =>
       guard(() => driver.evaluate<T>(expression))(),
-    describe: guard(driver.describe),
-    ...(driver.markSession && { markSession: guard(driver.markSession) }),
-    ...(driver.sessionUrl && { sessionUrl: guard(driver.sessionUrl) }),
-    close: guard(driver.close),
+    describe: guard(() => driver.describe()),
+    ...(driver.markSession && {
+      markSession: guard(
+        (passed: boolean, reason: string) =>
+          driver.markSession?.(passed, reason) ?? Promise.resolve(),
+      ),
+    }),
+    ...(driver.sessionUrl && {
+      sessionUrl: guard(
+        () => driver.sessionUrl?.() ?? Promise.resolve(undefined),
+      ),
+    }),
+    close: guard(() => driver.close()),
   };
 }
 
@@ -643,9 +652,8 @@ async function connectSpec(
           return {
             ...playwrightDriver(page, {
               canReachLocalhost: false,
-              describe: async () => ({
-                browserName: String(spec.caps.browser),
-              }),
+              describe: () =>
+                Promise.resolve({ browserName: String(spec.caps.browser) }),
               close: () => browser.close(),
             }),
             ...contextExecutor(context),

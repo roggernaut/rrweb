@@ -86,7 +86,7 @@ export async function connectSelenium(opts: {
       await waitForLoad();
     },
     evaluate<T>(expression: string) {
-      return driver.executeScript(`return (${expression});`) as Promise<T>;
+      return driver.executeScript<T>(`return (${expression});`);
     },
     async describe() {
       const caps = await driver.getCapabilities();

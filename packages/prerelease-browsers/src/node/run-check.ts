@@ -84,7 +84,7 @@ export async function runAttempt(
 
   try {
     if (meta.needsHttp) {
-      await call(driver.open(`${src.httpOrigin}/check/${meta.id}`));
+      await call(driver.open(`${String(src.httpOrigin)}/check/${meta.id}`));
     } else {
       await call(driver.loadHtml(composePage(meta, src.bundle, src.rrweb)));
     }
@@ -111,7 +111,9 @@ export async function runAttempt(
         return { ok: false, message: status.error ?? 'check failed' };
       }
       if (status.state === 'done') {
-        return JSON.parse(await readResult(status.length ?? 0));
+        return JSON.parse(
+          await readResult(status.length ?? 0),
+        ) as AttemptResult;
       }
       const left = deadline - Date.now();
       if (left <= 0) throw new AttemptTimeout();

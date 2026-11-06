@@ -276,10 +276,12 @@ const autofill: CheckDefinition = {
       '<form><input type="text" id="name" autocomplete="name"><input type="email" id="email" autocomplete="email"></form><p id="pub">public before</p>';
     // Autofill writes the value natively, past rrweb's value setter hook, so
     // take the setter before record() installs that hook.
-    const nativeSet = Object.getOwnPropertyDescriptor(
+    const valueProperty = Object.getOwnPropertyDescriptor(
       HTMLInputElement.prototype,
       'value',
-    )!.set!;
+    )!;
+    const nativeSet = (input: HTMLInputElement, value: string) =>
+      valueProperty.set!.call(input, value);
     const recording = ctx.record({ maskAllInputs: true });
     await ctx.nextFrame();
     const name = ctx.canary('name');
@@ -289,7 +291,7 @@ const autofill: CheckDefinition = {
       ['email', email],
     ]) {
       const input = byId<HTMLInputElement>(id);
-      nativeSet.call(input, value);
+      nativeSet(input, value);
       input.dispatchEvent(new Event('change', { bubbles: true }));
     }
     const control = ctx.control('pub');

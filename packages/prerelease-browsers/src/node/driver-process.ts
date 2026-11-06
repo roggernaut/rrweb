@@ -48,7 +48,7 @@ export async function startDriverProcess(
     child.once('close', (code, signal) => {
       failure ??= new Error(
         `${cmd} exited with ${
-          signal ? `signal ${signal}` : `code ${code}`
+          signal ? `signal ${signal}` : `code ${String(code)}`
         } before it was ready: ${output.trim()}`,
       );
       resolve();

@@ -22,21 +22,21 @@ const protocolTestChecks: CheckDefinition[] = [
     id: 'test-surrogate-boundary',
     kind: 'functional',
     tier: 'focused',
-    async run() {
+    run() {
       const prefix = '{"ok":true,"message":"';
       // The emoji's high surrogate is the last unit of the first read chunk.
-      return {
+      return Promise.resolve({
         ok: true,
         message: 'a'.repeat(199_999 - prefix.length) + '😀' + 'z',
-      };
+      });
     },
   },
   {
     id: 'test-throws',
     kind: 'functional',
     tier: 'focused',
-    async run() {
-      throw new Error('boom');
+    run() {
+      return Promise.reject(new Error('boom'));
     },
   },
   {
@@ -46,17 +46,17 @@ const protocolTestChecks: CheckDefinition[] = [
     beforeRrweb() {
       throw new Error('early boom');
     },
-    async run() {
-      return { ok: true };
+    run() {
+      return Promise.resolve({ ok: true });
     },
   },
   {
     id: 'test-start-deferred',
     kind: 'functional',
     tier: 'focused',
-    async run() {
+    run() {
       window.__prerelease_test_ran = true;
-      return { ok: true };
+      return Promise.resolve({ ok: true });
     },
   },
   {
