@@ -42,6 +42,67 @@ can merge as soon as someone presses the button.
 
 ---
 
+## Re-triage on 2026-11-06
+
+Every open PR was re-read from scratch on GitHub (description, diff, review
+thread, linked issue, and whether merged work already covers it) by six
+analysts working blind, without the board's earlier calls. Their proposals
+were then reconciled against the board cluster by cluster. 68 of 154 PR rows
+changed bucket; the reasons and next steps of all 154 were rewritten from
+the fresh read. Downstream vendor evidence and the PostHog tags were kept.
+The **Changed** filter shows the moved rows.
+
+**Why so many moved.** Three things the earlier passes missed: maintainer
+activity that the thread recorded but the row did not (an approval, a
+"fixed" reply that puts the ball back with the reviewer, a request the
+author never answered); older PRs now covered by what merged in 2.2.0
+(1971, 1652, 1673, 1762, 1704, 1901); and maintainer drafts that no longer
+apply to the current build (rollup configs, the trim branch).
+
+**Up to Merge now (4 new):** 1987 and 1986 (Justin approved 2026-11-06),
+1956 (approved after the changeset fix), 1841 and 1744 (approved in 2025 and
+2026-05 and simply never merged).
+
+**To Adopt (10):** small fixes that only need a reviewer: 2004, 2001, 1796,
+1463 (needs porting to packages/utils), 1810, 1792, 1789, 1686, 1392, 1290.
+
+**To Review (12):** rows where the author answered and a maintainer owes the
+next look (1982, 1972, 1966, 1875, 1748), or where one maintainer must
+decide rather than the team (1745 hidden inputs scope, 1322 and 1735 empty
+CSS declarations, 1697 freeze exemptions, 1861 sequence ids, 1978 closed
+shadow DOM now that Eoghan closed 1739 in its favor). 2000 drops from Merge
+now because the Vite 8 upgrade turned Tests red.
+
+**To Discuss (9):** competing designs or format decisions: 1991 versus 1679
+and 1800 (cross-origin trust model), 1951 versus 1984 (MP4 export), 1949
+(snapshot format), 1917 (moot if 1480 lands), 1912 placeholder masking
+(policy work), 1730 (trim branch), 960 (checkout counting), 294 versus 1023
+(record window.top), 1990 (CI caching on hold for the Blacksmith trial).
+
+**To Clean-up (15):** the author owes something specific: 1856 logo, 1814
+three unapplied suggestions, 1737 and 1711 unanswered maintainer questions,
+1907 and 1877 and 1483 maintainer rebases, 1839 deferred behind utils.ts
+PRs, 1465 the test Justin described, 1638, 1635, 1469, 1357, 1356, 1336.
+
+**To Reject (17):** covered by merged work (1963 by 1971, 1768 by 1762,
+1879 by 1901, 1709 by 1704, 1688 by 1673, 1653 and 1302 and 1300 by 1652,
+1448 by the Vite worker build), superseded (1726 by 1991), declined by a
+maintainer (1616), stale maintainer drafts (1046, 1015, 1534, 1466), an
+author who asked for closure (863), and a repl rewrite that drops child
+frames (1722).
+
+**Issues touched:** 1734 and 1692 (CSS crashes) move from "close against
+1580/1600" to Eoghan deciding between 1735 and 1322; 1680 joins the
+cross-origin discussion; 1609, 1315, 1720 and 1567 follow their PRs.
+
+**Calls the analysts flagged as least certain:** 1745 (review vs discuss),
+1688 and 1462/1798 (reject relies on Eoghan saying 1673 covers them), 1726
+(reject relies on 1991 covering the nested case), 1300 (not benchmarked
+against 2.2.0), 1586 (Chromium bug may be fixed), 1892 (kept Discuss as a
+plugin-contract decision), 1413 and 1235 (kept Reject in favor of 1428).
+
+---
+
 ## Since 2026-10-23
 
 Two weeks of maintainer activity, mostly Eoghan reviewing. Six approved PRs
