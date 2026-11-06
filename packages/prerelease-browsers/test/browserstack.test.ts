@@ -244,6 +244,34 @@ describe('resolveBrowserStackTargets', () => {
     expect(sam.caps.browserName).toBe('samsung');
     expect(JSON.stringify(sam.caps)).toMatch(/Galaxy S\d/);
   });
+  test('Samsung Internet takes the newest Galaxy S whatever the row order', () => {
+    const galaxy = (device: string, os_version: string) =>
+      entry({ os: 'android', browser: 'samsung', device, os_version });
+    const rows = [
+      galaxy('Samsung Galaxy S23 Ultra', '13.0'),
+      galaxy('Samsung Galaxy S26', '16.0'),
+      galaxy('Samsung Galaxy S24', '14.0'),
+      galaxy('Samsung Galaxy S24', '16.0'),
+      galaxy('Samsung Galaxy S26 Ultra', '16.0'),
+      galaxy('Samsung Galaxy Tab S12 Plus', '17.0'),
+      entry({
+        os: 'android',
+        browser: 'android',
+        device: 'Samsung Galaxy S27',
+        os_version: '17.0',
+      }),
+    ];
+    for (const order of [rows, [...rows].reverse()]) {
+      const sam = resolveBrowserStackTargets(order).find(
+        (t) => t.id === 'bs-samsung-internet',
+      )!;
+      expect(sam.caps['bstack:options']).toEqual({
+        deviceName: 'Samsung Galaxy S26 Ultra',
+        osVersion: '16.0',
+        realMobile: 'true',
+      });
+    }
+  });
   test('rows whose device is missing are left out', () => {
     const ids = resolveBrowserStackTargets([]).map((t) => t.id);
     expect(ids).toEqual([

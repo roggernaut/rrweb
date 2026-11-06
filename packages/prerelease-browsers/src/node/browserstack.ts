@@ -141,19 +141,37 @@ function newestVersion(
   return versionsByDevice(entries, os).get(device)?.at(-1);
 }
 
-/** The first device in catalogue order that matches, at its newest version. */
-function firstDevice(
+/** A named device, at its newest version. */
+function namedDevice(
+  entries: CatalogueEntry[],
+  os: string,
+  name: string,
+): { device: string; osVersion: string } | undefined {
+  const osVersion = newestVersion(entries, os, name);
+  return osVersion ? { device: name, osVersion } : undefined;
+}
+
+/**
+ * Among the matching devices, the one whose newest version is highest, with
+ * ties going to the name that sorts last (so "S26 Ultra" beats "S26"). It does
+ * not depend on the order of the rows.
+ */
+function newestDevice(
   entries: CatalogueEntry[],
   os: string,
   match: (device: string) => boolean,
-  browser?: string,
 ): { device: string; osVersion: string } | undefined {
-  const scoped = entries.filter((e) => !browser || e.browser === browser);
-  const device = scoped.find(
-    (e) => e.os === os && e.device && match(e.device),
-  )?.device;
-  const osVersion = device && newestVersion(scoped, os, device);
-  return device && osVersion ? { device, osVersion } : undefined;
+  let best: { device: string; osVersion: string } | undefined;
+  for (const [device, versions] of versionsByDevice(entries, os)) {
+    if (!match(device)) continue;
+    const osVersion = versions[versions.length - 1];
+    const cmp = best
+      ? compareVersions(osVersion, best.osVersion) ||
+        device.localeCompare(best.device, undefined, { numeric: true })
+      : 1;
+    if (cmp > 0) best = { device, osVersion };
+  }
+  return best;
 }
 
 const lowEndAndroid = [
@@ -260,7 +278,7 @@ export function resolveBrowserStackTargets(
   );
 
   const lowEnd = lowEndAndroid
-    .map((name) => firstDevice(entries, 'android', (d) => d === name))
+    .map((name) => namedDevice(entries, 'android', name))
     .find((found) => found !== undefined);
   if (lowEnd) {
     specs.push({
@@ -279,11 +297,10 @@ export function resolveBrowserStackTargets(
     });
   }
 
-  const galaxy = firstDevice(
-    entries,
+  const galaxy = newestDevice(
+    entries.filter((e) => e.browser === 'samsung'),
     'android',
     (d) => /^Samsung Galaxy S\d/.test(d),
-    'samsung',
   );
   if (galaxy) {
     specs.push({
