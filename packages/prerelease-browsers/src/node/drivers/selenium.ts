@@ -22,13 +22,17 @@ const writePage = `
 /**
  * Opens a WebDriver session on `serverUrl`, for geckodriver, safaridriver or
  * a remote grid. `onClose` runs after the session quits, or when no session
- * starts, for example to stop the driver process.
+ * starts, for example to stop the driver process. `session` adds a grid's
+ * own session calls, which need the raw WebDriver.
  */
 export async function connectSelenium(opts: {
   serverUrl: string;
   capabilities: Record<string, unknown>;
   canReachLocalhost: boolean;
   onClose?: () => Promise<void>;
+  session?: (
+    driver: WebDriver,
+  ) => Pick<PageDriver, 'markSession' | 'sessionUrl'>;
 }): Promise<PageDriver> {
   let driver: WebDriver;
   try {
@@ -59,6 +63,7 @@ export async function connectSelenium(opts: {
   let loads = 0;
 
   return {
+    ...opts.session?.(driver),
     canReachLocalhost: opts.canReachLocalhost,
     async loadHtml(html) {
       // A navigation, not just document.open(), so each page gets a new

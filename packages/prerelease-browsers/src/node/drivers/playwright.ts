@@ -56,8 +56,18 @@ export async function launchPlaywright(opts: {
 }
 
 /**
+ * Set on each Window before a page is written into it on the single-tab
+ * path. Finding it after the next blank navigation means the engine kept the
+ * old Window, so globals one check replaced would leak into the next.
+ */
+const reuseMarker = '__prerelease_driver_load';
+
+/**
  * Wraps a Playwright page. Unless `singleTab` is set, every load after the
- * first opens a fresh page in the same context and closes the old one.
+ * first opens a fresh page in the same context and closes the old one. With
+ * `singleTab` (one tab is all BrowserStack iOS allows), every load first
+ * navigates the one page to a new blank URL, so it still gets a new Window:
+ * setContent alone keeps the Window and every global on it.
  */
 export function playwrightDriver(
   page: Page,
@@ -70,6 +80,21 @@ export function playwrightDriver(
 ): PageDriver {
   let current = page;
   let used = false;
+  let blanks = 0;
+
+  /** Gives the single tab a new Window, and checks that it really is new. */
+  async function freshWindow(): Promise<void> {
+    // The URL is new every time, so no engine can skip it as a same-URL
+    // navigation.
+    const blank = `about:blank?n=${++blanks}`;
+    await current.goto(blank, { waitUntil: 'load' });
+    if (await current.evaluate(`window.${reuseMarker} === true`)) {
+      throw new Error(
+        `navigating to ${blank} kept the previous Window; pages would share globals`,
+      );
+    }
+    await current.evaluate(`window.${reuseMarker} = true`);
+  }
 
   async function pageForLoad(): Promise<Page> {
     if (used && !extra.singleTab) {
@@ -84,7 +109,9 @@ export function playwrightDriver(
   return {
     canReachLocalhost: extra.canReachLocalhost,
     async loadHtml(html) {
-      await (await pageForLoad()).setContent(html, { waitUntil: 'load' });
+      const target = await pageForLoad();
+      if (extra.singleTab) await freshWindow();
+      await target.setContent(html, { waitUntil: 'load' });
     },
     async open(url) {
       await (await pageForLoad()).goto(url, { waitUntil: 'load' });

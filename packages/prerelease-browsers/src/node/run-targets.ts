@@ -50,6 +50,28 @@ function selectChecks(t: TargetDefinition, only?: string[]): CheckMeta[] {
   return metas;
 }
 
+/** A result for `t` with no checks run yet, its launch counted as ok. */
+export function newResult(
+  t: TargetDefinition,
+  rrwebCommit: string,
+): TargetResult {
+  return {
+    schema: 1,
+    targetId: t.id,
+    engine: t.engine,
+    channel: t.channel,
+    ...(t.pairGroup === undefined ? {} : { pairGroup: t.pairGroup }),
+    perf: t.perf,
+    ceilingMs: t.ceilingMs ?? 1000,
+    launch: { ok: true },
+    rrwebCommit,
+    startedAt: new Date().toISOString(),
+    finishedAt: '',
+    incomplete: false,
+    checks: {},
+  };
+}
+
 /**
  * Runs every selected check on one target and writes its results file. A
  * browser that will not launch, or an attempt that throws, is recorded in
@@ -65,21 +87,7 @@ export async function runTarget(
   },
 ): Promise<TargetResult> {
   const metas = selectChecks(t, opts.only);
-  const result: TargetResult = {
-    schema: 1,
-    targetId: t.id,
-    engine: t.engine,
-    channel: t.channel,
-    ...(t.pairGroup === undefined ? {} : { pairGroup: t.pairGroup }),
-    perf: t.perf,
-    ceilingMs: t.ceilingMs ?? 1000,
-    launch: { ok: true },
-    rrwebCommit: opts.rrwebCommit,
-    startedAt: new Date().toISOString(),
-    finishedAt: '',
-    incomplete: false,
-    checks: {},
-  };
+  const result = newResult(t, opts.rrwebCommit);
 
   let driver: PageDriver;
   try {
@@ -146,6 +154,26 @@ export async function runTarget(
       await writeFile(file, JSON.stringify(lastFailure.events));
     }
     return outcome;
+  }
+}
+
+/**
+ * runTarget, except that a crash around the checks, such as an unreadable
+ * rrweb build, is written as a launch failure instead of thrown, so the
+ * target always leaves a results file.
+ */
+export async function runTargetOrRecordCrash(
+  t: TargetDefinition,
+  opts: Parameters<typeof runTarget>[1],
+): Promise<TargetResult> {
+  const startedAt = new Date().toISOString();
+  try {
+    return await runTarget(t, opts);
+  } catch (err) {
+    const result = newResult(t, opts.rrwebCommit);
+    result.startedAt = startedAt;
+    result.launch = { ok: false, error: `crashed: ${errorMessage(err)}` };
+    return finish(result, opts.resultsDir);
   }
 }
 

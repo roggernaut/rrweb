@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readResults } from '../src/node/results.ts';
-import { runTarget } from '../src/node/run-targets.ts';
+import { runTarget, runTargetOrRecordCrash } from '../src/node/run-targets.ts';
 import {
   applyPortOffset,
   findTarget,
@@ -54,6 +54,24 @@ test('a launch failure is recorded, not thrown', async () => {
   });
   expect(r.checks).toEqual({});
   expect(await readResults(tmp)).toHaveLength(1);
+});
+
+test('a crash around the checks still leaves a results file', async () => {
+  const started = new Date().toISOString();
+  // An unknown check id makes runTarget itself throw.
+  const r = await runTargetOrRecordCrash(findTarget('local-chromium'), {
+    resultsDir: tmp,
+    deadline: future,
+    only: ['no-such-check'],
+    rrwebCommit: 'abc',
+  });
+  expect(r.launch).toEqual({
+    ok: false,
+    error: expect.stringMatching(/^crashed: unknown check "no-such-check"/),
+  });
+  expect(r.startedAt >= started).toBe(true);
+  expect(r.finishedAt >= r.startedAt).toBe(true);
+  expect(await readResults(tmp)).toEqual([r]);
 });
 
 test('only runs the selected check', async () => {

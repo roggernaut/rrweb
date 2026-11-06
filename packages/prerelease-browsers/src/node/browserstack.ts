@@ -1,4 +1,12 @@
+import { setTimeout as timersSleep } from 'node:timers/promises';
+import type { BrowserContext, Page } from 'playwright';
+import { _android, chromium, webkit } from 'playwright';
 import type { Engine } from '../types.ts';
+import { playwrightDriver } from './drivers/playwright.ts';
+import { connectSelenium } from './drivers/selenium.ts';
+import type { BrowserInfo, PageDriver } from './drivers/types.ts';
+import { errorMessage } from './run-check.ts';
+import type { TargetDefinition } from './targets.ts';
 
 /** One row of BrowserStack's Automate `browsers.json`, as the live API returns it. */
 export interface CatalogueEntry {
@@ -24,6 +32,23 @@ export interface BrowserStackSpec {
     | 'selenium';
   caps: Record<string, unknown>;
 }
+
+/** Every id `resolveBrowserStackTargets` can return, in its order. */
+export const browserStackIds = [
+  'bs-chrome-beta',
+  'bs-chrome-stable',
+  'bs-edge-beta',
+  'bs-edge-stable',
+  'bs-firefox-beta',
+  'bs-firefox-stable',
+  'bs-safari-newer',
+  'bs-ios-upcoming',
+  'bs-ios-stable',
+  'bs-android-upcoming',
+  'bs-android-stable',
+  'bs-android-lowend',
+  'bs-samsung-internet',
+] as const;
 
 /**
  * Reads the leading number of a mobile os_version ('17', '14.0', '27 Beta').
@@ -321,4 +346,438 @@ export function resolveBrowserStackTargets(
     });
   }
   return specs;
+}
+
+// Sessions
+
+export interface Credentials {
+  username: string;
+  accessKey: string;
+}
+
+/** Reads the account from the environment, failing the launch without it. */
+export function credentialsFromEnv(
+  env: Record<string, string | undefined> = process.env,
+): Credentials {
+  const username = env.BROWSERSTACK_USERNAME;
+  const accessKey = env.BROWSERSTACK_ACCESS_KEY;
+  if (!username || !accessKey) {
+    throw new Error(
+      'BROWSERSTACK_USERNAME and BROWSERSTACK_ACCESS_KEY must both be set',
+    );
+  }
+  return { username, accessKey };
+}
+
+const catalogueUrl = 'https://api.browserstack.com/automate/browsers.json';
+
+/** Fetches the live Automate catalogue. */
+export async function fetchCatalogue(
+  creds: Credentials,
+): Promise<CatalogueEntry[]> {
+  const auth = Buffer.from(`${creds.username}:${creds.accessKey}`).toString(
+    'base64',
+  );
+  const res = await fetch(catalogueUrl, {
+    headers: { Authorization: `Basic ${auth}` },
+  });
+  if (!res.ok) {
+    throw new Error(`${catalogueUrl} answered ${res.status} ${res.statusText}`);
+  }
+  return (await res.json()) as CatalogueEntry[];
+}
+
+/**
+ * Replaces the account name and key in `text`, as written and as they appear
+ * inside a URL-encoded endpoint. Playwright puts the whole endpoint, caps
+ * included, in its connect errors, and those end up in public issues.
+ */
+export function redactCredentials(text: string, creds: Credentials): string {
+  let out = text;
+  for (const secret of [creds.accessKey, creds.username]) {
+    if (!secret) continue;
+    const inJson = JSON.stringify(secret).slice(1, -1);
+    for (const form of new Set([
+      encodeURIComponent(inJson),
+      encodeURIComponent(secret),
+      inJson,
+      secret,
+    ])) {
+      out = out.split(form).join('[redacted]');
+    }
+  }
+  return out;
+}
+
+function redactedError(err: unknown, creds: Credentials): Error {
+  return new Error(redactCredentials(errorMessage(err), creds));
+}
+
+/** The same driver, with credentials removed from every error it throws. */
+function redacting(driver: PageDriver, creds: Credentials): PageDriver {
+  const guard =
+    <A extends unknown[], R>(fn: (...args: A) => Promise<R>) =>
+    async (...args: A): Promise<R> => {
+      try {
+        return await fn(...args);
+      } catch (err) {
+        throw redactedError(err, creds);
+      }
+    };
+  return {
+    canReachLocalhost: driver.canReachLocalhost,
+    loadHtml: guard(driver.loadHtml),
+    open: guard(driver.open),
+    evaluate: <T>(expression: string) =>
+      guard(() => driver.evaluate<T>(expression))(),
+    describe: guard(driver.describe),
+    ...(driver.markSession && { markSession: guard(driver.markSession) }),
+    ...(driver.sessionUrl && { sessionUrl: guard(driver.sessionUrl) }),
+    close: guard(driver.close),
+  };
+}
+
+const project = 'rrweb prerelease browsers';
+
+/** The capabilities one session is opened with: the spec's, the run's and the account's. */
+export function sessionCaps(
+  spec: BrowserStackSpec,
+  run: { build: string; playwrightVersion: string },
+  creds: Credentials,
+): Record<string, unknown> {
+  if (spec.route === 'selenium') {
+    const options = spec.caps['bstack:options'] as Record<string, unknown>;
+    return {
+      ...spec.caps,
+      'bstack:options': {
+        ...options,
+        name: spec.id,
+        build: run.build,
+        projectName: project,
+        userName: creds.username,
+        accessKey: creds.accessKey,
+      },
+    };
+  }
+  return {
+    ...spec.caps,
+    name: spec.id,
+    build: run.build,
+    project,
+    'browserstack.username': creds.username,
+    'browserstack.accessKey': creds.accessKey,
+    'client.playwrightVersion': run.playwrightVersion,
+  };
+}
+
+export function playwrightEndpoint(caps: Record<string, unknown>): string {
+  return `wss://cdp.browserstack.com/playwright?caps=${encodeURIComponent(
+    JSON.stringify(caps),
+  )}`;
+}
+
+const seleniumHub = 'https://hub-cloud.browserstack.com/wd/hub';
+
+/** Long enough for BrowserStack to find a free device. */
+const connectTimeoutMs = 10 * 60_000;
+
+/** BrowserStack caps the reason it stores with a session status. */
+const maxReasonLength = 255;
+
+function executorCommand(action: string, args?: unknown): string {
+  return `browserstack_executor: ${JSON.stringify({
+    action,
+    ...(args === undefined ? {} : { arguments: args }),
+  })}`;
+}
+
+/** Session status and link, through BrowserStack's in-page executor commands. */
+function executorSession(
+  run: (command: string) => Promise<unknown>,
+): Pick<PageDriver, 'markSession' | 'sessionUrl'> {
+  return {
+    async markSession(passed, reason) {
+      await run(
+        executorCommand('setSessionStatus', {
+          status: passed ? 'passed' : 'failed',
+          reason: reason.slice(0, maxReasonLength),
+        }),
+      );
+    },
+    async sessionUrl() {
+      const raw = await run(executorCommand('getSessionDetails'));
+      const details = (typeof raw === 'string' ? JSON.parse(raw) : raw) as
+        | { public_url?: unknown }
+        | null
+        | undefined;
+      return typeof details?.public_url === 'string'
+        ? details.public_url
+        : undefined;
+    },
+  };
+}
+
+/** Runs executor commands in whichever page the context has open. */
+function contextExecutor(context: BrowserContext) {
+  return executorSession((command) => {
+    const page = context.pages().at(-1);
+    if (!page) throw new Error('no page open to run a BrowserStack command');
+    return page.evaluate((_: string) => undefined, command);
+  });
+}
+
+async function onlyPage(context: BrowserContext): Promise<Page> {
+  return context.pages()[0] ?? (await context.newPage());
+}
+
+async function userAgentOf(context: BrowserContext): Promise<string> {
+  const page = context.pages().at(-1);
+  return page ? page.evaluate(() => navigator.userAgent) : '';
+}
+
+/** A mobile session's browser, read from its user agent, and its device. */
+function mobileDescribe(
+  context: BrowserContext,
+  spec: BrowserStackSpec,
+  browserName: string,
+  version: RegExp,
+): () => Promise<Partial<BrowserInfo>> {
+  const os = spec.route === 'playwright-ios' ? 'iOS' : 'Android';
+  return async () => ({
+    browserName,
+    browserVersion: version.exec(await userAgentOf(context))?.[1] ?? 'unknown',
+    device: `${String(spec.caps.deviceName)} (${os} ${String(
+      spec.caps.osVersion,
+    )})`,
+  });
+}
+
+/**
+ * Sends every result across as a JSON string. BrowserStack's iOS bridge is
+ * not Playwright's own server: it returns an object with a numeric `length`
+ * as an array of that many nulls, so poll()'s `{ state: 'done', length }`
+ * arrives as nulls and the check never finishes. Strings cross intact.
+ * `undefined` arrives as null.
+ */
+export function jsonTransport(driver: PageDriver): PageDriver {
+  return {
+    ...driver,
+    async evaluate<T>(expression: string): Promise<T> {
+      const text = await driver.evaluate<unknown>(
+        `JSON.stringify([(${expression})])`,
+      );
+      if (typeof text !== 'string') {
+        throw new Error(
+          `expected a JSON string from the page, got ${typeof text}`,
+        );
+      }
+      return (JSON.parse(text) as [T])[0];
+    },
+  };
+}
+
+async function closeOnError<T>(
+  work: () => Promise<T>,
+  close: () => Promise<unknown>,
+): Promise<T> {
+  try {
+    return await work();
+  } catch (err) {
+    await close().catch(() => undefined);
+    throw err;
+  }
+}
+
+async function connectSpec(
+  spec: BrowserStackSpec,
+  caps: Record<string, unknown>,
+): Promise<PageDriver> {
+  const endpoint = playwrightEndpoint(caps);
+  switch (spec.route) {
+    case 'selenium':
+      return connectSelenium({
+        serverUrl: seleniumHub,
+        capabilities: caps,
+        canReachLocalhost: false,
+        session: (wd) =>
+          executorSession((command) => wd.executeScript(command)),
+      });
+    case 'playwright-desktop': {
+      const browser = await chromium.connect(endpoint, {
+        timeout: connectTimeoutMs,
+      });
+      return closeOnError(
+        async () => {
+          const context = await browser.newContext();
+          const page = await context.newPage();
+          return {
+            ...playwrightDriver(page, {
+              canReachLocalhost: false,
+              describe: async () => ({
+                browserName: String(spec.caps.browser),
+              }),
+              close: () => browser.close(),
+            }),
+            ...contextExecutor(context),
+          };
+        },
+        () => browser.close(),
+      );
+    }
+    case 'playwright-ios': {
+      const browser = await webkit.connect(endpoint, {
+        timeout: connectTimeoutMs,
+      });
+      return closeOnError(
+        async () => {
+          // One context and one tab is all BrowserStack iOS allows.
+          const context = browser.contexts()[0] ?? (await browser.newContext());
+          return {
+            ...jsonTransport(
+              playwrightDriver(await onlyPage(context), {
+                canReachLocalhost: false,
+                describe: mobileDescribe(
+                  context,
+                  spec,
+                  'safari',
+                  /Version\/([\d.]+)/,
+                ),
+                close: () => browser.close(),
+                singleTab: true,
+              }),
+            ),
+            ...contextExecutor(context),
+          };
+        },
+        () => browser.close(),
+      );
+    }
+    case 'playwright-android': {
+      const device = await _android.connect(endpoint, {
+        timeout: connectTimeoutMs,
+      });
+      return closeOnError(
+        async () => {
+          // A Chrome left running from setup would not take the new session.
+          await device
+            .shell('am force-stop com.android.chrome')
+            .catch(() => undefined);
+          const context = await device.launchBrowser();
+          return {
+            ...playwrightDriver(await onlyPage(context), {
+              canReachLocalhost: false,
+              describe: mobileDescribe(
+                context,
+                spec,
+                'chrome',
+                /Chrome\/([\d.]+)/,
+              ),
+              close: async () => {
+                await context.close().catch(() => undefined);
+                await device.close();
+              },
+            }),
+            ...contextExecutor(context),
+          };
+        },
+        () => device.close(),
+      );
+    }
+  }
+}
+
+/**
+ * The target for one resolved spec. Its connect reads the credentials from
+ * the environment, so they never sit on the target itself, and strips them
+ * from every error the session throws. Pages load with setContent and a null
+ * origin there: BrowserStack can't reach this machine, so needsHttp checks
+ * skip.
+ */
+export function toTarget(
+  spec: BrowserStackSpec,
+  run: { build: string; playwrightVersion: string },
+): TargetDefinition {
+  return {
+    id: spec.id,
+    engine: spec.engine,
+    channel: spec.channel,
+    ...(spec.pairGroup === undefined ? {} : { pairGroup: spec.pairGroup }),
+    where: 'browserstack',
+    checks: spec.checks,
+    perf: spec.perf,
+    perfSamples: 3,
+    timeScale: 5,
+    async connect() {
+      const creds = credentialsFromEnv();
+      try {
+        return redacting(
+          await connectSpec(spec, sessionCaps(spec, run, creds)),
+          creds,
+        );
+      } catch (err) {
+        throw redactedError(err, creds);
+      }
+    },
+  };
+}
+
+// Pool and backoff
+
+const parallelLimit =
+  /BROWSERSTACK_ALL_PARALLELS_IN_USE|BROWSERSTACK_QUEUE_SIZE_EXCEEDED|parallel limit/i;
+
+/** True for BrowserStack's "every session slot is busy" errors, which mean wait. */
+export function isParallelLimitError(err: unknown): boolean {
+  return parallelLimit.test(
+    err instanceof Error ? err.message : String(err ?? ''),
+  );
+}
+
+/**
+ * Connects, waiting `waitMs` and trying again while BrowserStack reports its
+ * parallel limit. Any other error, or a wait that would pass the deadline,
+ * throws the last error.
+ */
+export async function connectWithBackoff(
+  connect: () => Promise<PageDriver>,
+  deadline: Date,
+  waitMs = 60_000,
+  sleep: (ms: number) => Promise<unknown> = timersSleep,
+): Promise<PageDriver> {
+  for (;;) {
+    try {
+      return await connect();
+    } catch (err) {
+      if (
+        !isParallelLimitError(err) ||
+        Date.now() + waitMs > deadline.getTime()
+      ) {
+        throw err;
+      }
+      await sleep(waitMs);
+    }
+  }
+}
+
+/**
+ * Runs the jobs with at most `limit` in flight, starting each as a slot
+ * frees, and returns their results in job order. A job that rejects rejects
+ * the pool, so callers catch inside each job.
+ */
+export async function runPool<T>(
+  jobs: Array<() => Promise<T>>,
+  limit: number,
+): Promise<T[]> {
+  const results = new Array<T>(jobs.length);
+  let next = 0;
+  async function worker(): Promise<void> {
+    while (next < jobs.length) {
+      const i = next++;
+      results[i] = await jobs[i]();
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(limit, jobs.length) }, worker),
+  );
+  return results;
 }

@@ -1,11 +1,24 @@
 import { readFileSync } from 'node:fs';
+import { webkit } from 'playwright';
 import {
+  browserStackIds,
+  connectWithBackoff,
+  isParallelLimitError,
+  jsonTransport,
   majorOf,
   newerMacOS,
   pickSameModelPair,
+  playwrightEndpoint,
+  redactCredentials,
   resolveBrowserStackTargets,
+  runPool,
+  sessionCaps,
+  toTarget,
+  type BrowserStackSpec,
   type CatalogueEntry,
 } from '../src/node/browserstack.ts';
+import { playwrightDriver } from '../src/node/drivers/playwright.ts';
+import type { PageDriver } from '../src/node/drivers/types.ts';
 import { githubTargets, localTargets } from '../src/node/targets.ts';
 
 const cat: CatalogueEntry[] = JSON.parse(
@@ -272,6 +285,11 @@ describe('resolveBrowserStackTargets', () => {
       });
     }
   });
+  test('browserStackIds lists every row the full catalogue resolves, in order', () => {
+    expect(resolveBrowserStackTargets(cat).map((t) => t.id)).toEqual([
+      ...browserStackIds,
+    ]);
+  });
   test('rows whose device is missing are left out', () => {
     const ids = resolveBrowserStackTargets([]).map((t) => t.id);
     expect(ids).toEqual([
@@ -311,4 +329,237 @@ describe('resolveBrowserStackTargets', () => {
         specs.filter((t) => t.pairGroup === g && t.channel === 'stable'),
       ).toHaveLength(1);
   });
+});
+
+const tick = () => new Promise((r) => setTimeout(r, 0));
+const noSleep = async () => undefined;
+const future = new Date(Date.now() + 3_600_000);
+const driverStub = { canReachLocalhost: false } as PageDriver;
+
+describe('runPool', () => {
+  test('pool never exceeds its limit and keeps order', async () => {
+    let live = 0,
+      peak = 0;
+    const jobs = Array.from({ length: 12 }, (_, i) => async () => {
+      live++;
+      peak = Math.max(peak, live);
+      await tick();
+      live--;
+      return i;
+    });
+    expect(await runPool(jobs, 5)).toEqual([...Array(12).keys()]);
+    expect(peak).toBe(5);
+  });
+  test('fewer jobs than the limit, and no jobs', async () => {
+    expect(await runPool([async () => 'a', async () => 'b'], 5)).toEqual([
+      'a',
+      'b',
+    ]);
+    expect(await runPool([], 5)).toEqual([]);
+  });
+});
+
+describe('connectWithBackoff', () => {
+  test('backoff retries parallel-limit errors and nothing else', async () => {
+    let n = 0;
+    const flaky = async () => {
+      if (n++ < 2) throw new Error('BROWSERSTACK_ALL_PARALLELS_IN_USE');
+      return driverStub;
+    };
+    expect(await connectWithBackoff(flaky, future, 1, noSleep)).toBe(
+      driverStub,
+    );
+    await expect(
+      connectWithBackoff(
+        () => Promise.reject(new Error('bad caps')),
+        future,
+        1,
+        noSleep,
+      ),
+    ).rejects.toThrow('bad caps');
+  });
+  test('backoff gives up at the deadline', async () => {
+    await expect(
+      connectWithBackoff(
+        () => Promise.reject(new Error('parallel limit')),
+        new Date(0),
+        1,
+        noSleep,
+      ),
+    ).rejects.toThrow('parallel limit');
+  });
+  test('waits waitMs between tries', async () => {
+    const waits: number[] = [];
+    let n = 0;
+    await connectWithBackoff(
+      async () => {
+        if (n++ < 2) throw new Error('BROWSERSTACK_QUEUE_SIZE_EXCEEDED');
+        return driverStub;
+      },
+      future,
+      7,
+      async (ms) => void waits.push(ms),
+    );
+    expect(waits).toEqual([7, 7]);
+  });
+  test('isParallelLimitError reads the message of any thrown value', () => {
+    expect(isParallelLimitError(new Error('x Parallel Limit reached'))).toBe(
+      true,
+    );
+    expect(isParallelLimitError('BROWSERSTACK_QUEUE_SIZE_EXCEEDED')).toBe(true);
+    expect(isParallelLimitError(new Error('Could not start session'))).toBe(
+      false,
+    );
+    expect(isParallelLimitError(undefined)).toBe(false);
+  });
+});
+
+describe('sessions', () => {
+  const run = {
+    build: 'rrweb prerelease 2026-11-06 #42',
+    playwrightVersion: '1.61.1',
+  };
+  const creds = { username: 'someone', accessKey: 'k3y/+?' };
+  const spec = (id: string) =>
+    resolveBrowserStackTargets(cat).find((t) => t.id === id)!;
+
+  test('toTarget runs on BrowserStack with scaled timeouts and 3 samples', () => {
+    const t = toTarget(spec('bs-ios-upcoming'), run);
+    expect(t).toMatchObject({
+      id: 'bs-ios-upcoming',
+      engine: 'webkit',
+      channel: 'upcoming',
+      pairGroup: 'bs-ios',
+      where: 'browserstack',
+      checks: 'focused',
+      perf: 'compare',
+      timeScale: 5,
+      perfSamples: 3,
+    });
+    expect(JSON.stringify(t)).not.toContain('accessKey');
+  });
+  test('toTarget fails the launch when credentials are missing', async () => {
+    const saved = { ...process.env };
+    delete process.env.BROWSERSTACK_USERNAME;
+    delete process.env.BROWSERSTACK_ACCESS_KEY;
+    try {
+      await expect(
+        toTarget(spec('bs-chrome-beta'), run).connect(),
+      ).rejects.toThrow(/BROWSERSTACK_USERNAME/);
+    } finally {
+      Object.assign(process.env, saved);
+    }
+  });
+  test('Playwright caps carry the run, the credentials and the client version', () => {
+    expect(sessionCaps(spec('bs-chrome-beta'), run, creds)).toEqual({
+      os: 'Windows',
+      os_version: '11',
+      browser: 'chrome',
+      browser_version: 'latest-beta',
+      name: 'bs-chrome-beta',
+      build: 'rrweb prerelease 2026-11-06 #42',
+      project: 'rrweb prerelease browsers',
+      'browserstack.username': 'someone',
+      'browserstack.accessKey': 'k3y/+?',
+      'client.playwrightVersion': '1.61.1',
+    });
+  });
+  test('Selenium caps put the run and the credentials in bstack:options', () => {
+    expect(sessionCaps(spec('bs-firefox-beta'), run, creds)).toEqual({
+      browserName: 'firefox',
+      browserVersion: 'latest-beta',
+      'bstack:options': {
+        os: 'Windows',
+        osVersion: '11',
+        name: 'bs-firefox-beta',
+        build: 'rrweb prerelease 2026-11-06 #42',
+        projectName: 'rrweb prerelease browsers',
+        userName: 'someone',
+        accessKey: 'k3y/+?',
+      },
+    });
+  });
+  test('sessionCaps leaves the spec untouched', () => {
+    const s: BrowserStackSpec = spec('bs-firefox-stable');
+    const before = JSON.stringify(s);
+    sessionCaps(s, run, creds);
+    expect(JSON.stringify(s)).toBe(before);
+  });
+  test('the Playwright endpoint encodes the caps as JSON', () => {
+    const url = playwrightEndpoint({ a: 'b c', d: '&' });
+    expect(url.startsWith('wss://cdp.browserstack.com/playwright?caps=')).toBe(
+      true,
+    );
+    expect(
+      JSON.parse(decodeURIComponent(url.slice(url.indexOf('=') + 1))),
+    ).toEqual({ a: 'b c', d: '&' });
+  });
+  test('credentials are redacted from error text, raw and URL-encoded', () => {
+    const text = `ws connecting ${playwrightEndpoint(
+      sessionCaps(spec('bs-chrome-beta'), run, creds),
+    )} as someone with k3y/+?`;
+    const out = redactCredentials(text, creds);
+    expect(out).not.toContain('someone');
+    expect(out).not.toContain('k3y');
+    expect(out).toContain('ws connecting wss://cdp.browserstack.com');
+  });
+});
+
+describe('jsonTransport', () => {
+  /** Evaluates like BrowserStack's iOS bridge: objects with a length come back as arrays of nulls. */
+  const bridge = {
+    ...driverStub,
+    async evaluate<T>(expression: string): Promise<T> {
+      const value = new Function(`return (${expression});`)() as unknown;
+      if (value && typeof value === 'object' && 'length' in value) {
+        return Array.from({ length: Number(value.length) }, () => null) as T;
+      }
+      return value as T;
+    },
+  } as PageDriver;
+  test('the raw bridge mangles a poll result', async () => {
+    expect(await bridge.evaluate('({ state: "done", length: 2 })')).toEqual([
+      null,
+      null,
+    ]);
+  });
+  test('values cross the bridge intact as JSON', async () => {
+    const driver = jsonTransport(bridge);
+    expect(await driver.evaluate('({ state: "done", length: 2 })')).toEqual({
+      state: 'done',
+      length: 2,
+    });
+    expect(await driver.evaluate('"a\\ud83d\\ude00b"')).toBe('a\ud83d\ude00b');
+    expect(await driver.evaluate('void 0')).toBeNull();
+    expect(await driver.evaluate('1, 2')).toBe(2);
+  });
+});
+
+describe('single-tab Playwright driver', () => {
+  test('every load gets a fresh Window', async () => {
+    const browser = await webkit.launch();
+    try {
+      const page = await (await browser.newContext()).newPage();
+      const driver = playwrightDriver(page, {
+        canReachLocalhost: false,
+        close: () => browser.close(),
+        singleTab: true,
+      });
+      await driver.loadHtml('<p>one</p>');
+      await driver.evaluate(
+        '(window.leaked = 1, window.MutationObserver = function () {}, 0)',
+      );
+      await driver.loadHtml('<p>two</p>');
+      expect(await driver.evaluate('typeof window.leaked')).toBe('undefined');
+      expect(
+        await driver.evaluate(
+          'String(window.MutationObserver).includes("[native code]")',
+        ),
+      ).toBe(true);
+      expect(await driver.evaluate('document.body.textContent')).toBe('two');
+      expect(browser.contexts()[0].pages()).toHaveLength(1);
+    } finally {
+      await browser.close();
+    }
+  }, 60_000);
 });
