@@ -20,6 +20,18 @@ function fillBody(count: number): void {
   document.body.innerHTML = rows.join('');
 }
 
+/** Resolves in a new task; unlike setTimeout(0), it is never clamped. */
+function nextTask(): Promise<void> {
+  return new Promise((resolve) => {
+    const channel = new MessageChannel();
+    channel.port1.onmessage = () => {
+      channel.port1.close();
+      resolve();
+    };
+    channel.port2.postMessage(0);
+  });
+}
+
 const hasFullSnapshot = (events: eventWithTime[]) =>
   events.some((e) => e.type === 2 /* FullSnapshot */);
 
@@ -204,9 +216,14 @@ const recordStopCycles: CheckDefinition = {
   async run(ctx) {
     fillBody(scaled(ctx, 2000));
     await settle(ctx);
-    // Collects garbage first where the engine exposes gc(), to cut noise.
+    // gc() exists only when the browser was launched with the heap flags
+    // (chromiumHeapArgs), which also make performance.memory precise. Without
+    // them Chromium reports rounded values that look like a measured 0, so
+    // the heap is read only when gc() is there.
+    const gc = (window as { gc?: () => void }).gc;
     const heap = () => {
-      (window as { gc?: () => void }).gc?.();
+      if (typeof gc !== 'function') return undefined;
+      gc();
       return ctx.heapBytes();
     };
     // One unmeasured cycle first, so the baseline already holds the larger
@@ -221,12 +238,18 @@ const recordStopCycles: CheckDefinition = {
     const emit = (event: eventWithTime) => {
       if (event.type === 2 /* FullSnapshot */) snapshots++;
     };
-    const measured = await ctx.measure(() => {
+    const measured = await ctx.measure(async () => {
+      let busyMs = 0;
       for (let i = 0; i < cycles; i++) {
+        const start = performance.now();
         const stop = ctx.rrweb.record({ emit });
         if (!stop) throw new Error('rrweb.record did not start');
         stop();
+        busyMs += performance.now() - start;
+        // A task boundary between cycles, so maxBlockMs is one cycle's block.
+        await nextTask();
       }
+      return busyMs;
     });
     const after = heap();
     if (snapshots !== cycles) {
@@ -235,8 +258,9 @@ const recordStopCycles: CheckDefinition = {
         message: `${snapshots} full snapshots in ${cycles} cycles`,
       };
     }
+    // durationMs is the time inside the cycles, without the yields.
     return sampleOf(
-      measured,
+      { durationMs: measured.value, maxBlockMs: measured.maxBlockMs },
       before === undefined || after === undefined ? undefined : after - before,
     );
   },

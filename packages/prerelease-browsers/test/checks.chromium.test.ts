@@ -1,6 +1,10 @@
 import { runAttempt, runScenario } from '../src/node/run-check.ts';
 import { buildPageBundle, readRrwebUmd } from '../src/node/page-source.ts';
-import { launchPlaywright } from '../src/node/drivers/playwright.ts';
+import { chromium } from 'playwright';
+import {
+  launchPlaywright,
+  playwrightDriver,
+} from '../src/node/drivers/playwright.ts';
 import type { PageDriver } from '../src/node/drivers/types.ts';
 import { startFixtureServer } from '../src/node/fixture-server.ts';
 import type { FixtureServer } from '../src/node/fixture-server.ts';
@@ -181,6 +185,56 @@ describe.each(perfIds)('%s', (id) => {
       if (meta!.compare?.includes('heapDeltaBytes')) {
         // Chromium exposes performance.memory, so the delta must be there.
         expect(Number.isFinite(sample.heapDeltaBytes)).toBe(true);
+      }
+    },
+  );
+});
+
+describe('perf-record-stop-cycles measurement', () => {
+  const meta = () => checks.find((c) => c.id === 'perf-record-stop-cycles')!;
+
+  test(
+    'blocks for one cycle at a time, not the whole loop',
+    { timeout: timeoutMs + 10_000 },
+    async () => {
+      const outcome = await runScenario(
+        driver,
+        meta(),
+        { bundle, rrweb },
+        { samples: 1, timeoutMs },
+      );
+      expect(outcome.status).toBe('pass');
+      const [sample] = outcome.samples!;
+      expect(sample.maxBlockMs).toBeLessThan(sample.durationMs / 2);
+    },
+  );
+
+  test(
+    'reports no heap delta from a Chromium launched without the heap flags',
+    { timeout: timeoutMs + 10_000 },
+    async () => {
+      const browser = await chromium.launch();
+      const plain = playwrightDriver(
+        await (await browser.newContext()).newPage(),
+        { canReachLocalhost: true, close: () => browser.close() },
+      );
+      try {
+        await plain.loadHtml('<!doctype html><body></body>');
+        // performance.memory is there, only rounded, and gc() is missing.
+        expect(
+          await plain.evaluate('typeof performance.memory.usedJSHeapSize'),
+        ).toBe('number');
+        expect(await plain.evaluate('typeof gc')).toBe('undefined');
+        const outcome = await runScenario(
+          plain,
+          meta(),
+          { bundle, rrweb },
+          { samples: 1, timeoutMs, scale: 0.02 },
+        );
+        expect(outcome.status).toBe('pass');
+        expect(outcome.samples![0]).not.toHaveProperty('heapDeltaBytes');
+      } finally {
+        await plain.close();
       }
     },
   );
