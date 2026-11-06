@@ -1,0 +1,91 @@
+# THROWAWAY SPIKE: can GitHub-hosted runners drive Safari Technology Preview
+# and Firefox Nightly on Android? Lives on an orphan branch; delete after.
+name: spike-prerelease-browsers
+on:
+  push:
+    branches: [spike/prerelease-browsers]
+  workflow_dispatch:
+jobs:
+  safari-technology-preview:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: lts/* }
+      - run: npm i --no-save rrweb@2.2.0 selenium-webdriver@4
+      - run: sw_vers
+      - name: Install Safari Technology Preview
+        run: brew install --cask safari-technology-preview
+      - name: Versions
+        run: |
+          defaults read "/Applications/Safari Technology Preview.app/Contents/Info.plist" CFBundleShortVersionString
+          defaults read /Applications/Safari.app/Contents/Info.plist CFBundleShortVersionString
+      - name: Enable drivers
+        run: |
+          sudo "/Applications/Safari Technology Preview.app/Contents/MacOS/safaridriver" --enable
+          sudo safaridriver --enable
+      - name: Control run on stable Safari
+        continue-on-error: true
+        run: |
+          safaridriver -p 4446 & sleep 3
+          DRIVER_URL=http://127.0.0.1:4446 CAPS='{"browserName":"safari"}' node record-check.mjs
+          mv events.json events-safari.json || true
+      - name: Safari Technology Preview run
+        run: |
+          "/Applications/Safari Technology Preview.app/Contents/MacOS/safaridriver" -p 4445 & sleep 3
+          DRIVER_URL=http://127.0.0.1:4445 CAPS='{"browserName":"Safari Technology Preview"}' node record-check.mjs
+          mv events.json events-stp.json || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: safari-tp, path: 'events-*.json', if-no-files-found: ignore }
+
+  firefox-android-nightly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: lts/* }
+      - run: npm i --no-save rrweb@2.2.0 selenium-webdriver@4
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Download latest Firefox Nightly x86_64 APK
+        run: |
+          base=https://ftp.mozilla.org
+          y=$(date -u +%Y)
+          m=$(curl -s $base/pub/fenix/nightly/$y/ | grep -o "href=\"/pub/fenix/nightly/$y/[0-9]*/\"" | tail -1 | sed 's/href="//;s/"//')
+          d=$(curl -s "$base$m" | grep -o 'href="[^"]*android-x86_64/"' | tail -1 | sed 's/href="//;s/"//')
+          apk=$(curl -s "$base$d" | grep -o 'href="[^"]*\.apk"' | head -1 | sed 's/href="//;s/"//')
+          echo "APK: $apk"
+          curl -sfL "$base$apk" -o fenix.apk
+          ls -la fenix.apk
+      - name: Download geckodriver
+        run: |
+          tag=$(gh release view -R mozilla/geckodriver --json tagName -q .tagName)
+          echo "geckodriver $tag"
+          curl -sfL "https://github.com/mozilla/geckodriver/releases/download/$tag/geckodriver-$tag-linux64.tar.gz" | tar xz
+          ./geckodriver --version | head -1
+      - name: Run in emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: bash run-android.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: firefox-android
+          path: |
+            geckodriver.log
+            logcat.txt
+            events.json
+          if-no-files-found: ignore
