@@ -1148,7 +1148,7 @@ HTML_HEAD = r"""<!DOCTYPE html>
 <header class="page">
   <h1>rrweb-io/rrweb intake triage</h1>
   <p class="lede">
-    Snapshot {{SNAPSHOT_DATE}}. Numbers link upstream; vendor links go to the PR that provides the evidence.
+    Snapshot {{SNAPSHOT_DATE}}.
   </p>
   <div class="filters">
     <div class="frow" id="buckets"></div>
