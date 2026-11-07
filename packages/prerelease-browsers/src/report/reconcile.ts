@@ -73,7 +73,10 @@ const BASE_LABELS = [
  * so an update takes them off. `severity:critical` is not among them: the
  * name is generic, and a maintainer may have put it on an issue themselves.
  */
-const RETIRED_LABELS = ['prerelease:also-fails-on-stable', 'prerelease:privacy'];
+const RETIRED_LABELS = [
+  'prerelease:also-fails-on-stable',
+  'prerelease:privacy',
+];
 
 /** Labels the reporter derives from a failure, so it may take them away. */
 const derived = (label: string) =>

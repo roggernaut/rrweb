@@ -158,6 +158,16 @@ test('a title notes when only upcoming builds fail', () => {
   ).toBe('privacy-canvas-block fails on chromium, gecko');
 });
 
+test('a title drops the upcoming-only note when a carried target is kept', () => {
+  const f = fail('privacy-canvas-block:privacy', ['chrome-canary']);
+  expect(issueTitle(f, ['chrome-canary'])).toBe(
+    'privacy-canvas-block fails on chromium (upcoming builds only)',
+  );
+  expect(issueTitle(f, ['chrome-canary', 'chrome-stable'])).toBe(
+    'privacy-canvas-block fails on chromium',
+  );
+});
+
 test('title, labels and summary line name the check, engines and commit', () => {
   expect(issueTitle(failure)).toBe(
     'css-nested-rules fails on chromium (upcoming builds only)',

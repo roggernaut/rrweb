@@ -303,7 +303,7 @@ test('an update keeps labels a maintainer added', async () => {
   expect(gh.comments).toEqual([]);
 });
 
-test('an update drops the labels earlier runs added and keeps the rest', async () => {
+test('an update drops the labels only this suite added and keeps the rest', async () => {
   const gh = fakeGitHub([
     {
       title: '[pre-release] functional: css-nested-rules fails on chromium',
@@ -326,9 +326,115 @@ test('an update drops the labels earlier runs added and keeps the rest', async (
   expect(gh.issues[0].labels).toEqual([
     'prerelease',
     'prerelease:functional',
+    'severity:critical',
     'triaged',
     'engine:chromium',
   ]);
+});
+
+const MARKERS_3 =
+  '<!-- prerelease:key=privacy-canvas-block:privacy -->\n<!-- prerelease:engines=chromium,gecko,webkit -->\n<!-- prerelease:targets=local-chromium,local-firefox,local-webkit -->\n';
+const TITLE_3 = 'privacy-canvas-block fails on chromium, gecko, webkit';
+const LABELS_3 = [
+  'prerelease',
+  'privacy',
+  'engine:chromium',
+  'engine:gecko',
+  'engine:webkit',
+];
+
+test('a partial run keeps a hand-fixed title and labels untouched', async () => {
+  const gh = fakeGitHub([
+    { title: TITLE_3, labels: [...LABELS_3], body: MARKERS_3 },
+  ]);
+  const before = gh.issues[0].body;
+  await reconcile({
+    gh,
+    results: [passing('chrome-canary', 'css-nested-rules')],
+    expected: ['chrome-canary'],
+    apply: true,
+    run,
+  });
+  expect(gh.updates.filter((u) => u.number === 1)).toEqual([]);
+  expect(gh.issues[0]).toMatchObject({
+    title: TITLE_3,
+    labels: LABELS_3,
+    body: before,
+  });
+});
+
+test('an update never claims upcoming-only while a carried target is kept', async () => {
+  const gh = fakeGitHub([
+    { title: TITLE_3, labels: [...LABELS_3], body: MARKERS_3 },
+  ]);
+  const r = failing('chrome-canary', 'privacy-canvas-block');
+  r.checks['privacy-canvas-block'].kind = 'privacy';
+  await reconcile({
+    gh,
+    results: [r],
+    expected: ['chrome-canary'],
+    apply: true,
+    run,
+  });
+  expect(gh.issues[0].title).toBe(TITLE_3);
+  expect(gh.issues[0].labels.sort()).toEqual([...LABELS_3].sort());
+  expect(parseMarkers(gh.issues[0].body).targets).toEqual([
+    'chrome-canary',
+    'local-chromium',
+    'local-firefox',
+    'local-webkit',
+  ]);
+});
+
+test('an existing stable target in the markers means no upcoming-only suffix', async () => {
+  const gh = fakeGitHub([
+    {
+      title: 'css-nested-rules fails on chromium',
+      labels: ['prerelease', 'prerelease:functional', 'engine:chromium'],
+      body: '<!-- prerelease:key=css-nested-rules:functional -->\n<!-- prerelease:engines=chromium -->\n<!-- prerelease:targets=chrome-canary,chrome-stable -->\n',
+    },
+  ]);
+  // Only the upcoming target fails in this run; stable is absent from it.
+  await reconcile({
+    gh,
+    results: fixtureResults.filter((r) => r.targetId === 'chrome-canary'),
+    expected: ['chrome-canary'],
+    apply: true,
+    run,
+  });
+  expect(gh.issues[0].title).toBe('css-nested-rules fails on chromium');
+});
+
+test('the status issue is retitled only while it has the old prefix', async () => {
+  const mk = (title: string) =>
+    fakeGitHub([
+      {
+        title,
+        labels: ['prerelease', 'prerelease:status'],
+        body: '<!-- prerelease:status -->\nold',
+      },
+    ]);
+  const old = mk('[pre-release] Status of the latest run');
+  await reconcile({
+    gh: old,
+    results: fixtureResults,
+    expected,
+    apply: true,
+    run,
+  });
+  expect(old.issues[0].title).toBe(
+    'Pre-release browsers: status of the latest run',
+  );
+  const edited = mk('Our own status title');
+  await reconcile({
+    gh: edited,
+    results: fixtureResults,
+    expected,
+    apply: true,
+    run,
+  });
+  expect(edited.issues[0].title).toBe('Our own status title');
+  expect(edited.issues[0].body).not.toBe('<!-- prerelease:status -->\nold');
 });
 
 /** One target on which `n` functional checks fail. */
