@@ -59,10 +59,19 @@ const expectedIds = [
   'privacy-shadow-dom',
   'privacy-adopted-stylesheet-shadow',
   'privacy-input-types',
-  // 'privacy-canvas-block' is left out: rrweb main records property sets
-  // such as fillStyle on a blocked 2d canvas, because the setter hook in
-  // observers/canvas/2d.ts skips the isBlocked test that methods get.
+  'privacy-canvas-block',
 ];
+
+/**
+ * Checks rrweb main fails today, each with the message it gives with masking
+ * on. When rrweb is fixed, the test fails: drop the entry.
+ */
+const knownGaps: Record<string, string> = {
+  // rrweb main records property sets such as fillStyle on a blocked 2d
+  // canvas: the setter hook in observers/canvas/2d.ts skips the isBlocked
+  // test that methods get.
+  'privacy-canvas-block': 'privacy leak: blocked canvas recorded',
+};
 
 /** Every performance scenario, run once each at a small scale. */
 const perfIds = [
@@ -125,22 +134,34 @@ test('every expected check is registered', () => {
 describe.each(expectedIds)('%s', (id) => {
   const meta = () => checks.find((check) => check.id === id);
 
-  test('passes on chromium', { timeout: timeoutMs + 10_000 }, async () => {
-    const check = meta();
-    expect(check, `check ${id} is not registered`).toBeDefined();
-    const result = await runAttempt(
-      driver,
-      check!,
-      { bundle, rrweb, httpOrigin: server.origin },
-      { timeoutMs },
-    );
-    if (result.skipped !== undefined) {
-      expect(result.skipped, `unexpected skip in ${id}`).toBe(allowedSkips[id]);
-      return;
-    }
-    expect(result.message ?? '').toBe('');
-    expect(result.ok).toBe(true);
-  });
+  const gap = knownGaps[id];
+  test(
+    gap === undefined ? 'passes on chromium' : 'fails on chromium as known',
+    { timeout: timeoutMs + 10_000 },
+    async () => {
+      const check = meta();
+      expect(check, `check ${id} is not registered`).toBeDefined();
+      const result = await runAttempt(
+        driver,
+        check!,
+        { bundle, rrweb, httpOrigin: server.origin },
+        { timeoutMs },
+      );
+      if (gap !== undefined) {
+        expect(result.message).toBe(gap);
+        expect(result.ok).toBe(false);
+        return;
+      }
+      if (result.skipped !== undefined) {
+        expect(result.skipped, `unexpected skip in ${id}`).toBe(
+          allowedSkips[id],
+        );
+        return;
+      }
+      expect(result.message ?? '').toBe('');
+      expect(result.ok).toBe(true);
+    },
+  );
 
   test(
     'fails with masking disabled when it is a privacy check',

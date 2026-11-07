@@ -1,3 +1,4 @@
+import type { eventWithTime, serializedNodeWithId } from '@rrweb/types';
 import type { CheckContext, CheckDefinition } from '../harness.ts';
 
 // Every check plants canaries where rrweb must mask or block, and controls
@@ -406,6 +407,98 @@ const inputTypes: CheckDefinition = {
   },
 };
 
+/** The ids of the canvases that CanvasMutation events (source 9) target. */
+function canvasMutationIds(events: eventWithTime[]): Set<number> {
+  return new Set(
+    events.flatMap((e) =>
+      e.type === 3 /* IncrementalSnapshot */ &&
+      e.data.source === 9 /* CanvasMutation */
+        ? [e.data.id]
+        : [],
+    ),
+  );
+}
+
+/** Finds the node with this id in the FullSnapshot (type 2) tree. */
+function snapshotNode(
+  events: eventWithTime[],
+  id: number,
+): serializedNodeWithId | undefined {
+  const full = events.find((e) => e.type === 2 /* FullSnapshot */);
+  if (!full || full.type !== 2) return undefined;
+  const stack: serializedNodeWithId[] = [full.data.node];
+  for (let node = stack.pop(); node; node = stack.pop()) {
+    if (node.id === id) return node;
+    if ('childNodes' in node) stack.push(...node.childNodes);
+  }
+  return undefined;
+}
+
+const canvasBlock: CheckDefinition = {
+  id: 'privacy-canvas-block',
+  kind: 'privacy',
+  tier: 'focused',
+  async run(ctx) {
+    document.body.innerHTML =
+      '<canvas id="blocked" class="rr-block" width="64" height="64"></canvas><canvas id="public" width="64" height="64"></canvas>';
+    const blocked = byId<HTMLCanvasElement>('blocked');
+    const open = byId<HTMLCanvasElement>('public');
+    const contexts = [blocked, open].map((c) => {
+      const context = c.getContext('2d');
+      if (!context) throw new Error('no 2d context');
+      return context;
+    });
+    // Drawn before record(), so the snapshot would carry the pixels.
+    for (const context of contexts) {
+      context.fillStyle = '#0a0';
+      context.fillRect(0, 0, 32, 32);
+    }
+    const recording = ctx.record({ recordCanvas: true });
+    await ctx.nextFrame();
+    // rrweb drops the id attribute of a blocked element, so take node ids
+    // from the mirror rather than from the serialized attributes.
+    const blockedId = ctx.rrweb.record.mirror.getId(blocked);
+    const openId = ctx.rrweb.record.mirror.getId(open);
+    const start = performance.now();
+    for (let frame = 0; performance.now() - start < 500; frame++) {
+      for (const context of contexts) {
+        context.fillStyle = `hsl(${(frame * 7) % 360} 80% 50%)`;
+        context.fillRect(0, 0, 64, 64);
+      }
+      await ctx.nextFrame();
+    }
+    const events = await recording.stop();
+
+    const node = snapshotNode(events, blockedId);
+    if (!node || node.type !== 2 /* Element */ || node.tagName !== 'canvas') {
+      return {
+        ok: false,
+        message: `blocked canvas (id ${blockedId}) not in the FullSnapshot`,
+        events,
+      };
+    }
+    const targeted = canvasMutationIds(events);
+    if (targeted.has(blockedId) || 'rr_dataURL' in node.attributes) {
+      return {
+        ok: false,
+        message: 'privacy leak: blocked canvas recorded',
+        events,
+      };
+    }
+    // Nothing leaked, but the public canvas went unrecorded too: a broken
+    // recorder, which is a functional failure, as in assertPrivate.
+    if (!targeted.has(openId)) {
+      return {
+        ok: false,
+        kind: 'functional',
+        message: 'public control missing: canvas',
+        events,
+      };
+    }
+    return { ok: true, events };
+  },
+};
+
 export const privacyChecks: CheckDefinition[] = [
   maskAllInputs,
   maskTextClass,
@@ -420,4 +513,5 @@ export const privacyChecks: CheckDefinition[] = [
   shadowDom,
   adoptedStylesheetShadow,
   inputTypes,
+  canvasBlock,
 ];
