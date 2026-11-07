@@ -60,6 +60,16 @@ const nextFrame = () =>
 const sleep = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+/**
+ * What a recording's stop waits for before it stops: two animation frames,
+ * then 50 ms. A page that renders no frames never gets past it.
+ */
+export async function settleLikeStop(): Promise<void> {
+  await nextFrame();
+  await nextFrame();
+  await sleep(50);
+}
+
 function randomDigits(n: number): string {
   let out = '';
   for (let i = 0; i < n; i++) out += Math.floor(Math.random() * 10);
@@ -126,9 +136,7 @@ export function createContext(runOptions: RunOptions): CheckContext {
       return {
         stop() {
           stopped ??= (async () => {
-            await nextFrame();
-            await nextFrame();
-            await sleep(50);
+            await settleLikeStop();
             stopFn();
             return events;
           })();

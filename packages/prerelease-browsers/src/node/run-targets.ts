@@ -200,7 +200,15 @@ export async function runTarget(
       brokenInARow = broken ? [...brokenInARow, [meta.id, outcome]] : [];
       if (brokenInARow.length >= brokenChecksLimit) {
         result.trippedBy = brokenInARow.map(([id]) => id);
-        // A page that does nothing but load settles on a working driver.
+        // Past the deadline no probe starts, and without it nothing tells a
+        // broken driver from a hang: blame neither check.
+        if (Date.now() >= opts.deadline.getTime()) {
+          for (const [, tripped] of brokenInARow) tripped.status = 'not-run';
+          stopHere('deadline');
+          break;
+        }
+        // A page that loads and waits for frames, recording nothing, settles
+        // on a working driver.
         const probe = await probeDriver(src);
         if (probe === 'works') {
           // Then rrweb hangs: the tripping checks failed, and alert. Every

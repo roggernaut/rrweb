@@ -6,6 +6,7 @@ import { mediaChecks } from './checks/media.ts';
 import { perfChecks } from './checks/perf.ts';
 import { privacyChecks } from './checks/privacy.ts';
 import type { CheckContext, CheckDefinition } from './harness.ts';
+import { settleLikeStop } from './harness.ts';
 
 declare global {
   interface Window {
@@ -161,15 +162,21 @@ export const checks: CheckDefinition[] = [
 /**
  * Not a check: the page runTarget loads when two checks in a row hang or
  * garble the protocol, to tell a broken driver from an rrweb that hangs.
- * It has the bundle and rrweb loaded like any check, starts no recording
- * and settles at once. It is in no check list, so it is never selected,
- * listed or reported; findCheck and the fixture server still know it.
+ * It has the bundle and rrweb loaded like any check and records nothing,
+ * but waits for frames as a recording's stop does: a page that renders no
+ * frames (a screen off, a hidden window) hangs every recording check, and
+ * must hang the probe too, or it would read as an rrweb hang. It is in no
+ * check list, so it is never selected, listed or reported; findCheck and
+ * the fixture server still know it.
  */
 export const driverProbe: CheckDefinition = {
   id: 'driver-probe',
   kind: 'functional',
   tier: 'focused',
-  run: () => Promise.resolve({ ok: true }),
+  async run() {
+    await settleLikeStop();
+    return { ok: true };
+  },
 };
 
 export function findCheck(id: string): CheckDefinition | undefined {

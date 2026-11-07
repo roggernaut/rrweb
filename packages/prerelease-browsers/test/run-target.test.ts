@@ -192,8 +192,8 @@ test('two checks in a row that time out, and a probe that hangs too, stop the ta
  * while the probe page settles at once: the driver works, rrweb hangs.
  * `pages` lists every page loaded, by check id.
  */
-function hangingChecksDriver() {
-  const driver = scriptedDriver(() => ({ ok: true }));
+function hangingChecksDriver(onLoad?: (n: number) => void) {
+  const driver = scriptedDriver(() => ({ ok: true }), onLoad);
   const pages: string[] = [];
   const load = (id: string) => pages.push(id);
   const { loadHtml, open, evaluate } = driver;
@@ -272,6 +272,40 @@ describe('a consistent rrweb hang on a working driver', () => {
       expect(await readResults(tmp)).toEqual([r]);
     },
   );
+
+  test('past the deadline no probe runs, and the target stops as cut off by it', async () => {
+    const deadline = new Date(future);
+    // The deadline passes during check 2's second attempt, which still
+    // finishes, so the breaker trips with the deadline gone.
+    const driver = hangingChecksDriver((n) => {
+      if (n === 4) deadline.setTime(0);
+    });
+    const r = await runTarget(
+      {
+        ...findTarget('local-chromium'),
+        timeScale: 0.001,
+        connect: async () => driver,
+      },
+      { resultsDir: tmp, deadline, rrwebCommit: 'abc', only },
+    );
+    expect(driver.pages).not.toContain(driverProbe.id);
+    expect(driver.loads).toBe(4);
+    // Without the probe nothing tells a broken driver from a hang, so
+    // neither check is blamed.
+    expect(r.checks).toEqual({
+      'snapshot-basic': { ...timedOut, status: 'not-run' },
+      'shadow-dom-open': { ...timedOut, status: 'not-run' },
+      'iframe-same-origin': {
+        kind: 'functional',
+        status: 'not-run',
+        attempts: 0,
+      },
+    });
+    expect(r.incomplete).toBe(true);
+    expect(r.incompleteReason).toBe('deadline');
+    expect(r.trippedBy).toEqual(['snapshot-basic', 'shadow-dom-open']);
+    expect(collectFailures([r], [r.targetId], []).failures).toEqual([]);
+  });
 
   test('a probe that cannot get a fresh Window stops the target as that, blaming no check', async () => {
     const driver = hangingChecksDriver();
