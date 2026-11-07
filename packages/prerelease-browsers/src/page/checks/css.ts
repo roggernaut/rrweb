@@ -144,6 +144,8 @@ interface SerializedNode {
 /**
  * True when the recording holds slow.css's text for its link: inlined in the
  * snapshot or a later added node, or set by a later attribute mutation.
+ * This encodes rrweb's current `_cssText` serialization, so a change to how
+ * rrweb captures stylesheets shows up here as "not captured".
  */
 function capturedSlowCss(events: eventWithTime[]): boolean {
   const linkIds = new Set<number>();

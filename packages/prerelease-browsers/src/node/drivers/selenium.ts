@@ -74,22 +74,31 @@ export async function connectSelenium(opts: {
     );
   }
 
-  /** Moves the session into a new tab and closes the one it was in. */
+  /**
+   * Moves the session into a new tab and closes the one it was in. Any step
+   * failing means this browser cannot give pages a fresh Window, which is
+   * no check's fault: it throws RealmReuseError naming the step.
+   */
   async function moveToFreshTab(): Promise<void> {
-    const old = await driver.getWindowHandle();
-    try {
-      await driver.switchTo().newWindow('tab');
-    } catch (err) {
-      throw new RealmReuseError(
-        `navigating to a blank page kept the previous Window, and the browser could not open a new tab: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      );
-    }
-    const fresh = await driver.getWindowHandle();
-    await driver.switchTo().window(old);
-    await driver.close();
-    await driver.switchTo().window(fresh);
+    const step = async <T>(name: string, fn: () => Promise<T>): Promise<T> => {
+      try {
+        return await fn();
+      } catch (err) {
+        throw new RealmReuseError(
+          `navigating to a blank page kept the previous Window, and the browser could not move to a new tab (${name}): ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+    };
+    const old = await step('get window handle', () => driver.getWindowHandle());
+    await step('new window', () => driver.switchTo().newWindow('tab'));
+    const fresh = await step('get window handle', () =>
+      driver.getWindowHandle(),
+    );
+    await step('switch to old window', () => driver.switchTo().window(old));
+    await step('close window', () => driver.close());
+    await step('switch to new window', () => driver.switchTo().window(fresh));
   }
 
   return {

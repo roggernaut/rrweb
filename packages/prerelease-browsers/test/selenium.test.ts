@@ -85,7 +85,9 @@ describe('startDriverProcess', () => {
  * navigation, windows and the scripts loadHtml runs. With `keepWindow`, the
  * reuse marker survives navigation within a window, like an engine that
  * reuses the Window; with `sharedRealm` too, it shows in a new tab as well.
- * With `noNewWindow`, the New Window command is unknown.
+ * With `noNewWindow`, the New Window command is unknown; with `failClose`,
+ * Close Window errors; with `failReturnToNew`, switching back to a new tab
+ * after the one switch New Window makes errors.
  */
 async function startFakeWebDriver() {
   const state = {
@@ -94,6 +96,9 @@ async function startFakeWebDriver() {
     keepWindow: false,
     sharedRealm: false,
     noNewWindow: false,
+    failClose: false,
+    failReturnToNew: false,
+    switches: [] as string[],
     current: 'w1',
     /** Open windows, each with whether a page was written into it. */
     windows: new Map([['w1', false]]),
@@ -126,8 +131,17 @@ async function startFakeWebDriver() {
       return send({ handle, type: 'tab' });
     }
     if (route === 'POST /session/fake/window') {
-      state.current = (JSON.parse(body) as { handle: string }).handle;
+      const { handle } = JSON.parse(body) as { handle: string };
+      const returning = state.switches.includes(handle);
+      state.switches.push(handle);
+      if (state.failReturnToNew && handle !== 'w1' && returning) {
+        return send({ error: 'no such window', message: 'gone' }, 404);
+      }
+      state.current = handle;
       return send(null);
+    }
+    if (route === 'DELETE /session/fake/window' && state.failClose) {
+      return send({ error: 'unknown error', message: 'cannot close' }, 500);
     }
     if (route === 'DELETE /session/fake/window') {
       state.windows.delete(state.current);
@@ -225,8 +239,37 @@ describe('connectSelenium against a fake WebDriver server', () => {
     await driver.loadHtml('<p>one</p>');
     const load = driver.loadHtml('<p>two</p>');
     await expect(load).rejects.toBeInstanceOf(RealmReuseError);
-    await expect(load).rejects.toThrow(/could not open a new tab/);
+    await expect(load).rejects.toThrow(
+      /could not move to a new tab \(new window\): /,
+    );
     expect(fake.state.closed).toEqual([]);
+    await driver.close();
+  });
+
+  test('a Close Window error while moving to a new tab throws RealmReuseError', async () => {
+    fake.state.keepWindow = true;
+    fake.state.failClose = true;
+    const driver = await connect();
+    await driver.loadHtml('<p>one</p>');
+    const load = driver.loadHtml('<p>two</p>');
+    await expect(load).rejects.toBeInstanceOf(RealmReuseError);
+    await expect(load).rejects.toThrow(
+      /could not move to a new tab \(close window\): cannot close/,
+    );
+    await driver.close();
+  });
+
+  test('a failed switch back to the new tab throws RealmReuseError', async () => {
+    fake.state.keepWindow = true;
+    fake.state.failReturnToNew = true;
+    const driver = await connect();
+    await driver.loadHtml('<p>one</p>');
+    const load = driver.loadHtml('<p>two</p>');
+    await expect(load).rejects.toBeInstanceOf(RealmReuseError);
+    await expect(load).rejects.toThrow(
+      /could not move to a new tab \(switch to new window\): gone/,
+    );
+    expect(fake.state.closed).toEqual(['w1']);
     await driver.close();
   });
 

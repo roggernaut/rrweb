@@ -69,14 +69,11 @@ const BASE_LABELS = [
 ];
 
 /**
- * Labels that older runs put on issues and this one no longer does. They are
- * treated as derived so an update takes them off.
+ * Labels only this suite used and no longer adds. They are treated as derived
+ * so an update takes them off. `severity:critical` is not among them: the
+ * name is generic, and a maintainer may have put it on an issue themselves.
  */
-const RETIRED_LABELS = [
-  'severity:critical',
-  'prerelease:also-fails-on-stable',
-  'prerelease:privacy',
-];
+const RETIRED_LABELS = ['prerelease:also-fails-on-stable', 'prerelease:privacy'];
 
 /** Labels the reporter derives from a failure, so it may take them away. */
 const derived = (label: string) =>
@@ -241,7 +238,7 @@ export async function reconcile(opts: ReconcileOptions): Promise<IssuePlan> {
       case 'reopen': {
         const prev = current(a.issue);
         const f = withEngines(a.failure, a.recordEngines);
-        const title = issueTitle(f);
+        const title = issueTitle(f, a.recordTargets);
         const body = issueBody(a.failure, run, count, {
           body: prev.body,
           record: a,
@@ -340,8 +337,14 @@ export async function reconcile(opts: ReconcileOptions): Promise<IssuePlan> {
     issueCap: opts.issueCap,
   });
   if (status) {
-    if (status.body !== body) {
-      await gh.updateIssue(status.number, { body });
+    // Only a title still in the old `[pre-release]` form is rewritten; one a
+    // maintainer has edited is left alone.
+    const retitle = status.title.startsWith('[pre-release]');
+    if (status.body !== body || retitle) {
+      await gh.updateIssue(status.number, {
+        ...(retitle ? { title: statusTitle } : {}),
+        body,
+      });
       log(`updated status #${status.number}`);
     }
   } else {

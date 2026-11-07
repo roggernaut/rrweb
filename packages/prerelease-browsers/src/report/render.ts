@@ -178,10 +178,16 @@ export function parseMarkers(body: string): {
 /**
  * `<checkId> fails on <engines>`, with a note when no stable build fails too,
  * so a title says at a glance whether the browser or rrweb is the likelier
- * cause.
+ * cause. The note needs every recorded target to be known: a target carried
+ * over from an earlier run, whose channel and state this run did not see, may
+ * be a stable one, so any carried target leaves the note off. `recordTargets`
+ * is the planner's recorded set; without it, this run's failing targets.
  */
-export function issueTitle(f: Failure): string {
-  const upcomingOnly = !f.targets.some((t) => t.channel === 'stable');
+export function issueTitle(f: Failure, recordTargets?: string[]): string {
+  const failingNow = new Set(f.targets.map((t) => t.targetId));
+  const upcomingOnly =
+    !f.targets.some((t) => t.channel === 'stable') &&
+    (recordTargets ?? []).every((t) => failingNow.has(t));
   return `${f.checkId} fails on ${f.engines.join(', ')}${
     upcomingOnly ? ' (upcoming builds only)' : ''
   }`;
