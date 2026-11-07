@@ -9,6 +9,7 @@ import type { PageDriver } from '../src/node/drivers/types.ts';
 import { startFixtureServer } from '../src/node/fixture-server.ts';
 import type { FixtureServer } from '../src/node/fixture-server.ts';
 import { checks } from '../src/page/registry.ts';
+import type { CheckMeta } from '../src/types.ts';
 
 /** Every check that must exist; later tasks extend this list. */
 const expectedIds = [
@@ -93,6 +94,18 @@ const allowedSkips: Record<string, string> = {
   'media-play-pause': 'play rejected',
 };
 
+/**
+ * css-early-linked-stylesheet with rrweb's stylesheet inlining off, served
+ * with the flag that registers test-only checks.
+ */
+const notInlined: CheckMeta = {
+  id: 'test-early-stylesheet-not-inlined',
+  kind: 'functional',
+  tier: 'full',
+  needsHttp: true,
+  head: '<script>window.__prerelease_test=true</script>',
+};
+
 const timeoutMs = 60_000;
 let driver: PageDriver;
 let bundle: string;
@@ -104,7 +117,10 @@ beforeAll(async () => {
   rrweb = readRrwebUmd();
   // Free ports, so parallel test files never collide on 8123.
   process.env.PRERELEASE_HTTP_PORT ??= '0';
-  server = await startFixtureServer({ bundle, rrweb });
+  server = await startFixtureServer(
+    { bundle, rrweb },
+    { extraChecks: [notInlined] },
+  );
   driver = await launchPlaywright({ engine: 'chromium' });
 }, 60_000);
 
@@ -183,6 +199,23 @@ describe.each(expectedIds)('%s', (id) => {
     },
   );
 });
+
+test(
+  'css-early-linked-stylesheet fails when rrweb does not inline the stylesheet',
+  { timeout: timeoutMs + 10_000 },
+  async () => {
+    const result = await runAttempt(
+      driver,
+      notInlined,
+      { bundle, rrweb, httpOrigin: server.origin },
+      { timeoutMs },
+    );
+    expect(result.ok).toBe(false);
+    expect(result.message).toBe(
+      'stylesheet text not captured in the recording',
+    );
+  },
+);
 
 describe.each(perfIds)('%s', (id) => {
   test(

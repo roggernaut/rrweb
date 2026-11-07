@@ -47,10 +47,12 @@ function listen(server: Server, port: number): Promise<number> {
  * next one up (default 8123), which lets `adb reverse` map them; 0 picks free
  * ports.
  */
-export async function startFixtureServer(src: {
-  bundle: string;
-  rrweb: string;
-}): Promise<FixtureServer> {
+export async function startFixtureServer(
+  src: { bundle: string; rrweb: string },
+  /** Test-only checks to serve too, such as a test-* variant with its head. */
+  opts: { extraChecks?: CheckMeta[] } = {},
+): Promise<FixtureServer> {
+  const served: CheckMeta[] = [...checks, ...(opts.extraChecks ?? [])];
   const basePort = process.env.PRERELEASE_HTTP_PORT
     ? Number(process.env.PRERELEASE_HTTP_PORT)
     : defaultHttpPort;
@@ -59,6 +61,8 @@ export async function startFixtureServer(src: {
   }
   const ports: number[] = [];
   const pendingTimers = new Set<ReturnType<typeof setTimeout>>();
+  /** Nonces of slow.css already requested. */
+  const servedOnce = new Set<string>();
 
   function send(
     res: ServerResponse,
@@ -97,6 +101,14 @@ export async function startFixtureServer(src: {
     const path = url.pathname;
     if (req.method !== 'GET') return send(res, 405, 'text/plain', 'GET only');
     if (path === '/assets/slow.css') {
+      // With ?once=<nonce> only the first request is served, so the replay
+      // cannot fetch the CSS itself and no cache can hold it: a recorder
+      // that did not capture the stylesheet cannot pass by accident.
+      const once = url.searchParams.get('once');
+      if (once !== null) {
+        if (servedOnce.has(once)) return send(res, 404, 'text/css', '');
+        servedOnce.add(once);
+      }
       const timer = setTimeout(() => {
         pendingTimers.delete(timer);
         send(res, 200, 'text/css', '#early{color:rgb(0,0,255)}');
@@ -110,7 +122,7 @@ export async function startFixtureServer(src: {
     }
     const check = /^\/check\/([^/]+)$/.exec(path);
     if (check) {
-      const meta = checks.find((c) => c.id === decodeURIComponent(check[1]));
+      const meta = served.find((c) => c.id === decodeURIComponent(check[1]));
       if (!meta) return send(res, 404, 'text/plain', 'unknown check');
       return send(res, 200, 'text/html', checkPage(meta, req));
     }

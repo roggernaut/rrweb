@@ -146,7 +146,10 @@ export function createContext(runOptions: RunOptions): CheckContext {
       container.style.cssText =
         'position:absolute;left:-30000px;top:0;pointer-events:none';
       document.documentElement.appendChild(container);
-      const replayer = new rrweb.Replayer(events, {
+      // A copy: the Replayer writes into the events it is given (a link's
+      // late _cssText lands in its snapshot node), and failure evidence
+      // must show what rrweb recorded.
+      const replayer = new rrweb.Replayer(structuredClone(events), {
         root: container,
         mouseTail: false,
         triggerFocus: false,

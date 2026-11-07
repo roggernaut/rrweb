@@ -108,3 +108,11 @@ test('start returns before any check code runs', async () => {
   });
   expect(await driver.evaluate('window.__prerelease_test_ran')).toBe(true);
 });
+
+test('replaying leaves the recorded events as they were', async () => {
+  const r = await runAttempt(driver, meta('test-replay-keeps-events'), src, {
+    timeoutMs: 10_000,
+  });
+  expect(r.message ?? '').toBe('');
+  expect(r.ok).toBe(true);
+});

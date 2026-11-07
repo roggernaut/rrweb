@@ -1,5 +1,8 @@
-import type { CheckDefinition, Probe } from '../harness.ts';
-import type { Tier } from '../../types.ts';
+import type { CheckContext, CheckDefinition, Probe } from '../harness.ts';
+import type { eventWithTime } from '@rrweb/types';
+import type { AttemptResult, Tier } from '../../types.ts';
+
+type RecordOptions = NonNullable<Parameters<CheckContext['record']>[0]>;
 
 /**
  * A check whose page is plain markup plus one stylesheet, recorded from the
@@ -71,49 +74,120 @@ const nestedRules = staticStyleCheck({
   probes: [{ selector: '.n .c', props: ['color'] }],
 });
 
+/**
+ * The body of css-early-linked-stylesheet. `recordOptions` exists so a
+ * test-only variant can break the recorder and prove the check notices.
+ */
+export async function runEarlyLinkedStylesheet(
+  ctx: CheckContext,
+  recordOptions: RecordOptions = {},
+): Promise<AttemptResult> {
+  // A link in the composed head would block the scripts until it loaded.
+  // Inserting it here, then recording at once, makes it pending when rrweb
+  // takes the full snapshot.
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  // A fresh nonce per attempt: the server answers it once, so only the live
+  // page gets the CSS, never the replay or a cache.
+  link.href = `/assets/slow.css?once=${Math.random().toString(36).slice(2)}`;
+  document.head.appendChild(link);
+  const recording = ctx.record({
+    recordAfter: 'DOMContentLoaded',
+    ...recordOptions,
+  });
+  if (link.sheet !== null) {
+    const events = await recording.stop();
+    return {
+      ok: false,
+      message: 'precondition: slow.css already loaded when recording started',
+      events,
+    };
+  }
+  const early = document.createElement('div');
+  early.id = 'early';
+  early.textContent = 'early';
+  document.body.appendChild(early);
+  const blue = 'rgb(0, 0, 255)';
+  const deadline = Date.now() + 10_000;
+  while (getComputedStyle(early).color !== blue && Date.now() < deadline) {
+    await ctx.sleep(50);
+  }
+  const events = await recording.stop();
+  if (getComputedStyle(early).color !== blue) {
+    return {
+      ok: false,
+      message: 'the linked stylesheet never applied to the live page',
+      events,
+    };
+  }
+  // Before replaying: what rrweb recorded, not whatever the replay shows.
+  if (!capturedSlowCss(events)) {
+    return {
+      ok: false,
+      message: 'stylesheet text not captured in the recording',
+      events,
+    };
+  }
+  return ctx.compareComputed(events, [
+    { selector: '#early', props: ['color'] },
+  ]);
+}
+
+interface SerializedNode {
+  type: number;
+  id: number;
+  tagName?: string;
+  attributes?: Record<string, unknown>;
+  childNodes?: SerializedNode[];
+}
+
+/**
+ * True when the recording holds slow.css's text for its link: inlined in the
+ * snapshot or a later added node, or set by a later attribute mutation.
+ */
+function capturedSlowCss(events: eventWithTime[]): boolean {
+  const linkIds = new Set<number>();
+  const texts: unknown[] = [];
+  const visit = (node: SerializedNode) => {
+    if (
+      node.type === 2 /* Element */ &&
+      node.tagName === 'link' &&
+      String(node.attributes?.href ?? '').includes('/assets/slow.css')
+    ) {
+      linkIds.add(node.id);
+      texts.push(node.attributes?._cssText);
+    }
+    node.childNodes?.forEach(visit);
+  };
+  const mutations = events.flatMap((e) =>
+    e.type === 3 /* IncrementalSnapshot */ && e.data.source === 0 /* Mutation */
+      ? [e.data]
+      : [],
+  );
+  for (const e of events) {
+    if (e.type === 2 /* FullSnapshot */) visit(e.data.node as SerializedNode);
+  }
+  for (const m of mutations) {
+    for (const add of m.adds) visit(add.node as SerializedNode);
+  }
+  for (const m of mutations) {
+    for (const a of m.attributes) {
+      if (linkIds.has(a.id)) texts.push(a.attributes._cssText);
+    }
+  }
+  return texts.some(
+    (text) =>
+      typeof text === 'string' &&
+      (text.includes('rgb(0, 0, 255)') || text.includes('#early')),
+  );
+}
+
 const earlyLinkedStylesheet: CheckDefinition = {
   id: 'css-early-linked-stylesheet',
   kind: 'functional',
   tier: 'full',
   needsHttp: true,
-  async run(ctx) {
-    // A link in the composed head would block the scripts until it loaded.
-    // Inserting it here, then recording at once, makes it pending when rrweb
-    // takes the full snapshot.
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = '/assets/slow.css';
-    document.head.appendChild(link);
-    const recording = ctx.record({ recordAfter: 'DOMContentLoaded' });
-    if (link.sheet !== null) {
-      const events = await recording.stop();
-      return {
-        ok: false,
-        message: 'precondition: slow.css already loaded when recording started',
-        events,
-      };
-    }
-    const early = document.createElement('div');
-    early.id = 'early';
-    early.textContent = 'early';
-    document.body.appendChild(early);
-    const blue = 'rgb(0, 0, 255)';
-    const deadline = Date.now() + 10_000;
-    while (getComputedStyle(early).color !== blue && Date.now() < deadline) {
-      await ctx.sleep(50);
-    }
-    const events = await recording.stop();
-    if (getComputedStyle(early).color !== blue) {
-      return {
-        ok: false,
-        message: 'the linked stylesheet never applied to the live page',
-        events,
-      };
-    }
-    return ctx.compareComputed(events, [
-      { selector: '#early', props: ['color'] },
-    ]);
-  },
+  run: (ctx) => runEarlyLinkedStylesheet(ctx),
 };
 
 const adoptedStylesheets: CheckDefinition = {
