@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readResults } from '../src/node/results.ts';
+import { collectFailures } from '../src/report/failures.ts';
 import { RealmReuseError } from '../src/node/drivers/selenium.ts';
 import { DeadlineReached } from '../src/node/run-check.ts';
 import { runTarget, runTargetOrRecordCrash } from '../src/node/run-targets.ts';
@@ -87,10 +88,13 @@ function brokenPollDriver(broken: (load: number) => boolean) {
   return driver;
 }
 
-test('two checks in a row with a broken protocol stop the target', async () => {
+test('two checks in a row with a broken protocol stop the target and blame neither', async () => {
   let closed = false;
+  const marks: Array<[boolean, string]> = [];
   const driver = brokenPollDriver(() => true);
   driver.close = async () => void (closed = true);
+  driver.markSession = async (passed, reason) =>
+    void marks.push([passed, reason]);
   const r = await runTarget(
     { ...findTarget('local-chromium'), connect: async () => driver },
     {
@@ -101,20 +105,75 @@ test('two checks in a row with a broken protocol stop the target', async () => {
     },
   );
   expect(driver.loads).toBe(4);
-  expect(r.checks['snapshot-basic']).toMatchObject({
-    status: 'fail',
-    attempts: 2,
-    message: 'malformed poll result from driver',
-  });
-  expect(r.checks['shadow-dom-open'].status).toBe('fail');
-  expect(r.checks['iframe-same-origin']).toEqual({
-    kind: 'functional',
-    status: 'not-run',
-    attempts: 0,
+  // The checks that tripped the breaker keep what they took, for the status
+  // issue, but are not failures: the driver broke, not rrweb.
+  expect(r.checks).toEqual({
+    'snapshot-basic': {
+      kind: 'functional',
+      status: 'not-run',
+      attempts: 2,
+      message: 'malformed poll result from driver',
+    },
+    'shadow-dom-open': {
+      kind: 'functional',
+      status: 'not-run',
+      attempts: 2,
+      message: 'malformed poll result from driver',
+    },
+    'iframe-same-origin': {
+      kind: 'functional',
+      status: 'not-run',
+      attempts: 0,
+    },
   });
   expect(r.incomplete).toBe(true);
   expect(r.incompleteReason).toBe('protocol broken');
   expect(closed).toBe(true);
+  expect(marks).toEqual([[false, 'incomplete: protocol broken']]);
+  expect(collectFailures([r], [r.targetId], []).failures).toEqual([]);
+});
+
+test('two checks in a row that time out stop the target and blame neither', async () => {
+  // Every poll says running, so each attempt runs into its timeout.
+  const driver = scriptedDriver(() => ({ ok: true }));
+  const inner = driver.evaluate;
+  driver.evaluate = async <T>(expression: string): Promise<T> =>
+    expression === '__prerelease.poll()'
+      ? ({ state: 'running' } as T)
+      : inner<T>(expression);
+  const r = await runTarget(
+    {
+      ...findTarget('local-chromium'),
+      // 60 ms attempts instead of 60 s.
+      timeScale: 0.001,
+      connect: async () => driver,
+    },
+    {
+      resultsDir: tmp,
+      deadline: future,
+      rrwebCommit: 'abc',
+      only: ['snapshot-basic', 'shadow-dom-open', 'iframe-same-origin'],
+    },
+  );
+  expect(Object.values(r.checks)).toEqual([
+    {
+      kind: 'functional',
+      status: 'not-run',
+      attempts: 2,
+      message: 'timed out after 60 ms',
+    },
+    {
+      kind: 'functional',
+      status: 'not-run',
+      attempts: 2,
+      message: 'timed out after 60 ms',
+    },
+    { kind: 'functional', status: 'not-run', attempts: 0 },
+  ]);
+  expect(r.incomplete).toBe(true);
+  expect(r.incompleteReason).toBe('protocol broken');
+  expect(collectFailures([r], [r.targetId], []).failures).toEqual([]);
+  expect(await readResults(tmp)).toEqual([r]);
 });
 
 describe('a driver that cannot give a page a fresh Window', () => {
@@ -195,6 +254,12 @@ test('a working check between broken ones keeps the target going', async () => {
     },
   );
   expect(driver.loads).toBe(5);
+  // An isolated broken check trips nothing, so it stays a failure.
+  expect(r.checks['snapshot-basic']).toMatchObject({
+    status: 'fail',
+    attempts: 2,
+    message: 'malformed poll result from driver',
+  });
   expect(r.checks['shadow-dom-open'].status).toBe('pass');
   expect(r.checks['iframe-same-origin'].status).toBe('fail');
   expect(r.incomplete).toBe(false);

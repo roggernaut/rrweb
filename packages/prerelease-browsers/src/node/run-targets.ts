@@ -148,7 +148,8 @@ export async function runTarget(
       server = await startFixtureServer({ bundle, rrweb });
     }
     const src = { bundle, rrweb, httpOrigin: server?.origin };
-    let brokenInARow = 0;
+    /** The checks in the current run of driver-broken ones. */
+    let brokenInARow: CheckOutcome[] = [];
     for (const meta of metas) {
       let checked: Awaited<ReturnType<typeof runCheck>>;
       try {
@@ -169,8 +170,12 @@ export async function runTarget(
       }
       // A skip never touched the browser, so it says nothing either way.
       if (outcome.status === 'skipped') continue;
-      brokenInARow = broken ? brokenInARow + 1 : 0;
-      if (brokenInARow >= brokenChecksLimit) {
+      brokenInARow = broken ? [...brokenInARow, outcome] : [];
+      if (brokenInARow.length >= brokenChecksLimit) {
+        // The driver broke, not rrweb: the checks that showed it did not
+        // really run. They keep their attempts and message for the status
+        // issue, but open no issue.
+        for (const tripped of brokenInARow) tripped.status = 'not-run';
         stopHere('protocol broken');
         break;
       }
@@ -291,11 +296,14 @@ async function markSession(
     const failed = Object.entries(result.checks).filter(
       ([, c]) => c.status === 'fail',
     );
+    const incomplete = result.incomplete
+      ? `incomplete: ${result.incompleteReason ?? 'unknown reason'}`
+      : undefined;
     await driver.markSession?.(
-      failed.length === 0,
-      failed.length === 0
-        ? 'all checks passed'
-        : `failed: ${failed.map(([id]) => id).join(', ')}`,
+      failed.length === 0 && incomplete === undefined,
+      failed.length > 0
+        ? `failed: ${failed.map(([id]) => id).join(', ')}`
+        : incomplete ?? 'all checks passed',
     );
     return await driver.sessionUrl?.();
   } catch {
