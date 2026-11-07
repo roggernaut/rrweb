@@ -9,9 +9,12 @@ import {
   parseMarkers,
   runBrokenBody,
   statusBody,
+  type RunCount,
   type RunMeta,
 } from '../src/report/render.ts';
 import {
+  countLine,
+  fail,
   incomplete,
   launchFailed,
   passing,
@@ -23,6 +26,7 @@ const run: RunMeta = {
   date: '2026-11-06',
   rrwebCommit: 'abc123',
 };
+const one: RunCount = { failing: 1, heldBack: 0 };
 let results: TargetResult[];
 let failure: Failure;
 
@@ -35,7 +39,7 @@ beforeAll(async () => {
 });
 
 test('markers round-trip', () => {
-  const body = issueBody(failure, run);
+  const body = issueBody(failure, run, one);
   expect(parseMarkers(body)).toMatchObject({
     key: failure.key,
     engines: failure.engines,
@@ -48,7 +52,8 @@ test('history keeps the last 10 runs, newest first', () => {
     body = issueBody(
       failure,
       { ...run, date: `2026-11-${String(i).padStart(2, '0')}` },
-      body,
+      one,
+      body === undefined ? undefined : { body },
     );
   const h = parseMarkers(body!).history;
   expect(h).toHaveLength(10);
@@ -64,7 +69,7 @@ test('huge messages stay under the issue size limit', () => {
       message: 'x'.repeat(10_000),
     })),
   };
-  expect(issueBody(big, run).length).toBeLessThanOrEqual(60_000);
+  expect(issueBody(big, run, one).length).toBeLessThanOrEqual(60_000);
 });
 test('bodies never mention anyone', () => {
   expect(
@@ -80,6 +85,7 @@ test('bodies never mention anyone', () => {
         ],
       },
       run,
+      one,
     ),
   ).not.toMatch(/@[a-z0-9]/i);
 });
@@ -105,7 +111,7 @@ test('title, labels and summary line name the check, engines and commit', () => 
   expect(labelsFor({ ...failure, alsoFailsOnStable: true })).toContain(
     'prerelease:also-fails-on-stable',
   );
-  const body = issueBody(failure, run);
+  const body = issueBody(failure, run, one);
   expect(body).toContain('`abc123`');
   expect(body).toContain('132.0.0.0');
   expect(body).toContain('nested rule lost in the recorded stylesheet');
@@ -114,7 +120,7 @@ test('title, labels and summary line name the check, engines and commit', () => 
 });
 
 test('the reproduce command runs without a mention', () => {
-  const body = issueBody(failure, run);
+  const body = issueBody(failure, run, one);
   expect(body).toContain(
     '```bash\nyarn --cwd packages/prerelease-browsers run-target --target chrome-canary --check css-nested-rules\n```',
   );
@@ -127,15 +133,17 @@ test('a BrowserStack reproduce command runs without a mention', () => {
     ['bs-android-upcoming'],
     [],
   ).failures;
-  expect(issueBody(bs, run)).toContain(
+  expect(issueBody(bs, run, one)).toContain(
     '```bash\nyarn --cwd packages/prerelease-browsers run-browserstack --only bs-android-upcoming --check css-nested-rules\n```',
   );
 });
 
 test('the markers record what the caller passes, not only this run', () => {
-  const body = issueBody(failure, run, undefined, {
-    recordTargets: ['chrome-canary', 'firefox-nightly'],
-    recordEngines: ['chromium', 'gecko'],
+  const body = issueBody(failure, run, one, {
+    record: {
+      recordTargets: ['chrome-canary', 'firefox-nightly'],
+      recordEngines: ['chromium', 'gecko'],
+    },
   });
   expect(parseMarkers(body)).toMatchObject({
     engines: ['chromium', 'gecko'],
@@ -157,6 +165,7 @@ test('page text cannot forge a marker or break the table', () => {
       ],
     },
     run,
+    one,
   );
   expect(parseMarkers(body).key).toBe(failure.key);
   expect(body.match(/<!-- prerelease:key=/g)).toHaveLength(1);
@@ -166,9 +175,10 @@ test('page text cannot forge a marker or break the table', () => {
 });
 
 test('a re-run of the same run replaces its history row', () => {
-  const once = issueBody(failure, run);
-  expect(parseMarkers(issueBody(failure, run, once)).history).toHaveLength(1);
-  expect(issueBody(failure, run, once)).toBe(once);
+  const once = issueBody(failure, run, one);
+  const again = issueBody(failure, run, one, { body: once });
+  expect(parseMarkers(again).history).toHaveLength(1);
+  expect(again).toBe(once);
 });
 
 test('session links drop their query string', () => {
@@ -184,6 +194,7 @@ test('session links drop their query string', () => {
       ],
     },
     run,
+    one,
   );
   expect(body).toContain(
     'https://automate.browserstack.com/builds/b/sessions/s',
@@ -263,6 +274,7 @@ describe('statusBody', () => {
       {
         actions: [],
         closedButFailing: [{ issue: 4, key: 'a-check:functional' }],
+        heldBack: [],
       },
       run,
       results,
@@ -348,7 +360,7 @@ test('untrusted text renders as code, so links, images and references stay inert
     ...failure,
     targets: [{ ...failure.targets[0], message }],
   };
-  const issue = issueBody(withMessage, run);
+  const issue = issueBody(withMessage, run, one);
   expect(issue).toContain('`' + message + '`');
   const s = summary([withMessage], {
     launchFailures: [{ targetId: 'edge-dev', error: message }],
@@ -379,7 +391,7 @@ describe('a hard size cap on every body', () => {
 
   for (const n of [40, 400]) {
     test(`issue body, ${n} targets`, () => {
-      const body = issueBody(heavyFailure(n), run);
+      const body = issueBody(heavyFailure(n), run, one);
       checkCapped(body);
       expect(parseMarkers(body)).toMatchObject({
         key: failure.key,
@@ -415,4 +427,102 @@ describe('a hard size cap on every body', () => {
       expect(body.startsWith('<!-- prerelease:status -->')).toBe(true);
     });
   }
+});
+
+const runN = (n: number): RunMeta => ({
+  ...run,
+  runUrl: `https://github.com/rrweb-io/rrweb/actions/runs/${n}`,
+});
+
+describe("the run's failure count", () => {
+  test.each<[RunCount, string]>([
+    [{ failing: 1, heldBack: 0 }, '**This run found 1 failing check.**'],
+    [{ failing: 4, heldBack: 0 }, '**This run found 4 failing checks.**'],
+    [
+      { failing: 4, heldBack: 2, cap: 2 },
+      '**This run found 4 failing checks.** 2 were held back by the per-run cap of 2.',
+    ],
+    [
+      { failing: 3, heldBack: 1, cap: 2 },
+      '**This run found 3 failing checks.** 1 was held back by the per-run cap of 2.',
+    ],
+  ])('%o reads right after the markers', (count, line) => {
+    expect(countLine(issueBody(failure, run, count))).toBe(line);
+    const previous = issueBody(failure, runN(2), one);
+    expect(countLine(issueBody(failure, run, count, { body: previous }))).toBe(
+      line,
+    );
+    expect(
+      countLine(
+        issueBody(failure, run, count, { body: previous, reopened: true }),
+      ),
+    ).toBe(line);
+  });
+
+  test('the run-broken body counts every failure', () => {
+    const s = summary([failure, fail('b:functional', ['chrome-canary'])]);
+    expect(countLine(runBrokenBody(s.failures, s, run))).toBe(
+      '**This run found 2 failing checks.**',
+    );
+  });
+
+  test('the status body counts too, held back included', () => {
+    const s = summary([
+      fail('a:functional', ['chrome-canary']),
+      fail('b:functional', ['chrome-canary', 'firefox-nightly']),
+    ]);
+    const body = statusBody(
+      s,
+      planIssueActions(s, [], undefined, 1),
+      run,
+      results,
+      {},
+      { issueCap: 1 },
+    );
+    expect(countLine(body)).toBe(
+      '**This run found 2 failing checks.** 1 was held back by the per-run cap of 1.',
+    );
+  });
+});
+
+test('the notified marker names the run that last opened or reopened the issue', () => {
+  const created = issueBody(failure, runN(1), one);
+  expect(parseMarkers(created).notified).toBe(runN(1).runUrl);
+  const updated = issueBody(failure, runN(2), one, { body: created });
+  expect(parseMarkers(updated).notified).toBe(runN(1).runUrl);
+  const reopened = issueBody(failure, runN(3), one, {
+    body: updated,
+    reopened: true,
+  });
+  expect(parseMarkers(reopened).notified).toBe(runN(3).runUrl);
+});
+
+describe('held-back failures in the status body', () => {
+  const s = summary([
+    fail('a:functional', ['chrome-canary']),
+    fail('b:functional', ['chrome-canary', 'firefox-nightly']),
+    fail('z:privacy', ['safari-tp']),
+  ]);
+
+  test('are listed under the cap with their engines and target count', () => {
+    const body = statusBody(
+      s,
+      planIssueActions(s, [], undefined, 1),
+      run,
+      results,
+      {},
+      { issueCap: 1 },
+    );
+    expect(body).toContain(
+      '### Held back by the per-run issue cap (1)\n\n' +
+        '- `b:functional` on chromium, gecko, 2 targets\n' +
+        '- `a:functional` on chromium, 1 target\n',
+    );
+    expect(body).toMatch(/### Open failures\n\n- new issue `z:privacy`/);
+  });
+
+  test('leave no section when nothing was held back', () => {
+    const body = statusBody(s, planIssueActions(s, []), run, results, {});
+    expect(body).not.toContain('Held back');
+  });
 });

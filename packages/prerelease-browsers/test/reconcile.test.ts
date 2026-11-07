@@ -6,9 +6,16 @@ import {
   type IssuePatch,
   type NewIssue,
 } from '../src/report/github.ts';
-import { reconcile, type GitHubLike } from '../src/report/reconcile.ts';
+import {
+  parseCli,
+  reconcile,
+  type GitHubLike,
+} from '../src/report/reconcile.ts';
 import { parseMarkers, type RunMeta } from '../src/report/render.ts';
-import { failing, incomplete, passing } from './helpers/results.ts';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import type { CheckKind } from '../src/types.ts';
+import { countLine, failing, incomplete, passing } from './helpers/results.ts';
 
 /** An in-memory GitHub with the client's method names. */
 function fakeGitHub(seed: Array<Partial<IssueData>> = []) {
@@ -719,5 +726,174 @@ describe('GitHub client', () => {
         { state: 'closed', state_reason: 'completed' },
       ],
     ]);
+  });
+});
+
+describe('the per-run issue cap', () => {
+  const targets = [
+    'chrome-canary',
+    'chrome-dev',
+    'firefox-nightly',
+    'safari-tp',
+  ];
+  /** Each target with the given checks failing on it, all others passing. */
+  const fails: Record<string, Array<[string, CheckKind]>> = {
+    'chrome-canary': [
+      ['a-check', 'functional'],
+      ['b-check', 'functional'],
+      ['c-check', 'functional'],
+    ],
+    'chrome-dev': [['c-check', 'functional']],
+    'firefox-nightly': [
+      ['b-check', 'functional'],
+      ['c-check', 'functional'],
+    ],
+    'safari-tp': [['mask-check', 'privacy']],
+  };
+  const four = (): TargetResult[] =>
+    targets.map((id) => {
+      const r = passing(id, 'other-check');
+      for (const [checkId, kind] of fails[id]) {
+        r.checks[checkId] = {
+          kind,
+          status: 'fail',
+          attempts: 3,
+          message: `${checkId} broke`,
+        };
+      }
+      return r;
+    });
+  const opts = (gh: ReturnType<typeof fakeGitHub>, r: RunMeta) => ({
+    gh,
+    results: four(),
+    expected: targets,
+    apply: true,
+    run: r,
+    issueCap: 2,
+  });
+  const perCheck = (gh: ReturnType<typeof fakeGitHub>) =>
+    gh.issues.filter((i) => parseMarkers(i.body).key);
+
+  test('opens the first two by priority, says so in each body, and lists the rest in the status', async () => {
+    const gh = fakeGitHub();
+    await reconcile(opts(gh, runN(1)));
+    expect(perCheck(gh).map((i) => parseMarkers(i.body).key)).toEqual([
+      'c-check:functional',
+      'mask-check:privacy',
+    ]);
+    for (const i of perCheck(gh)) {
+      expect(countLine(i.body)).toBe(
+        '**This run found 4 failing checks.** 2 were held back by the per-run cap of 2.',
+      );
+    }
+    const [status] = statusIssues(gh);
+    expect(status.body).toContain(
+      '### Held back by the per-run issue cap (2)\n\n' +
+        '- `b-check:functional` on chromium, gecko, 2 targets\n' +
+        '- `a-check:functional` on chromium, 1 target\n',
+    );
+  });
+
+  test('a second pass on the same results writes nothing', async () => {
+    const gh = fakeGitHub();
+    await reconcile(opts(gh, runN(1)));
+    const writes = {
+      created: gh.created.length,
+      updates: gh.updates.length,
+      comments: gh.comments.length,
+    };
+    await reconcile(opts(gh, runN(1)));
+    expect({
+      created: gh.created.length,
+      updates: gh.updates.length,
+      comments: gh.comments.length,
+    }).toEqual(writes);
+  });
+
+  test('the next run opens the held-back ones and updates the rest', async () => {
+    const gh = fakeGitHub();
+    await reconcile(opts(gh, runN(1)));
+    await reconcile(opts(gh, runN(2)));
+    expect(perCheck(gh)).toHaveLength(4);
+    for (const i of perCheck(gh)) {
+      expect(countLine(i.body)).toBe('**This run found 4 failing checks.**');
+    }
+    expect(statusIssues(gh)[0].body).not.toContain('Held back');
+  });
+
+  test('a reopened body opens with the count', async () => {
+    const gh = fakeGitHub();
+    const fail = [failing('chrome-canary', 'css-nested-rules')];
+    const pass = [passing('chrome-canary', 'css-nested-rules')];
+    const o = { gh, expected: ['chrome-canary'], apply: true, issueCap: 5 };
+    await reconcile({ ...o, results: fail, run: runN(1) });
+    await reconcile({ ...o, results: pass, run: runN(2) });
+    await reconcile({ ...o, results: fail, run: runN(3) });
+    const [issue] = keyed(gh);
+    expect(issue.state).toBe('open');
+    expect(countLine(issue.body)).toBe('**This run found 1 failing check.**');
+    expect(parseMarkers(issue.body).notified).toBe(runN(3).runUrl);
+  });
+
+  test('the run-broken body opens with the count', async () => {
+    const gh = fakeGitHub();
+    await reconcile({
+      gh,
+      results: massFailure(6),
+      expected: ['chrome-canary'],
+      apply: true,
+      run,
+      issueCap: 2,
+    });
+    const [broken] = gh.issues.filter((i) =>
+      i.body.includes('<!-- prerelease:run-broken -->'),
+    );
+    expect(countLine(broken.body)).toBe('**This run found 6 failing checks.**');
+  });
+});
+
+describe('the command line', () => {
+  test('reads --issue-cap as a positive integer', () => {
+    expect(parseCli(['--results', 'r', '--issue-cap', '5']).issueCap).toBe(5);
+    expect(parseCli(['--results', 'r', '--issue-cap=12']).issueCap).toBe(12);
+  });
+
+  test('an absent or empty --issue-cap means no cap', () => {
+    expect(parseCli(['--results', 'r']).issueCap).toBeUndefined();
+    expect(parseCli(['--results', 'r', '--issue-cap', '']).issueCap).toBe(
+      undefined,
+    );
+    expect(parseCli(['--results', 'r', '--issue-cap=']).issueCap).toBe(
+      undefined,
+    );
+  });
+
+  test.each(['0', '-1', 'abc', '2.5', '5x', '1e3', '99999999999999999999'])(
+    'rejects --issue-cap=%s',
+    (value) => {
+      expect(() =>
+        parseCli(['--results', 'r', `--issue-cap=${value}`]),
+      ).toThrow(`--issue-cap must be a positive integer, not '${value}'`);
+    },
+  );
+
+  test('a bad cap stops the report with an error', async () => {
+    const script = fileURLToPath(
+      new URL('../src/report/reconcile.ts', import.meta.url),
+    );
+    const err = await promisify(execFile)(process.execPath, [
+      script,
+      '--results',
+      'results',
+      '--issue-cap',
+      '0',
+    ]).then(
+      () => undefined,
+      (e: { code: number; stderr: string }) => e,
+    );
+    expect(err?.code).toBe(1);
+    expect(err?.stderr).toContain(
+      "--issue-cap must be a positive integer, not '0'",
+    );
   });
 });

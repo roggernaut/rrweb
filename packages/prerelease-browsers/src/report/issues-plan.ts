@@ -9,6 +9,11 @@ export interface ExistingIssue {
   key: string; // parsed from the body marker
   engines: Engine[]; // parsed from the body marker
   failingTargets: string[]; // parsed from the body marker
+  /**
+   * This run already opened or reopened the issue: the report ran before on
+   * the same run. The issue keeps its slot under the per-run cap.
+   */
+  notifiedThisRun?: boolean;
 }
 
 /**
@@ -37,9 +42,18 @@ export type IssueAction =
   /** The open run-broken issue, after a complete run that was not broken. */
   | { type: 'close-run-broken'; issue: number };
 
+/** A failure the per-run cap kept from opening or reopening its issue. */
+export interface HeldBack {
+  key: string;
+  engines: Engine[];
+  targets: string[];
+}
+
 export interface IssuePlan {
   actions: IssueAction[];
   closedButFailing: Array<{ issue: number; key: string }>;
+  /** In the order they would get a slot. */
+  heldBack: HeldBack[];
 }
 
 /** Share of the keys that ran which must fail for the run to count as broken. */
@@ -78,6 +92,17 @@ const confirmedPassing = (issue: ExistingIssue, passed: string[]) =>
   issue.failingTargets.length > 0 &&
   issue.failingTargets.every((t) => passed.includes(t));
 
+/**
+ * Which notifying failure gets a slot first: privacy, then more engines,
+ * then more targets, then the lower key.
+ */
+const priority = (a: Failure, b: Failure) =>
+  Number(b.kind === 'privacy') - Number(a.kind === 'privacy') ||
+  b.engines.length - a.engines.length ||
+  new Set(b.targets.map((t) => t.targetId)).size -
+    new Set(a.targets.map((t) => t.targetId)).size ||
+  compareStrings(a.key, b.key);
+
 /** Open before closed, then the highest number first. */
 const preference = (a: ExistingIssue, b: ExistingIssue) =>
   a.state !== b.state ? (a.state === 'open' ? -1 : 1) : b.number - a.number;
@@ -94,12 +119,24 @@ const preference = (a: ExistingIssue, b: ExistingIssue) =>
  * reopens it. An open run-broken issue closes after a complete run that was
  * not broken; missing or incomplete targets keep it open. Actions come out
  * ordered by key, then issue number, whatever the order of the inputs.
+ *
+ * With a `cap`, at most that many issues open or reopen. Issues this run
+ * already opened or reopened (a re-run of the report) hold their slots
+ * first; the rest go by `priority`. A failure that gets no slot has no
+ * action and is listed in `heldBack`. It still failed, so it closes nothing.
+ * Updates, closes and the run-broken actions are never capped.
  */
 export function planIssueActions(
   summary: RunSummary,
   existing: ExistingIssue[],
   runBrokenIssue?: ExistingIssue,
+  cap?: number,
 ): IssuePlan {
+  if (cap !== undefined && !(Number.isInteger(cap) && cap > 0)) {
+    throw new RangeError(
+      `the issue cap must be a positive integer, not ${cap}`,
+    );
+  }
   const failures = [...summary.failures].sort((a, b) =>
     compareStrings(a.key, b.key),
   );
@@ -117,6 +154,7 @@ export function planIssueActions(
         },
       ],
       closedButFailing: [],
+      heldBack: [],
     };
   }
 
@@ -124,55 +162,78 @@ export function planIssueActions(
   for (const i of existing) byKey.set(i.key, [...(byKey.get(i.key) ?? []), i]);
   for (const issues of byKey.values()) issues.sort(preference);
 
-  const planned: Array<{ key: string; issue: number; action: IssueAction }> =
-    [];
+  type Planned = { key: string; issue: number; action: IssueAction };
+  const planned: Planned[] = [];
   const closedButFailing: IssuePlan['closedButFailing'] = [];
   const failed = new Set<string>();
+  /** Creates and reopens, which notify; they compete for the cap's slots. */
+  const notifying: Array<{ failure: Failure; entry: Planned }> = [];
+  let slotsUsed = 0;
 
   for (const failure of failures) {
     failed.add(failure.key);
     const match = byKey.get(failure.key)?.[0];
     if (!match) {
-      planned.push({
-        key: failure.key,
-        issue: 0,
-        action: { type: 'create', failure },
+      notifying.push({
+        failure,
+        entry: {
+          key: failure.key,
+          issue: 0,
+          action: { type: 'create', failure },
+        },
       });
       continue;
     }
     const at = { key: failure.key, issue: match.number };
     const rec = record(failure, match, summary.passedOn[failure.key] ?? []);
     if (match.state === 'open') {
+      if (match.notifiedThisRun) slotsUsed++;
       planned.push({
         ...at,
         action: { type: 'update', issue: match.number, failure, ...rec },
       });
     } else if (match.labels.includes(RECOVERED_LABEL)) {
-      planned.push({
-        ...at,
-        action: {
-          type: 'reopen',
-          issue: match.number,
-          failure,
-          reason: 'regressed',
-          ...rec,
+      notifying.push({
+        failure,
+        entry: {
+          ...at,
+          action: {
+            type: 'reopen',
+            issue: match.number,
+            failure,
+            reason: 'regressed',
+            ...rec,
+          },
         },
       });
     } else if (failure.engines.some((e) => !match.engines.includes(e))) {
-      planned.push({
-        ...at,
-        action: {
-          type: 'reopen',
-          issue: match.number,
-          failure,
-          reason: 'spread',
-          ...rec,
+      notifying.push({
+        failure,
+        entry: {
+          ...at,
+          action: {
+            type: 'reopen',
+            issue: match.number,
+            failure,
+            reason: 'spread',
+            ...rec,
+          },
         },
       });
     } else {
       closedButFailing.push({ issue: match.number, key: failure.key });
     }
   }
+
+  notifying.sort((a, b) => priority(a.failure, b.failure));
+  const slots =
+    cap === undefined ? notifying.length : Math.max(0, cap - slotsUsed);
+  for (const n of notifying.slice(0, slots)) planned.push(n.entry);
+  const heldBack = notifying.slice(slots).map(({ failure }) => ({
+    key: failure.key,
+    engines: failure.engines,
+    targets: sortedUnique(failure.targets.map((t) => t.targetId)),
+  }));
 
   for (const [key, issues] of byKey) {
     if (failed.has(key)) continue;
@@ -209,5 +270,9 @@ export function planIssueActions(
   }
 
   planned.sort((a, b) => compareStrings(a.key, b.key) || a.issue - b.issue);
-  return { actions: planned.map((p) => p.action), closedButFailing };
+  return {
+    actions: planned.map((p) => p.action),
+    closedButFailing,
+    heldBack,
+  };
 }

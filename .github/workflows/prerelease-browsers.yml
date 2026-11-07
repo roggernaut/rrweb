@@ -408,6 +408,9 @@ jobs:
           EXPECTED: ${{ needs.gate.outputs.expected }}
           BROWSERSTACK_DUE: ${{ needs.gate.outputs.browserstack }}
           LEFT_OUT: ${{ needs.gate.outputs.left_out }}
+          # At most this many issues open or reopen per run. Unset while the
+          # maintainers test the workflow; 5 once it is live.
+          ISSUE_CAP: ${{ vars.PRERELEASE_ISSUE_CAP }}
         run: |
           set -euo pipefail
           mkdir -p results
@@ -422,4 +425,8 @@ jobs:
           fi
           echo "expected targets: $EXPECTED"
           echo "left out: ${LEFT_OUT:-nothing}"
+          if [ -n "${ISSUE_CAP//[[:space:]]/}" ]; then
+            flags+=(--issue-cap "$ISSUE_CAP")
+          fi
+          echo "issue cap: ${ISSUE_CAP:-none}"
           node src/report/reconcile.ts --results results --expected "$EXPECTED" --left-out "$LEFT_OUT" --apply "${flags[@]}"

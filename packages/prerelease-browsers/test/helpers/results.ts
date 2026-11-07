@@ -267,3 +267,16 @@ export function applyPlan(
   }
   return next;
 }
+
+/**
+ * The first line after a body's hidden markers and the blank line that
+ * follows them, failing the test when the body does not start that way.
+ */
+export function countLine(body: string): string {
+  const lines = body.split('\n');
+  let i = 0;
+  while (/^<!-- prerelease:[^\s>]+ -->$/.test(lines[i] ?? '')) i++;
+  expect(i).toBeGreaterThan(0);
+  expect(lines[i]).toBe('');
+  return lines[i + 1];
+}

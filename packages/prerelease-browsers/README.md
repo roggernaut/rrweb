@@ -222,6 +222,31 @@ When a failure is a browser bug that's already reported upstream, park it in
 
 A malformed entry fails the report step instead of parking nothing.
 
+## Cap the issues a run opens
+
+Every new or reopened issue notifies the maintainers, so a single run can be
+held to a few of them. The repository variable `PRERELEASE_ISSUE_CAP`, under
+**Settings > Secrets and variables > Actions > Variables**, sets the most
+issues one run may open or reopen. The report job passes it to
+`reconcile.ts` as `--issue-cap`.
+
+- Unset or empty (the default while the maintainers are testing): there is
+  no cap, and every failing check gets its own issue.
+- Live value: `5`. Going live is only this settings change.
+
+When more checks fail than the cap allows, privacy failures go first, then
+failures on more engines, then failures on more targets, then the lower key.
+The rest are listed in the status issue under "Held back by the per-run
+issue cap", with their engines and how many targets failed. A held-back
+failure still counts as failing, so it closes nothing, and it competes for a
+slot again in the next run. The cap never limits updates to open issues,
+closes, or the run-broken issue.
+
+Every issue body a run writes starts with how many checks failed in that
+run, parked ones not counted, and how many the cap held back. A re-run of the
+report on the same run keeps the issues it already opened, and opens no
+more.
+
 ## Change the limits
 
 - **Performance** is in `src/report/compare.ts`.

@@ -29,6 +29,7 @@ import {
   STATUS_MARKER,
   statusBody,
   statusTitle,
+  type RunCount,
   type RunMeta,
 } from './render.ts';
 
@@ -53,6 +54,8 @@ export interface ReconcileOptions {
   browserstackMissing?: boolean;
   /** Targets a hand-started run left out; the status then reads as a partial run. */
   leftOut?: string[];
+  /** At most this many issues open or reopen in one run; absent, no cap. */
+  issueCap?: number;
   log?: (line: string) => void;
 }
 
@@ -93,9 +96,10 @@ const preferred = (issues: IssueData[]): IssueData | undefined =>
 /**
  * Sorts the `prerelease` issues by their markers: per-check issues carry a
  * key; the status and run-broken issues carry their own marker. Anything else
- * is left alone.
+ * is left alone. A per-check issue whose notified marker names `run` was
+ * opened or reopened by an earlier pass of the report on this run.
  */
-function classify(listed: IssueData[]) {
+function classify(listed: IssueData[], run: RunMeta) {
   const existing: ExistingIssue[] = [];
   const status: IssueData[] = [];
   const broken: IssueData[] = [];
@@ -110,6 +114,7 @@ function classify(listed: IssueData[]) {
         key: m.key,
         engines: m.engines,
         failingTargets: m.targets,
+        notifiedThisRun: m.notified === run.runUrl,
       });
     } else if (i.body.includes(STATUS_MARKER)) {
       status.push(i);
@@ -165,7 +170,7 @@ export async function reconcile(opts: ReconcileOptions): Promise<IssuePlan> {
   const run = opts.run ?? runMetaFromEnv(results);
   const summary = collectFailures(results, expected, opts.known ?? []);
   const listed = await gh.listIssues('prerelease');
-  const { existing, status, runBroken } = classify(listed);
+  const { existing, status, runBroken } = classify(listed, run);
 
   // A run that is missing BrowserStack's results, or that a maintainer
   // limited by hand, is not complete. Counting the gaps as missing for
@@ -179,8 +184,14 @@ export async function reconcile(opts: ReconcileOptions): Promise<IssuePlan> {
     gaps.length > 0
       ? { ...summary, missingTargets: [...summary.missingTargets, ...gaps] }
       : summary;
-  const plan = planIssueActions(planned, existing, runBroken);
+  const plan = planIssueActions(planned, existing, runBroken, opts.issueCap);
   if (!apply) return plan;
+
+  const count: RunCount = {
+    failing: summary.failures.length,
+    heldBack: plan.heldBack.length,
+    ...(opts.issueCap === undefined ? {} : { cap: opts.issueCap }),
+  };
 
   const byNumber = new Map(listed.map((i) => [i.number, i]));
   const current = (n: number) => {
@@ -206,7 +217,7 @@ export async function reconcile(opts: ReconcileOptions): Promise<IssuePlan> {
       case 'create': {
         const created = await gh.createIssue({
           title: issueTitle(a.failure),
-          body: issueBody(a.failure, run),
+          body: issueBody(a.failure, run, count),
           labels: labelsFor(a.failure),
         });
         links[a.failure.key] = created.number;
@@ -218,7 +229,11 @@ export async function reconcile(opts: ReconcileOptions): Promise<IssuePlan> {
         const prev = current(a.issue);
         const f = withEngines(a.failure, a.recordEngines);
         const title = issueTitle(f);
-        const body = issueBody(a.failure, run, prev.body, a);
+        const body = issueBody(a.failure, run, count, {
+          body: prev.body,
+          record: a,
+          reopened: a.type === 'reopen',
+        });
         const labels = mergeLabels(prev.labels, labelsFor(f));
         links[a.failure.key] = a.issue;
         if (a.type === 'reopen') {
@@ -302,9 +317,14 @@ export async function reconcile(opts: ReconcileOptions): Promise<IssuePlan> {
     }
   }
 
+  for (const h of plan.heldBack) {
+    log(`held back ${h.key} by the per-run issue cap`);
+  }
+
   const body = statusBody(summary, plan, run, results, links, {
     browserstackMissing: opts.browserstackMissing,
     leftOut: opts.leftOut,
+    issueCap: opts.issueCap,
   });
   if (status) {
     if (status.body !== body) {
@@ -334,7 +354,25 @@ export async function reconcile(opts: ReconcileOptions): Promise<IssuePlan> {
   return plan;
 }
 
-async function main(argv: string[]): Promise<void> {
+/** `--issue-cap`: a positive integer, or no cap when absent or empty. */
+function parseIssueCap(value: string | undefined): number | undefined {
+  const v = (value ?? '').trim();
+  if (v === '') return undefined;
+  const n = Number(v);
+  if (!/^[0-9]+$/.test(v) || n < 1 || !Number.isSafeInteger(n)) {
+    throw new Error(`--issue-cap must be a positive integer, not '${v}'`);
+  }
+  return n;
+}
+
+const commaList = (value: string | undefined) =>
+  (value ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s !== '');
+
+/** The report's command line, checked before anything is read. */
+export function parseCli(argv: string[]) {
   const { values } = parseArgs({
     args: argv,
     options: {
@@ -344,18 +382,26 @@ async function main(argv: string[]): Promise<void> {
       apply: { type: 'boolean', default: false },
       'browserstack-missing': { type: 'boolean', default: false },
       'left-out': { type: 'string', default: '' },
+      'issue-cap': { type: 'string' },
     },
   });
   if (!values.results) throw new Error('--results <dir> is required');
-  const commaList = (value: string | undefined) =>
-    (value ?? '')
-      .split(',')
-      .map((s) => s.trim())
-      .filter((s) => s !== '');
-  const expected = commaList(values.expected);
-  const results = await readResults(values.results);
+  return {
+    results: values.results,
+    expected: commaList(values.expected),
+    known: values.known,
+    apply: values.apply === true,
+    browserstackMissing: values['browserstack-missing'] === true,
+    leftOut: commaList(values['left-out']),
+    issueCap: parseIssueCap(values['issue-cap']),
+  };
+}
+
+async function main(argv: string[]): Promise<void> {
+  const cli = parseCli(argv);
+  const results = await readResults(cli.results);
   const knownPath =
-    values.known ??
+    cli.known ??
     fileURLToPath(new URL('../../known-failures.json', import.meta.url));
   const { active, expired } = parseKnownFailures(
     JSON.parse(await readFile(knownPath, 'utf8')),
@@ -367,20 +413,21 @@ async function main(argv: string[]): Promise<void> {
     );
   }
   const gh = new GitHub();
-  if (values.apply && !gh.hasToken) {
+  if (cli.apply && !gh.hasToken) {
     throw new Error('GITHUB_TOKEN is required with --apply');
   }
   const plan = await reconcile({
     gh,
     results,
-    expected,
-    apply: values.apply === true,
+    expected: cli.expected,
+    apply: cli.apply,
     known: active,
-    browserstackMissing: values['browserstack-missing'] === true,
-    leftOut: commaList(values['left-out']),
+    browserstackMissing: cli.browserstackMissing,
+    leftOut: cli.leftOut,
+    ...(cli.issueCap === undefined ? {} : { issueCap: cli.issueCap }),
     log: (line) => console.log(line),
   });
-  if (!values.apply) console.log(JSON.stringify(plan, null, 2));
+  if (!cli.apply) console.log(JSON.stringify(plan, null, 2));
 }
 
 if (

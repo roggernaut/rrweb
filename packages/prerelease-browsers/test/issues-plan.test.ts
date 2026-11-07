@@ -49,6 +49,7 @@ test('closed by hand stays closed unless the failure spreads to a new engine', (
   ).toEqual({
     actions: [],
     closedButFailing: [{ issue: 4, key: 'k:functional' }],
+    heldBack: [],
   });
   expect(
     planIssueActions(
@@ -229,6 +230,7 @@ describe('mass failure', () => {
     expect(planIssueActions(s, existing)).toEqual({
       actions: [{ type: 'run-broken', failures: s.failures }],
       closedButFailing: [],
+      heldBack: [],
     });
   });
 });
@@ -246,6 +248,7 @@ describe('matching existing issues', () => {
     ).toEqual({
       actions: [],
       closedButFailing: [{ issue: 4, key: 'k:functional' }],
+      heldBack: [],
     });
   });
   test('a spread reopen carries the failure', () => {
@@ -343,7 +346,7 @@ describe('matching existing issues', () => {
       planIssueActions(s, [
         issue(4, 'closed', 'k:functional', ['webkit'], ['safari-tp']),
       ]),
-    ).toEqual({ actions: [], closedButFailing: [] });
+    ).toEqual({ actions: [], closedButFailing: [], heldBack: [] });
   });
 });
 
@@ -541,6 +544,7 @@ describe('issues closed by hand or by a fixing PR', () => {
     expect(planIssueActions(s, closed)).toEqual({
       actions: [{ type: 'mark-recovered', issue: 4, key: 'k:functional' }],
       closedButFailing: [],
+      heldBack: [],
     });
   });
   test('a later failure on the same engine then reopens as regressed', () => {
@@ -642,5 +646,181 @@ describe('closing a healed run-broken issue', () => {
         (a) => a.type,
       ),
     ).toEqual(['create']);
+  });
+});
+
+describe('the per-run issue cap', () => {
+  // a: 1 engine, 1 target; b: 2 engines, 2 targets; c: 2 engines, 3
+  // targets; z: privacy on 1 engine and 1 target.
+  const four = () => [
+    fail('a:functional', ['chrome-canary']),
+    fail('b:functional', ['chrome-canary', 'firefox-nightly']),
+    fail('c:functional', ['chrome-canary', 'chrome-dev', 'firefox-nightly']),
+    fail('z:privacy', ['safari-tp']),
+  ];
+
+  test('keeps privacy first, then more engines, then more targets, and holds back the rest', () => {
+    const s = summary(four());
+    const plan = planIssueActions(s, [], undefined, 2);
+    expect(plan.actions).toEqual([
+      { type: 'create', failure: s.failures[2] },
+      { type: 'create', failure: s.failures[3] },
+    ]);
+    expect(plan.heldBack).toEqual([
+      {
+        key: 'b:functional',
+        engines: ['chromium', 'gecko'],
+        targets: ['chrome-canary', 'firefox-nightly'],
+      },
+      {
+        key: 'a:functional',
+        engines: ['chromium'],
+        targets: ['chrome-canary'],
+      },
+    ]);
+    // Whatever order the failures and issues come in.
+    const reversed = { ...s, failures: [...s.failures].reverse() };
+    expect(planIssueActions(reversed, [], undefined, 2)).toEqual(plan);
+  });
+
+  test('ties go to the lower key', () => {
+    const s = summary([
+      fail('b:functional', ['chrome-canary']),
+      fail('a:functional', ['chrome-canary']),
+    ]);
+    const plan = planIssueActions(s, [], undefined, 1);
+    expect(plan.actions).toEqual([{ type: 'create', failure: s.failures[0] }]);
+    expect(plan.heldBack.map((h) => h.key)).toEqual(['b:functional']);
+  });
+
+  test('with no cap nothing is held back', () => {
+    const plan = planIssueActions(summary(four()), []);
+    expect(plan.actions.map((a) => a.type)).toEqual([
+      'create',
+      'create',
+      'create',
+      'create',
+    ]);
+    expect(plan.heldBack).toEqual([]);
+  });
+
+  test('a reopen takes a slot; updates never do', () => {
+    const s = summary([
+      fail('a:functional', ['chrome-canary']),
+      fail('b:functional', ['chrome-canary']),
+      fail('c:functional', ['chrome-canary']),
+      fail('d:functional', ['chrome-canary']),
+    ]);
+    const issues = [
+      issue(1, 'open', 'a:functional', ['chromium'], ['chrome-canary']),
+      issue(2, 'open', 'b:functional', ['chromium'], ['chrome-canary']),
+      issue(3, 'open', 'c:functional', ['chromium'], ['chrome-canary']),
+      issue(
+        4,
+        'closed',
+        'd:functional',
+        ['chromium'],
+        ['chrome-canary'],
+        ['prerelease:recovered'],
+      ),
+    ];
+    const plan = planIssueActions(s, issues, undefined, 1);
+    expect(plan.actions.map((a) => a.type)).toEqual([
+      'update',
+      'update',
+      'update',
+      'reopen',
+    ]);
+    expect(plan.heldBack).toEqual([]);
+  });
+
+  test('a reopen counts toward the cap like a create', () => {
+    const s = summary([
+      fail('a:functional', ['chrome-canary']),
+      fail('r:functional', ['chrome-canary', 'firefox-nightly']),
+    ]);
+    const closed = [
+      issue(
+        4,
+        'closed',
+        'r:functional',
+        ['chromium', 'gecko'],
+        ['chrome-canary', 'firefox-nightly'],
+        ['prerelease:recovered'],
+      ),
+    ];
+    const plan = planIssueActions(s, closed, undefined, 1);
+    expect(plan.actions).toMatchObject([
+      { type: 'reopen', issue: 4, reason: 'regressed' },
+    ]);
+    expect(plan.heldBack.map((h) => h.key)).toEqual(['a:functional']);
+  });
+
+  test('a held-back failure closes nothing and competes again next run', () => {
+    // x passed on the target its closed issue recorded, which alone would
+    // mark the issue recovered, but it spread to gecko: a reopen.
+    const s = summary(
+      [
+        fail('p:privacy', ['chrome-canary']),
+        fail('x:functional', ['firefox-nightly']),
+      ],
+      { passedOn: { 'x:functional': ['chrome-canary'] } },
+    );
+    const closed = [
+      issue(3, 'closed', 'x:functional', ['chromium'], ['chrome-canary']),
+    ];
+    expect(planIssueActions(s, closed).actions).toMatchObject([
+      { type: 'create' },
+      { type: 'reopen', issue: 3, reason: 'spread' },
+    ]);
+
+    const plan = planIssueActions(s, closed, undefined, 1);
+    expect(plan.actions).toEqual([{ type: 'create', failure: s.failures[0] }]);
+    expect(plan.heldBack).toEqual([
+      { key: 'x:functional', engines: ['gecko'], targets: ['firefox-nightly'] },
+    ]);
+    expect(plan.closedButFailing).toEqual([]);
+
+    const next = planIssueActions(s, applyPlan(closed, plan), undefined, 1);
+    expect(next.actions).toMatchObject([
+      { type: 'update' },
+      { type: 'reopen', issue: 3, reason: 'spread' },
+    ]);
+    expect(next.heldBack).toEqual([]);
+  });
+
+  test('a re-run of the report keeps the slots this run already used', () => {
+    const s = summary(four());
+    const first = planIssueActions(s, [], undefined, 2);
+    const opened = applyPlan([], first).map((i) => ({
+      ...i,
+      notifiedThisRun: true,
+    }));
+    const again = planIssueActions(s, opened, undefined, 2);
+    expect(again.actions.map((a) => a.type)).toEqual(['update', 'update']);
+    expect(again.heldBack).toEqual(first.heldBack);
+  });
+
+  test('a mass failure still collapses into run-broken and holds nothing back', () => {
+    const s = summary(
+      Array.from({ length: 10 }, (_, i) =>
+        fail(`c${i}:functional`, ['safari-tp']),
+      ),
+      { totalKeys: 20 },
+    );
+    expect(planIssueActions(s, [], undefined, 2)).toEqual({
+      actions: [{ type: 'run-broken', failures: s.failures }],
+      closedButFailing: [],
+      heldBack: [],
+    });
+  });
+
+  test('a cap must be a positive integer', () => {
+    const s = summary(four());
+    for (const cap of [0, -1, 1.5, Number.NaN]) {
+      expect(() => planIssueActions(s, [], undefined, cap)).toThrow(
+        /positive integer/,
+      );
+    }
   });
 });

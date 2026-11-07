@@ -9,6 +9,32 @@ export interface RunMeta {
   rrwebCommit: string;
 }
 
+/** What the count line at the top of every body this run writes says. */
+export interface RunCount {
+  /** Failing checks after parking, held-back ones included. */
+  failing: number;
+  /** How many of them the per-run issue cap held back. */
+  heldBack: number;
+  cap?: number;
+}
+
+const plural = (n: number, one: string, many: string) =>
+  `${n} ${n === 1 ? one : many}`;
+
+/** The visible line right after a body's markers. */
+export function runCountLine(c: RunCount): string {
+  const line = `**This run found ${plural(
+    c.failing,
+    'failing check',
+    'failing checks',
+  )}.**`;
+  return c.heldBack > 0 && c.cap !== undefined
+    ? `${line} ${c.heldBack} ${
+        c.heldBack === 1 ? 'was' : 'were'
+      } held back by the per-run cap of ${c.cap}.`
+    : line;
+}
+
 export const STATUS_MARKER = '<!-- prerelease:status -->';
 export const RUN_BROKEN_MARKER = '<!-- prerelease:run-broken -->';
 const HISTORY_OPEN = '<!-- prerelease:history -->';
@@ -114,8 +140,11 @@ export function parseMarkers(body: string): {
   engines: Engine[];
   targets: string[];
   history: string[];
+  /** The run that last opened or reopened the issue. */
+  notified?: string;
 } {
   const key = /<!-- prerelease:key=([^\s>]+) -->/.exec(body)?.[1];
+  const notified = /<!-- prerelease:notified=([^\s>]+) -->/.exec(body)?.[1];
   const list = (name: string) =>
     (new RegExp(`<!-- prerelease:${name}=([^\\s>]*) -->`).exec(body)?.[1] ?? '')
       .split(',')
@@ -132,6 +161,7 @@ export function parseMarkers(body: string): {
           .filter((l) => l.startsWith('| ') && !/^\| (Date|---) /.test(l));
   return {
     ...(key ? { key } : {}),
+    ...(notified ? { notified } : {}),
     engines: list('engines').filter((e): e is Engine =>
       engineNames.includes(e as Engine),
     ),
@@ -159,18 +189,25 @@ export function labelsFor(f: Failure): string[] {
 const historyRow = (run: RunMeta) => `| ${run.date} | [run](${run.runUrl}) |`;
 
 /**
- * The issue for one failing check. `record` is what the markers keep: for an
- * update or a reopen, the planner's recorded targets and engines, which can
+ * The issue for one failing check, opening with `count`. For an update or a
+ * reopen, `prior.body` is the issue's current body and `prior.record` is what
+ * the markers keep: the planner's recorded targets and engines, which can
  * include earlier targets this run did not confirm. The history carries over
- * from `previousBody`, newest first, and a re-run of the same run replaces
- * its row instead of adding one.
+ * from the prior body, newest first, and a re-run of the same run replaces
+ * its row instead of adding one. The notified marker names this run on a
+ * create or a reopen, and carries over on an update.
  */
 export function issueBody(
   f: Failure,
   run: RunMeta,
-  previousBody?: string,
-  record?: IssueRecord,
+  count: RunCount,
+  prior: { body?: string; record?: IssueRecord; reopened?: boolean } = {},
 ): string {
+  const { body: previousBody, record } = prior;
+  const notified =
+    previousBody === undefined || prior.reopened
+      ? run.runUrl
+      : parseMarkers(previousBody).notified;
   const recordTargets =
     record?.recordTargets ??
     [...new Set(f.targets.map((t) => t.targetId))].sort();
@@ -191,6 +228,9 @@ export function issueBody(
       `<!-- prerelease:key=${f.key} -->`,
       `<!-- prerelease:engines=${recordEngines.join(',')} -->`,
       `<!-- prerelease:targets=${recordTargets.join(',')} -->`,
+      ...(notified ? [`<!-- prerelease:notified=${notified} -->`] : []),
+      '',
+      runCountLine(count),
       '',
       `${code(f.checkId)} (${f.kind}) fails on ${recordEngines.join(
         ', ',
@@ -299,6 +339,8 @@ export function runBrokenBody(
       [
         RUN_BROKEN_MARKER,
         '',
+        runCountLine({ failing: s.failures.length, heldBack: 0 }),
+        '',
         `${failures.length} of the ${
           s.totalKeys
         } checks that ran failed in ${runLink(
@@ -340,6 +382,8 @@ export function statusBody(
     browserstackMissing?: boolean;
     /** Targets a hand-started run chose not to run; `browserstack` stands for all of them. */
     leftOut?: string[];
+    /** The per-run issue cap, when one is set. */
+    issueCap?: number;
   } = {},
 ): string {
   const complete =
@@ -437,6 +481,13 @@ export function statusBody(
 
   const lines = [
     STATUS_MARKER,
+    '',
+    runCountLine({
+      failing: s.failures.length,
+      heldBack: plan.heldBack.length,
+      cap: opts.issueCap,
+    }),
+    '',
     `## Latest run: ${run.date}`,
     '',
     `[The run of ${run.date}](${run.runUrl}), with rrweb at commit ${code(
@@ -456,6 +507,25 @@ export function statusBody(
     '',
     ...bullets(open),
     '',
+    ...(plan.heldBack.length > 0
+      ? [
+          `### Held back by the per-run issue cap${
+            opts.issueCap === undefined ? '' : ` (${opts.issueCap})`
+          }`,
+          '',
+          ...bullets(
+            plan.heldBack.map(
+              (h) =>
+                `${code(h.key)} on ${h.engines.join(', ')}, ${plural(
+                  h.targets.length,
+                  'target',
+                  'targets',
+                )}`,
+            ),
+          ),
+          '',
+        ]
+      : []),
     '### Closed after recovering',
     '',
     ...bullets(recovered),
