@@ -1,5 +1,6 @@
 import type { AttemptResult, CheckMeta, RunOptions } from '../types.ts';
 import type { PageDriver } from './drivers/types.ts';
+import { RealmReuseError } from './drivers/types.ts';
 import type { CheckOutcome, CheckStatus } from './results.ts';
 import { composePage } from './page-source.ts';
 
@@ -215,9 +216,11 @@ export async function runScenario(
     const result = await runAttempt(driver, meta, src, {
       timeoutMs: opts.timeoutMs,
       scale: opts.scale,
-    }).catch(
-      (err): AttemptResult => ({ ok: false, message: errorMessage(err) }),
-    );
+    }).catch((err): AttemptResult => {
+      // Not the scenario's fault, and every later sample would hit it too.
+      if (err instanceof RealmReuseError) throw err;
+      return { ok: false, message: errorMessage(err) };
+    });
     outcome.attempts++;
     opts.onAttempt?.(result);
     if (result.skipped !== undefined && outcome.attempts === 1) {

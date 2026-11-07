@@ -1,4 +1,8 @@
-import type { CheckOutcome, TargetResult } from '../../src/node/results.ts';
+import type {
+  CheckOutcome,
+  IncompleteReason,
+  TargetResult,
+} from '../../src/node/results.ts';
 import type {
   Failure,
   FailureTarget,
@@ -146,7 +150,8 @@ export function incomplete(
     },
   });
   r.incomplete = true;
-  r.incompleteReason = opts.reason ?? 'deadline';
+  // Any string: results files are read back untrusted.
+  r.incompleteReason = (opts.reason ?? 'deadline') as IncompleteReason;
   return r;
 }
 

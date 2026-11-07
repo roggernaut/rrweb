@@ -21,3 +21,16 @@ export interface PageDriver {
   markSession?(passed: boolean, reason: string): Promise<void>;
   close(): Promise<void>;
 }
+
+/**
+ * Thrown by loadHtml when the driver cannot give the page a new Window:
+ * navigation kept the old one, and a fresh tab was unavailable or kept it
+ * too. Every later load would fail the same way, so runTarget stops the
+ * target instead of recording check failures.
+ */
+export class RealmReuseError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'RealmReuseError';
+  }
+}

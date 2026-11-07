@@ -237,6 +237,26 @@ test('an incomplete reason is shown as code', () => {
   );
 });
 
+test('a role stopped for want of a fresh window makes the run incomplete', () => {
+  const v = summarizePr(
+    [
+      passing('chrome-stable@pr', 'css-nested-rules', pr),
+      incomplete('chrome-stable@base', {
+        ...base,
+        reason: 'fresh window unavailable',
+      }),
+    ],
+    expected,
+    [],
+  );
+  expect(v.failures).toEqual([]);
+  expect(v.incomplete).toEqual(['chrome-stable@base']);
+  expect(v.markdown).toMatch(/^Incomplete/m);
+  expect(v.markdown).toContain(
+    '- chrome-stable@<!-- -->base: stopped early (`fresh window unavailable`)',
+  );
+});
+
 test('a browser that fails to launch only with the base rrweb is a warning', () => {
   const v = summarizePr(
     [

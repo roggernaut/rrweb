@@ -2,7 +2,10 @@ import { createServer as createHttpServer } from 'node:http';
 import { createServer } from 'node:net';
 import type { AddressInfo } from 'node:net';
 import { startDriverProcess } from '../src/node/driver-process.ts';
-import { connectSelenium } from '../src/node/drivers/selenium.ts';
+import {
+  connectSelenium,
+  RealmReuseError,
+} from '../src/node/drivers/selenium.ts';
 import type { PageDriver } from '../src/node/drivers/types.ts';
 import { buildPageBundle, readRrwebUmd } from '../src/node/page-source.ts';
 import { runAttempt } from '../src/node/run-check.ts';
@@ -79,15 +82,24 @@ describe('startDriverProcess', () => {
 
 /**
  * Just enough of a WebDriver server for connectSelenium: sessions,
- * navigation and the scripts loadHtml runs. With `keepWindow`, the reuse
- * marker survives navigation, like an engine that reuses the Window.
+ * navigation, windows and the scripts loadHtml runs. With `keepWindow`, the
+ * reuse marker survives navigation within a window, like an engine that
+ * reuses the Window; with `sharedRealm` too, it shows in a new tab as well.
+ * With `noNewWindow`, the New Window command is unknown.
  */
 async function startFakeWebDriver() {
   const state = {
     sessions: 0,
     navigations: [] as string[],
     keepWindow: false,
-    written: false,
+    sharedRealm: false,
+    noNewWindow: false,
+    current: 'w1',
+    /** Open windows, each with whether a page was written into it. */
+    windows: new Map([['w1', false]]),
+    opened: [] as string[],
+    closed: [] as string[],
+    writes: 0,
   };
   const server = createHttpServer(async (req, res) => {
     let body = '';
@@ -106,15 +118,35 @@ async function startFakeWebDriver() {
       state.navigations.push((JSON.parse(body) as { url: string }).url);
       return send(null);
     }
+    if (route === 'GET /session/fake/window') return send(state.current);
+    if (route === 'POST /session/fake/window/new' && !state.noNewWindow) {
+      const handle = `w${state.windows.size + state.closed.length + 1}`;
+      state.windows.set(handle, false);
+      state.opened.push(handle);
+      return send({ handle, type: 'tab' });
+    }
+    if (route === 'POST /session/fake/window') {
+      state.current = (JSON.parse(body) as { handle: string }).handle;
+      return send(null);
+    }
+    if (route === 'DELETE /session/fake/window') {
+      state.windows.delete(state.current);
+      state.closed.push(state.current);
+      return send([...state.windows.keys()]);
+    }
     if (route === 'POST /session/fake/execute/sync') {
       const { script } = JSON.parse(body) as { script: string };
       if (script.includes('document.readyState')) return send('complete');
       if (script.includes('document.write')) {
-        state.written = true;
+        state.windows.set(state.current, true);
+        state.writes++;
         return send(null);
       }
       if (script.includes('=== true')) {
-        return send(state.keepWindow && state.written);
+        const written = state.sharedRealm
+          ? state.writes > 0
+          : state.windows.get(state.current) === true;
+        return send(state.keepWindow && written);
       }
       return send(null);
     }
@@ -158,13 +190,43 @@ describe('connectSelenium against a fake WebDriver server', () => {
     for (const url of navigations) expect(url).toMatch(/^about:blank\?/);
   });
 
-  test('a load that keeps the previous Window throws', async () => {
+  test('a load that keeps the previous Window moves to a fresh tab and closes the old one', async () => {
     fake.state.keepWindow = true;
     const driver = await connect();
     await driver.loadHtml('<p>one</p>');
-    await expect(driver.loadHtml('<p>two</p>')).rejects.toThrow(
-      /kept the previous Window/,
+    await driver.loadHtml('<p>two</p>');
+    await driver.close();
+    expect(fake.state.opened).toEqual(['w2']);
+    expect(fake.state.closed).toEqual(['w1']);
+    expect(fake.state.current).toBe('w2');
+    expect(fake.state.windows.get('w2')).toBe(true);
+    // The second load navigated again, in the new tab, to a new blank URL.
+    expect(fake.state.navigations).toHaveLength(3);
+    expect(new Set(fake.state.navigations).size).toBe(3);
+  });
+
+  test('a load whose fresh tab keeps the old Window too throws RealmReuseError', async () => {
+    fake.state.keepWindow = true;
+    fake.state.sharedRealm = true;
+    const driver = await connect();
+    await driver.loadHtml('<p>one</p>');
+    const load = driver.loadHtml('<p>two</p>');
+    await expect(load).rejects.toBeInstanceOf(RealmReuseError);
+    await expect(load).rejects.toThrow(
+      /kept the previous Window, and so did a new tab/,
     );
+    await driver.close();
+  });
+
+  test('a browser without New Window throws RealmReuseError', async () => {
+    fake.state.keepWindow = true;
+    fake.state.noNewWindow = true;
+    const driver = await connect();
+    await driver.loadHtml('<p>one</p>');
+    const load = driver.loadHtml('<p>two</p>');
+    await expect(load).rejects.toBeInstanceOf(RealmReuseError);
+    await expect(load).rejects.toThrow(/could not open a new tab/);
+    expect(fake.state.closed).toEqual([]);
     await driver.close();
   });
 

@@ -1,6 +1,9 @@
 import { Builder } from 'selenium-webdriver';
 import type { WebDriver } from 'selenium-webdriver';
 import type { PageDriver } from './types.ts';
+import { RealmReuseError } from './types.ts';
+
+export { RealmReuseError };
 
 const loadTimeoutMs = 60_000;
 const loadPollMs = 50;
@@ -62,6 +65,33 @@ export async function connectSelenium(opts: {
 
   let loads = 0;
 
+  /** Navigates to a blank URL no load used before; true if the Window stayed. */
+  async function blankKeepsWindow(): Promise<boolean> {
+    await driver.get(`about:blank?n=${++loads}`);
+    return (
+      (await driver.executeScript(`return window.${reuseMarker} === true;`)) ===
+      true
+    );
+  }
+
+  /** Moves the session into a new tab and closes the one it was in. */
+  async function moveToFreshTab(): Promise<void> {
+    const old = await driver.getWindowHandle();
+    try {
+      await driver.switchTo().newWindow('tab');
+    } catch (err) {
+      throw new RealmReuseError(
+        `navigating to a blank page kept the previous Window, and the browser could not open a new tab: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+    const fresh = await driver.getWindowHandle();
+    await driver.switchTo().window(old);
+    await driver.close();
+    await driver.switchTo().window(fresh);
+  }
+
   return {
     ...opts.session?.(driver),
     canReachLocalhost: opts.canReachLocalhost,
@@ -69,14 +99,15 @@ export async function connectSelenium(opts: {
       // A navigation, not just document.open(), so each page gets a new
       // Window: open() keeps the Window and every global on it. The URL is
       // new every time, so no engine can skip it as a same-URL navigation.
-      const blank = `about:blank?n=${++loads}`;
-      await driver.get(blank);
-      if (
-        await driver.executeScript(`return window.${reuseMarker} === true;`)
-      ) {
-        throw new Error(
-          `navigating to ${blank} kept the previous Window; pages would share globals`,
-        );
+      if (await blankKeepsWindow()) {
+        // Some engines keep the Window across this navigation. A new tab is
+        // a new browsing context, so it cannot hold the old Window.
+        await moveToFreshTab();
+        if (await blankKeepsWindow()) {
+          throw new RealmReuseError(
+            'navigating to a blank page kept the previous Window, and so did a new tab; pages would share globals',
+          );
+        }
       }
       await driver.executeScript(writePage, html);
       await waitForLoad();

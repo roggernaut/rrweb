@@ -15,6 +15,15 @@ export interface CheckOutcome {
   eventsFile?: string; // relative to the results dir, last failing attempt's events
 }
 
+/**
+ * Why a target stopped early: the run's deadline came, the driver garbled the
+ * page protocol, or the driver could not give pages a fresh Window.
+ */
+export type IncompleteReason =
+  | 'deadline'
+  | 'protocol broken'
+  | 'fresh window unavailable';
+
 export interface TargetResult {
   schema: 1;
   targetId: string;
@@ -28,8 +37,8 @@ export interface TargetResult {
   rrwebCommit: string;
   startedAt: string;
   finishedAt: string;
-  incomplete: boolean; // true when the deadline or a broken protocol stopped work
-  incompleteReason?: string; // 'deadline' or 'protocol broken'
+  incomplete: boolean; // true when something stopped work early
+  incompleteReason?: IncompleteReason;
   sessionUrl?: string;
   checks: Record<string, CheckOutcome>;
 }

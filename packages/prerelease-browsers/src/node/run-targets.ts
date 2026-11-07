@@ -3,10 +3,15 @@ import { dirname, join } from 'node:path';
 import { checks as registeredChecks } from '../page/registry.ts';
 import type { AttemptResult, CheckKind, CheckMeta } from '../types.ts';
 import type { BrowserInfo, PageDriver } from './drivers/types.ts';
+import { RealmReuseError } from './drivers/types.ts';
 import type { FixtureServer } from './fixture-server.ts';
 import { startFixtureServer } from './fixture-server.ts';
 import { buildPageBundle, readRrwebUmd } from './page-source.ts';
-import type { CheckOutcome, TargetResult } from './results.ts';
+import type {
+  CheckOutcome,
+  IncompleteReason,
+  TargetResult,
+} from './results.ts';
 import { writeResult } from './results.ts';
 import {
   DeadlineReached,
@@ -107,7 +112,7 @@ export async function runTarget(
   const result = newResult(t, opts.rrwebCommit);
 
   /** Marks every check not yet run as not-run and the result incomplete. */
-  function stopHere(reason: string): void {
+  function stopHere(reason: IncompleteReason): void {
     for (const meta of metas) {
       result.checks[meta.id] ??= {
         kind: meta.kind,
@@ -145,7 +150,17 @@ export async function runTarget(
     const src = { bundle, rrweb, httpOrigin: server?.origin };
     let brokenInARow = 0;
     for (const meta of metas) {
-      const { outcome, broken } = await runCheck(meta, src);
+      let checked: Awaited<ReturnType<typeof runCheck>>;
+      try {
+        checked = await runCheck(meta, src);
+      } catch (err) {
+        // No load on this driver can get a fresh Window, so every check
+        // left would fail for that alone: stop, and blame no check.
+        if (!(err instanceof RealmReuseError)) throw err;
+        stopHere('fresh window unavailable');
+        break;
+      }
+      const { outcome, broken } = checked;
       result.checks[meta.id] = outcome;
       // runCheck leaves a check not-run only at the deadline.
       if (outcome.status === 'not-run') {
@@ -194,7 +209,10 @@ export async function runTarget(
     const { status, attempts } = await runWithRetry(
       () =>
         runAttempt(driver, meta, src, { timeoutMs }).catch(
-          (err): AttemptResult => ({ ok: false, message: errorMessage(err) }),
+          (err): AttemptResult => {
+            if (err instanceof RealmReuseError) throw err;
+            return { ok: false, message: errorMessage(err) };
+          },
         ),
       opts.deadline,
     );

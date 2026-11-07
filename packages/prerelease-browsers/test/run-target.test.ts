@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readResults } from '../src/node/results.ts';
+import { RealmReuseError } from '../src/node/drivers/selenium.ts';
 import { DeadlineReached } from '../src/node/run-check.ts';
 import { runTarget, runTargetOrRecordCrash } from '../src/node/run-targets.ts';
 import {
@@ -114,6 +115,71 @@ test('two checks in a row with a broken protocol stop the target', async () => {
   expect(r.incomplete).toBe(true);
   expect(r.incompleteReason).toBe('protocol broken');
   expect(closed).toBe(true);
+});
+
+describe('a driver that cannot give a page a fresh Window', () => {
+  /** A scripted driver whose loads from `from` on throw RealmReuseError. */
+  function realmReuseDriver(from: number) {
+    const driver = scriptedDriver(() => ({ ok: true }));
+    const inner = driver.loadHtml;
+    let closed = false;
+    driver.loadHtml = async (html) => {
+      if (driver.loads + 1 >= from) {
+        driver.loads++;
+        throw new RealmReuseError('no fresh tab');
+      }
+      await inner(html);
+    };
+    driver.close = async () => void (closed = true);
+    return Object.assign(driver, { closed: () => closed });
+  }
+
+  test('stops the target with every remaining check not-run', async () => {
+    const driver = realmReuseDriver(2);
+    const r = await runTarget(
+      { ...findTarget('local-chromium'), connect: async () => driver },
+      {
+        resultsDir: tmp,
+        deadline: future,
+        rrwebCommit: 'abc',
+        only: ['snapshot-basic', 'shadow-dom-open', 'iframe-same-origin'],
+      },
+    );
+    expect(driver.loads).toBe(2);
+    expect(r.checks).toEqual({
+      'snapshot-basic': { kind: 'functional', status: 'pass', attempts: 1 },
+      'shadow-dom-open': { kind: 'functional', status: 'not-run', attempts: 0 },
+      'iframe-same-origin': {
+        kind: 'functional',
+        status: 'not-run',
+        attempts: 0,
+      },
+    });
+    expect(r.launch).toEqual({ ok: true });
+    expect(r.incomplete).toBe(true);
+    expect(r.incompleteReason).toBe('fresh window unavailable');
+    expect(driver.closed()).toBe(true);
+    expect(await readResults(tmp)).toEqual([r]);
+  });
+
+  test('stops a performance scenario the same way', async () => {
+    const driver = realmReuseDriver(1);
+    const r = await runTarget(
+      { ...findTarget('local-chromium'), connect: async () => driver },
+      {
+        resultsDir: tmp,
+        deadline: future,
+        rrwebCommit: 'abc',
+        only: ['perf-snapshot-5k', 'perf-mutation-burst-10k'],
+      },
+    );
+    expect(Object.values(r.checks).map((c) => c.status)).toEqual([
+      'not-run',
+      'not-run',
+    ]);
+    expect(r.incompleteReason).toBe('fresh window unavailable');
+    expect(driver.closed()).toBe(true);
+  });
 });
 
 test('a working check between broken ones keeps the target going', async () => {

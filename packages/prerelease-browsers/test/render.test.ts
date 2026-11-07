@@ -286,6 +286,20 @@ describe('statusBody', () => {
     expect(body).toMatch(/Closed but still failing[\s\S]*#4/);
   });
 
+  test('names a target stopped for want of a fresh window', () => {
+    const rs = [
+      passing('chrome-stable', 'a-check'),
+      incomplete('safari-tp', { reason: 'fresh window unavailable' }),
+    ];
+    const s = collectFailures(rs, ['chrome-stable', 'safari-tp'], []);
+    const body = statusBody(s, planIssueActions(s, []), run, rs, {});
+    expect(body).toMatch(/\bincomplete\b/);
+    expect(body).toMatch(
+      /safari-tp \(incomplete: `fresh window unavailable`\)/,
+    );
+    expect(body).toMatch(/- safari-tp: `fresh window unavailable`/);
+  });
+
   test('says when BrowserStack was due but sent no results', () => {
     const rs = [passing('chrome-stable', 'a-check')];
     const s = collectFailures(rs, ['chrome-stable'], []);
