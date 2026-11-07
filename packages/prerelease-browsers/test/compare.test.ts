@@ -188,6 +188,26 @@ describe('a BrowserStack pair compares duration only (R76)', () => {
     ]);
   });
 
+  test('a maxBlockMs-only compare list leaves BrowserStack to the ceiling', () => {
+    const [up, st] = pair('browserstack', 'bs-android-chrome');
+    for (const r of [up, st]) {
+      r.checks['perf-mutation-burst-10k'].compare = ['maxBlockMs'];
+    }
+    expect(evaluatePerf([up, st])).toEqual([]); // 322 vs 155 ms: 2.08x, not compared
+    up.checks['perf-mutation-burst-10k'].samples = [100, 100, 100].map(
+      (durationMs) => ({ durationMs, maxBlockMs: 1200 }),
+    );
+    expect(evaluatePerf([up, st]).map((f) => f.message)).toEqual([
+      'longest block 1200 ms over 1000 ms ceiling',
+    ]);
+  });
+
+  test('a results file with neither where nor a bs- id compares every metric', () => {
+    const rs = pair('github-linux', 'android-chrome');
+    for (const r of rs) delete r.where;
+    expect(evaluatePerf(rs)).toHaveLength(2);
+  });
+
   test('a BrowserStack target over the block ceiling is still flagged', () => {
     const [up, st] = pair('browserstack', 'bs-android-chrome');
     up.checks['perf-mutation-burst-10k'].samples = [100, 100, 100].map(

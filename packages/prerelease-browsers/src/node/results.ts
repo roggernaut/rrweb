@@ -49,6 +49,18 @@ export interface TargetResult {
   checks: Record<string, CheckOutcome>;
 }
 
+/**
+ * Whether a result ran on BrowserStack. Results files written before `where`
+ * existed go by the `bs-` id prefix.
+ */
+export function isBrowserStack(
+  r: Pick<TargetResult, 'targetId' | 'where'>,
+): boolean {
+  return r.where === undefined
+    ? r.targetId.startsWith('bs-')
+    : r.where === 'browserstack';
+}
+
 const isObject = (x: unknown): x is object =>
   typeof x === 'object' && x !== null && !Array.isArray(x);
 
