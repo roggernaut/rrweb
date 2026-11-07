@@ -332,17 +332,20 @@ describe('parseKnownFailures', () => {
     expect(at('2027-01-15T10:59:59Z').active).toEqual([entry]);
     expect(at('2027-01-15T11:00:00Z').expired).toEqual([entry]);
   });
-  test('the shipped known-failures.json parses', async () => {
+  test('the shipped known-failures.json parses, and nothing in it has expired', async () => {
     const file = fileURLToPath(
       new URL('../known-failures.json', import.meta.url),
     );
     const { readFile } = await import('node:fs/promises');
-    expect(
-      parseKnownFailures(JSON.parse(await readFile(file, 'utf8')), now),
-    ).toEqual({
-      active: [],
-      expired: [],
-    });
+    const json = JSON.parse(await readFile(file, 'utf8')) as Array<{
+      key: string;
+      upstream: string;
+    }>;
+    const { active, expired } = parseKnownFailures(json, new Date());
+    expect(expired).toEqual([]);
+    const pick = (es: Array<{ key: string; upstream: string }>) =>
+      es.map(({ key, upstream }) => ({ key, upstream }));
+    expect(pick(active)).toEqual(pick(json));
   });
 });
 
