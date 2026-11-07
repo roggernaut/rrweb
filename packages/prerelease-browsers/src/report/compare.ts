@@ -41,7 +41,8 @@ function performanceChecks(
  * Performance findings, one per breached limit.
  *
  * - Ceiling: on every target whose `perf` is not 'none', the median longest
- *   block may not exceed that result's own `ceilingMs`.
+ *   block may not exceed that result's own `ceilingMs`, or the scenario's
+ *   `ceilingMs` on its outcome when that is higher.
  * - Compare: an upcoming target with `perf: 'compare'` is held against the
  *   stable target of its pair group, metric by metric (the check's `compare`
  *   list, default durationMs). It fails when it is over RATIO_LIMIT times
@@ -61,13 +62,14 @@ export function evaluatePerf(
 
     for (const [checkId, c] of checks) {
       const block = median(values(c.samples, 'maxBlockMs'));
-      if (block > r.ceilingMs) {
+      const ceilingMs = Math.max(r.ceilingMs, c.ceilingMs ?? 0);
+      if (block > ceilingMs) {
         findings.push({
           targetId: r.targetId,
           checkId,
-          message: `longest block ${Math.round(block)} ms over ${
-            r.ceilingMs
-          } ms ceiling`,
+          message: `longest block ${Math.round(
+            block,
+          )} ms over ${ceilingMs} ms ceiling`,
         });
       }
     }

@@ -9,6 +9,11 @@ export interface CheckMeta {
   startDuringLoad?: boolean;
   head?: string; // static markup placed in <head> before the scripts
   compare?: Array<'durationMs' | 'maxBlockMs' | 'heapDeltaBytes'>; // performance only, default ['durationMs']
+  /**
+   * Performance only: this scenario's longest-block ceiling, for one that
+   * blocks long on every browser. A target's higher ceiling still wins.
+   */
+  ceilingMs?: number;
 }
 export interface PerfSample {
   durationMs: number;

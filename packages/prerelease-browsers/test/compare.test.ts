@@ -62,6 +62,47 @@ test('the ceiling uses each result own ceilingMs', () => {
   ).toEqual([]);
 });
 
+describe('a scenario with its own ceiling', () => {
+  /** perf-snapshot-50k blocking `blocksMs`, its outcome carrying `ceilingMs`. */
+  const big = (blocksMs: number[], ceilingMs: number, targetCeiling = 1000) => {
+    const r = perfBlock('firefox-stable', 'compare', blocksMs, {
+      checkId: 'perf-snapshot-50k',
+      ceilingMs: targetCeiling,
+    });
+    r.checks['perf-snapshot-50k'].ceilingMs = ceilingMs;
+    return r;
+  };
+
+  test('is held to that ceiling instead of the target one', () => {
+    // firefox-stable blocked about 1081 ms on the first scheduled run.
+    expect(evaluatePerf([big([1081, 1100, 1050], 3000)])).toEqual([]);
+    expect(evaluatePerf([big([3100, 3200, 3000], 3000)])).toEqual([
+      {
+        targetId: 'firefox-stable',
+        checkId: 'perf-snapshot-50k',
+        message: 'longest block 3100 ms over 3000 ms ceiling',
+      },
+    ]);
+  });
+
+  test('never gets a lower ceiling than its target', () => {
+    expect(evaluatePerf([big([3500, 3500, 3500], 3000, 4000)])).toEqual([]);
+  });
+
+  test('leaves the other scenarios on the target ceiling', () => {
+    const r = big([1081, 1081, 1081], 3000);
+    r.checks['perf-snapshot-5k'] = {
+      kind: 'performance',
+      status: 'pass',
+      attempts: 1,
+      samples: [{ durationMs: 100, maxBlockMs: 1081 }],
+    };
+    expect(evaluatePerf([r]).map((f) => [f.checkId, f.message])).toEqual([
+      ['perf-snapshot-5k', 'longest block 1081 ms over 1000 ms ceiling'],
+    ]);
+  });
+});
+
 test('perf none targets are not measured', () => {
   const r = perfBlock('chrome-canary', 'compare', [5000, 5000, 5000]);
   r.perf = 'none';

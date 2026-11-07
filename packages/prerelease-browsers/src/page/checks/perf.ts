@@ -84,12 +84,14 @@ function snapshotScenario(
   id: string,
   count: number,
   tier: Tier,
+  ceilingMs?: number,
 ): CheckDefinition {
   return {
     id,
     kind: 'performance',
     tier,
     compare: ['durationMs'],
+    ...(ceilingMs === undefined ? {} : { ceilingMs }),
     async run(ctx) {
       fillBody(scaled(ctx, count));
       return measureSnapshot(ctx);
@@ -271,7 +273,9 @@ export const perfChecks: CheckDefinition[] = [
   largeStylesheet,
   snapshotScenario('perf-snapshot-5k', 5_000, 'focused'),
   snapshotScenario('perf-snapshot-20k', 20_000, 'focused'),
-  snapshotScenario('perf-snapshot-50k', 50_000, 'full'),
+  // A 50,000-node snapshot blocks 600 to 1100 ms on GitHub runners, so the
+  // 1000 ms ceiling would fail it on a slow runner or browser.
+  snapshotScenario('perf-snapshot-50k', 50_000, 'full', 3000),
   mutationBurst,
   sampledCanvases,
   recordStopCycles,

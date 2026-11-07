@@ -279,7 +279,9 @@ none.
     differences that can count as slower. They keep tiny measurements from
     tripping the ratio.
   - The longest-block ceiling defaults to 1000 ms in `src/node/run-targets.ts`.
-    A target can set its own `ceilingMs` in `src/node/targets.ts`.
+    A target can set its own `ceilingMs` in `src/node/targets.ts`, and a
+    scenario its own in `src/page/checks/perf.ts` (`perf-snapshot-50k` has
+    3000 ms). The higher of the two applies.
 - **A broken run** is set in `src/report/issues-plan.ts`. When at least
   `MASS_FAILURE_MIN` (5) checks fail, and they are at least
   `MASS_FAILURE_SHARE` (0.3) of the checks that ran, the run opens one "run

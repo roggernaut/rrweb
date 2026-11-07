@@ -12,6 +12,7 @@ export interface CheckOutcome {
   attempts: number;
   samples?: PerfSample[]; // performance only
   compare?: Array<'durationMs' | 'maxBlockMs' | 'heapDeltaBytes'>; // performance only
+  ceilingMs?: number; // performance only: the scenario's own ceiling, when it has one, at least the target's
   eventsFile?: string; // relative to the results dir, last failing attempt's events
 }
 

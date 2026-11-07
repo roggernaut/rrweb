@@ -419,6 +419,33 @@ test('performance scenarios take perfSamples samples and leave the run complete'
   expect(await readResults(tmp)).toEqual([r]);
 });
 
+test('a scenario with its own ceiling carries the higher of it and the target one', async () => {
+  const run = (ceilingMs?: number) =>
+    runTarget(
+      {
+        ...findTarget('local-chromium'),
+        perfSamples: 1,
+        ceilingMs,
+        connect: async () =>
+          scriptedDriver(() => ({
+            ok: true,
+            sample: { durationMs: 1, maxBlockMs: 1 },
+          })),
+      },
+      {
+        resultsDir: tmp,
+        deadline: future,
+        rrwebCommit: 'abc',
+        only: ['perf-snapshot-5k', 'perf-snapshot-50k'],
+      },
+    );
+  const r = await run();
+  expect(r.ceilingMs).toBe(1000);
+  expect(r.checks['perf-snapshot-50k'].ceilingMs).toBe(3000);
+  expect(r.checks['perf-snapshot-5k']).not.toHaveProperty('ceilingMs');
+  expect((await run(5000)).checks['perf-snapshot-50k'].ceilingMs).toBe(5000);
+});
+
 test('a deadline passing mid-scenario stops sampling and marks the run incomplete', async () => {
   const deadline = new Date(future);
   const driver = scriptedDriver(

@@ -209,6 +209,9 @@ export async function runTarget(
         deadline: opts.deadline,
         onAttempt: (a) => samples.push(a),
       });
+      if (meta.ceilingMs !== undefined) {
+        outcome.ceilingMs = Math.max(result.ceilingMs, meta.ceilingMs);
+      }
       return { outcome, broken: brokenBy(outcome, samples) };
     }
     const { status, attempts } = await runWithRetry(
