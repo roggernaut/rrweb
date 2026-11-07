@@ -53,6 +53,18 @@ export interface PageSource {
   loadVia?: 'html' | 'http';
 }
 
+/**
+ * Set on each page opened over http. Finding it right after the next open
+ * means the engine kept the old Window, so globals one check replaced would
+ * leak into the next.
+ */
+const httpLoadMarker = '__prerelease_http_load';
+const checkHttpLoad = `(() => {
+  const kept = window.${httpLoadMarker} === true;
+  window.${httpLoadMarker} = true;
+  return kept;
+})()`;
+
 const timedOut = /^timed out after \d+ ms$/;
 
 /**
@@ -100,8 +112,13 @@ export async function runAttempt(
 
   try {
     if (meta.needsHttp || src.loadVia === 'http') {
-      // A real navigation, so the page gets a new Window.
+      // A real navigation, which should give the page a new Window.
       await call(driver.open(`${String(src.httpOrigin)}/check/${meta.id}`));
+      if ((await call(driver.evaluate<unknown>(checkHttpLoad))) === true) {
+        throw new RealmReuseError(
+          'opening a check over http kept the previous Window; pages would share globals',
+        );
+      }
     } else {
       await call(driver.loadHtml(composePage(meta, src.bundle, src.rrweb)));
     }

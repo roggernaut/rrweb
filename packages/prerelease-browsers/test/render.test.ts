@@ -18,6 +18,7 @@ import {
 import {
   countLine,
   fail,
+  ids,
   incomplete,
   launchFailed,
   passing,
@@ -313,6 +314,54 @@ describe('statusBody', () => {
     expect(body).toMatch(/dom-shadow:functional.*chrome-stable/);
     expect(body).not.toMatch(/pre-release build/i);
     expect(body).not.toMatch(/@[a-z0-9]/i);
+  });
+
+  test('lists the checks that stopped a protocol-broken target', () => {
+    const broken = incomplete('firefox-android-nightly', {
+      reason: 'protocol broken',
+    });
+    broken.checks = {
+      'css-shorthand-roundtrip': {
+        kind: 'functional',
+        status: 'not-run',
+        attempts: 2,
+        message: 'timed out after 120000 ms',
+      },
+      // Results files are read back untrusted.
+      'css-selector-colon-escape': {
+        kind: 'functional',
+        status: 'not-run',
+        attempts: 2,
+        message: 'garbled `poll` from @driver | <!-- x',
+      },
+      'css-grid-template-areas': {
+        kind: 'functional',
+        status: 'not-run',
+        attempts: 0,
+      },
+    };
+    // Cut off by the deadline mid-check: not what stopped a broken driver.
+    const late = incomplete('chrome-canary', { reason: 'deadline' });
+    late.checks['css-nested-rules'] = {
+      kind: 'functional',
+      status: 'not-run',
+      attempts: 1,
+      message: 'bad',
+    };
+    const rs = [broken, late];
+    const s = collectFailures(rs, ids(rs), []);
+    const body = statusBody(s, planIssueActions(s, []), run, rs, {});
+    const section = body.slice(body.indexOf('### Incomplete'));
+    expect(section).toContain(
+      [
+        '- firefox-android-nightly: `protocol broken`, after',
+        '  - css-shorthand-roundtrip (2 attempts): `timed out after 120000 ms`',
+        "  - css-selector-colon-escape (2 attempts): `garbled 'poll' from ＠driver | < !-- x`",
+      ].join('\n'),
+    );
+    expect(section).not.toContain('css-grid-template-areas');
+    expect(section).toContain('- chrome-canary: `deadline`\n');
+    expect(section).not.toContain('css-nested-rules');
   });
 
   test('a clean run reads complete', () => {

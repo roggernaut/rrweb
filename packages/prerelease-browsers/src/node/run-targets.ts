@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { checks as registeredChecks } from '../page/registry.ts';
+import { driverProbe, checks as registeredChecks } from '../page/registry.ts';
 import type { AttemptResult, CheckKind, CheckMeta } from '../types.ts';
 import type { BrowserInfo, PageDriver } from './drivers/types.ts';
 import { RealmReuseError } from './drivers/types.ts';
@@ -33,6 +33,14 @@ const brokenChecksLimit = 2;
 
 const functionalTimeoutMs = 60_000;
 const performanceTimeoutMs = 180_000;
+/** For the driver probe, which settles at once on a working driver. */
+const probeTimeoutMs = 30_000;
+
+const probeMeta: CheckMeta = {
+  id: driverProbe.id,
+  kind: driverProbe.kind,
+  tier: driverProbe.tier,
+};
 
 function attemptTimeoutMs(kind: CheckKind): number {
   return kind === 'performance' ? performanceTimeoutMs : functionalTimeoutMs;
@@ -140,12 +148,21 @@ export async function runTarget(
     return finish(result, opts.resultsDir);
   }
 
+  const loadVia = t.loadVia ?? 'html';
+  if (loadVia === 'http' && !driver.canReachLocalhost) {
+    await driver.close().catch(() => undefined);
+    result.launch = {
+      ok: false,
+      error: `${t.id} loads checks over http from this machine, but its driver cannot reach this machine`,
+    };
+    return finish(result, opts.resultsDir);
+  }
+
   let server: FixtureServer | undefined;
   try {
     result.browser = await describeBrowser(driver);
     const bundle = await buildPageBundle();
     const rrweb = readRrwebUmd(opts.rrwebDist);
-    const loadVia = t.loadVia ?? 'html';
     if (
       loadVia === 'http' ||
       (driver.canReachLocalhost && metas.some((m) => m.needsHttp))
@@ -182,6 +199,13 @@ export async function runTarget(
       if (outcome.status === 'skipped') continue;
       brokenInARow = broken ? [...brokenInARow, outcome] : [];
       if (brokenInARow.length >= brokenChecksLimit) {
+        // A page that does nothing but load settles on a working driver:
+        // then rrweb hangs, which is a failure like any other, and the
+        // target goes on.
+        if (await driverWorks(src)) {
+          brokenInARow = [];
+          continue;
+        }
         // The driver broke, not rrweb: the checks that showed it did not
         // really run. They keep their attempts and message for the status
         // issue, but open no issue.
@@ -196,6 +220,18 @@ export async function runTarget(
     await driver.close().catch(() => undefined);
   }
   return finish(result, opts.resultsDir);
+
+  /** True when the probe page loads and settles through `src`'s load path. */
+  async function driverWorks(src: PageSource): Promise<boolean> {
+    try {
+      const probe = await runAttempt(driver, probeMeta, src, {
+        timeoutMs: probeTimeoutMs * t.timeScale,
+      });
+      return probe.ok && probe.skipped === undefined;
+    } catch {
+      return false;
+    }
+  }
 
   async function runCheck(
     meta: CheckMeta,

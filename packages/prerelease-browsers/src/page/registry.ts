@@ -158,6 +158,20 @@ export const checks: CheckDefinition[] = [
     : []),
 ];
 
+/**
+ * Not a check: the page runTarget loads when two checks in a row hang or
+ * garble the protocol, to tell a broken driver from an rrweb that hangs.
+ * It has the bundle and rrweb loaded like any check, starts no recording
+ * and settles at once. It is in no check list, so it is never selected,
+ * listed or reported; findCheck and the fixture server still know it.
+ */
+export const driverProbe: CheckDefinition = {
+  id: 'driver-probe',
+  kind: 'functional',
+  tier: 'focused',
+  run: () => Promise.resolve({ ok: true }),
+};
+
 export function findCheck(id: string): CheckDefinition | undefined {
-  return checks.find((check) => check.id === id);
+  return [...checks, driverProbe].find((check) => check.id === id);
 }

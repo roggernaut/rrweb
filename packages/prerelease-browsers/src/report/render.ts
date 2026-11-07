@@ -492,14 +492,31 @@ export function statusBody(
   ];
   const incompleteReasons = sorted
     .filter((r) => r.incomplete)
-    .map(
-      (r) =>
-        `${cell(r.targetId)}: ${untrusted(
-          r.incompleteReason ?? 'unknown reason',
-          SHORT_MESSAGE,
-          false,
-        )}`,
-    );
+    .map((r) => {
+      const reason = `${cell(r.targetId)}: ${untrusted(
+        r.incompleteReason ?? 'unknown reason',
+        SHORT_MESSAGE,
+        false,
+      )}`;
+      if (r.incompleteReason !== 'protocol broken') return reason;
+      // The checks that tripped the breaker: not-run, yet they took attempts.
+      const tripped = Object.entries(r.checks).filter(
+        ([, c]) =>
+          c.status === 'not-run' && c.attempts > 0 && c.message !== undefined,
+      );
+      if (tripped.length === 0) return reason;
+      return [
+        `${reason}, after`,
+        ...tripped.map(
+          ([id, c]) =>
+            `  - ${cell(id)} (${plural(
+              c.attempts,
+              'attempt',
+              'attempts',
+            )}): ${untrusted(c.message ?? '', SHORT_MESSAGE, false)}`,
+        ),
+      ].join('\n');
+    });
 
   const lines = [
     STATUS_MARKER,
