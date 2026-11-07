@@ -332,7 +332,7 @@ describe('parseKnownFailures', () => {
     expect(at('2027-01-15T10:59:59Z').active).toEqual([entry]);
     expect(at('2027-01-15T11:00:00Z').expired).toEqual([entry]);
   });
-  test('the shipped known-failures.json parses, and nothing in it has expired', async () => {
+  test('the shipped known-failures.json parses', async () => {
     const file = fileURLToPath(
       new URL('../known-failures.json', import.meta.url),
     );
@@ -341,8 +341,11 @@ describe('parseKnownFailures', () => {
       key: string;
       upstream: string;
     }>;
-    const { active, expired } = parseKnownFailures(json, new Date());
-    expect(expired).toEqual([]);
+    // A far-past date makes every entry active. Expiry is the scheduled
+    // run's job (an expired entry alerts again), not a reason to fail CI.
+    const parse = () => parseKnownFailures(json, new Date('2000-01-01'));
+    expect(parse).not.toThrow();
+    const { active } = parse();
     const pick = (es: Array<{ key: string; upstream: string }>) =>
       es.map(({ key, upstream }) => ({ key, upstream }));
     expect(pick(active)).toEqual(pick(json));
