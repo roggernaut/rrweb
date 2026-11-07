@@ -10,6 +10,7 @@ import type { PageDriver } from '../src/node/drivers/types.ts';
 import { buildPageBundle, readRrwebUmd } from '../src/node/page-source.ts';
 import { runAttempt } from '../src/node/run-check.ts';
 import { checks } from '../src/page/registry.ts';
+import { overHttpTests } from './helpers/over-http.ts';
 
 function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -374,4 +375,8 @@ describe.skipIf(!geckodriver || !firefoxBinary)('Selenium on Firefox', () => {
       expect(result.ok).toBe(true);
     },
   );
+
+  describe('a check loaded over http', () => {
+    overHttpTests(() => driver, timeoutMs);
+  });
 });

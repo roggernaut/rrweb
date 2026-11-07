@@ -43,6 +43,16 @@ function isPollState(value: unknown): value is PollState {
   );
 }
 
+/** What a page is built from, and how it reaches the browser. */
+export interface PageSource {
+  bundle: string;
+  rrweb: string;
+  /** The fixture server, when one runs. */
+  httpOrigin?: string;
+  /** 'http' opens every check from the fixture server; see TargetDefinition. */
+  loadVia?: 'html' | 'http';
+}
+
 const timedOut = /^timed out after \d+ ms$/;
 
 /**
@@ -58,16 +68,21 @@ export function isProtocolFailure(result: AttemptResult): boolean {
 
 /**
  * Runs one attempt of one check: load the page, start the check, poll until
- * it settles, then read the result back in chunks.
+ * it settles, then read the result back in chunks. The page comes from the
+ * fixture server when the check needs http or `src.loadVia` is 'http', and
+ * is written into a blank page otherwise.
  */
 export async function runAttempt(
   driver: PageDriver,
   meta: CheckMeta,
-  src: { bundle: string; rrweb: string; httpOrigin?: string },
+  src: PageSource,
   opts: RunOptions & { timeoutMs: number },
 ): Promise<AttemptResult> {
   if (meta.needsHttp && (!src.httpOrigin || !driver.canReachLocalhost)) {
     return { ok: true, skipped: 'needs http' };
+  }
+  if (src.loadVia === 'http' && !src.httpOrigin) {
+    throw new Error(`cannot load ${meta.id} over http: no fixture server`);
   }
   const deadline = Date.now() + opts.timeoutMs;
   // Each driver call is bounded too, so a frozen page still times out.
@@ -84,7 +99,8 @@ export async function runAttempt(
   };
 
   try {
-    if (meta.needsHttp) {
+    if (meta.needsHttp || src.loadVia === 'http') {
+      // A real navigation, so the page gets a new Window.
       await call(driver.open(`${String(src.httpOrigin)}/check/${meta.id}`));
     } else {
       await call(driver.loadHtml(composePage(meta, src.bundle, src.rrweb)));
@@ -189,7 +205,7 @@ export async function runWithRetry(
 export async function runScenario(
   driver: PageDriver,
   meta: CheckMeta,
-  src: { bundle: string; rrweb: string; httpOrigin?: string },
+  src: PageSource,
   opts: {
     samples: number;
     timeoutMs: number;

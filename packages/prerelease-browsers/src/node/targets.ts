@@ -21,6 +21,13 @@ export interface TargetDefinition {
   perfSamples: number; // 5 on GitHub, 3 on BrowserStack
   timeScale: number; // multiplies every timeout: 1 GitHub, 5 BrowserStack
   ceilingMs?: number;
+  /**
+   * How each check's page reaches the browser. 'html' (the default) writes
+   * it into a blank page, and serves only needsHttp checks from the fixture
+   * server. 'http' serves every check from the fixture server, for a browser
+   * that cannot take a large page written into a blank one.
+   */
+  loadVia?: 'html' | 'http';
   connect(): Promise<PageDriver>;
 }
 
@@ -76,10 +83,11 @@ function installed(name: string): string {
   return value;
 }
 
-type GithubTarget = Omit<TargetDefinition, 'perfSamples' | 'timeScale'>;
+type GithubTarget = Omit<TargetDefinition, 'perfSamples' | 'timeScale'> &
+  Partial<Pick<TargetDefinition, 'timeScale'>>;
 
 function onGithub(t: GithubTarget): TargetDefinition {
-  return { ...t, perfSamples: 5, timeScale: 1 };
+  return { perfSamples: 5, timeScale: 1, ...t };
 }
 
 /** Starts a WebDriver server on `basePort` (plus the port offset) and opens a session on it. */
@@ -255,6 +263,11 @@ export const githubTargets: TargetDefinition[] = [
     where: 'github-android',
     checks: 'functional-privacy',
     perf: 'none',
+    // Fenix hangs on a large page written into a blank one, but loads the
+    // same page from the fixture server, which adb reverse maps into the
+    // emulator. The emulator is slow, so its timeouts are doubled.
+    loadVia: 'http',
+    timeScale: 2,
     connect: () =>
       connectDriver({
         cmd: installed('GECKODRIVER'),

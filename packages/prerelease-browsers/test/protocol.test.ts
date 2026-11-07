@@ -7,6 +7,7 @@ import {
 } from '../src/node/page-source.ts';
 import { runAttempt } from '../src/node/run-check.ts';
 import type { CheckMeta } from '../src/types.ts';
+import { overHttpTests } from './helpers/over-http.ts';
 
 const meta = (id: string): CheckMeta => ({
   id,
@@ -115,4 +116,8 @@ test('replaying leaves the recorded events as they were', async () => {
   });
   expect(r.message ?? '').toBe('');
   expect(r.ok).toBe(true);
+});
+
+describe('a check loaded over http', () => {
+  overHttpTests(() => driver, 30_000);
 });

@@ -349,6 +349,77 @@ test('rrwebDist feeds both the composed pages and the fixture server', async () 
   }
 });
 
+test('an http target opens every check from the fixture server', async () => {
+  const opened: string[] = [];
+  const pages: string[] = [];
+  const driver = scriptedDriver(() => ({ ok: true }));
+  const open = driver.open;
+  driver.loadHtml = () => Promise.reject(new Error('loadHtml used'));
+  driver.open = async (url) => {
+    opened.push(url);
+    pages.push(await (await fetch(url)).text());
+    await open(url);
+  };
+  const port = process.env.PRERELEASE_HTTP_PORT;
+  process.env.PRERELEASE_HTTP_PORT = '0';
+  try {
+    const r = await runTarget(
+      {
+        ...findTarget('local-chromium'),
+        loadVia: 'http',
+        connect: async () => driver,
+      },
+      {
+        resultsDir: tmp,
+        deadline: future,
+        rrwebCommit: 'abc',
+        // Neither needs http, so only loadVia starts the fixture server.
+        only: ['snapshot-basic', 'patched-mutation-observer'],
+      },
+    );
+    expect(Object.values(r.checks).map((c) => c.status)).toEqual([
+      'pass',
+      'pass',
+    ]);
+  } finally {
+    if (port === undefined) delete process.env.PRERELEASE_HTTP_PORT;
+    else process.env.PRERELEASE_HTTP_PORT = port;
+  }
+  // In registry order.
+  expect(opened).toHaveLength(2);
+  expect(opened[0]).toMatch(
+    /^http:\/\/127\.0\.0\.1:\d+\/check\/patched-mutation-observer$/,
+  );
+  expect(opened[1]).toMatch(/\/check\/snapshot-basic$/);
+  // The served page is the composed one, beforeRrweb included. A real
+  // browser runs it in protocol.test.ts and selenium.test.ts.
+  expect(pages[0]).toContain(
+    '<script>__prerelease.beforeRrweb("patched-mutation-observer")</script>',
+  );
+});
+
+test('an html target loads checks that need no http in memory', async () => {
+  const opened: string[] = [];
+  const driver = scriptedDriver(() => ({ ok: true }));
+  const open = driver.open;
+  driver.open = async (url) => {
+    opened.push(url);
+    await open(url);
+  };
+  const r = await runTarget(
+    { ...findTarget('local-chromium'), connect: async () => driver },
+    {
+      resultsDir: tmp,
+      deadline: future,
+      rrwebCommit: 'abc',
+      only: ['snapshot-basic'],
+    },
+  );
+  expect(r.checks['snapshot-basic'].status).toBe('pass');
+  expect(driver.loads).toBe(1);
+  expect(opened).toEqual([]);
+});
+
 test('an unknown check id is rejected', async () => {
   await expect(
     runTarget(findTarget('local-chromium'), {
@@ -551,8 +622,16 @@ describe('GitHub-runner targets', () => {
         t.perf,
       ]),
     ).toEqual(table);
+    // Fenix on the Android emulator hangs on pages written into a blank
+    // one, and is slow: it loads every check over http, with longer timeouts.
+    const android = (id: string) => id === 'firefox-android-nightly';
     for (const t of githubTargets) {
-      expect([t.id, t.timeScale, t.perfSamples]).toEqual([t.id, 1, 5]);
+      expect([t.id, t.timeScale, t.perfSamples, t.loadVia]).toEqual([
+        t.id,
+        android(t.id) ? 2 : 1,
+        5,
+        android(t.id) ? 'http' : undefined,
+      ]);
     }
   });
 

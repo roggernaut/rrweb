@@ -13,6 +13,7 @@ import type {
   TargetResult,
 } from './results.ts';
 import { writeResult } from './results.ts';
+import type { PageSource } from './run-check.ts';
 import {
   DeadlineReached,
   errorMessage,
@@ -144,10 +145,19 @@ export async function runTarget(
     result.browser = await describeBrowser(driver);
     const bundle = await buildPageBundle();
     const rrweb = readRrwebUmd(opts.rrwebDist);
-    if (driver.canReachLocalhost && metas.some((m) => m.needsHttp)) {
+    const loadVia = t.loadVia ?? 'html';
+    if (
+      loadVia === 'http' ||
+      (driver.canReachLocalhost && metas.some((m) => m.needsHttp))
+    ) {
       server = await startFixtureServer({ bundle, rrweb });
     }
-    const src = { bundle, rrweb, httpOrigin: server?.origin };
+    const src: PageSource = {
+      bundle,
+      rrweb,
+      httpOrigin: server?.origin,
+      loadVia,
+    };
     /** The checks in the current run of driver-broken ones. */
     let brokenInARow: CheckOutcome[] = [];
     for (const meta of metas) {
@@ -189,7 +199,7 @@ export async function runTarget(
 
   async function runCheck(
     meta: CheckMeta,
-    src: { bundle: string; rrweb: string; httpOrigin?: string },
+    src: PageSource,
   ): Promise<{ outcome: CheckOutcome; broken: boolean }> {
     const timeoutMs = attemptTimeoutMs(meta.kind) * t.timeScale;
     /** A failed check whose failures all came from the driver, not rrweb. */
