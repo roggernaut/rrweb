@@ -1,3 +1,4 @@
+import { isBrowserStack } from '../node/results.ts';
 import type { TargetResult } from '../node/results.ts';
 import type { BrowserInfo } from '../node/drivers/types.ts';
 import type { CheckKind, Engine } from '../types.ts';
@@ -141,10 +142,10 @@ export function parseKnownFailures(
 }
 
 /** run-target knows only the GitHub-runner targets; BrowserStack ids go through run-browserstack. */
-const reproduceCommand = (targetId: string, checkId: string) =>
-  targetId.startsWith('bs-')
-    ? `yarn workspace @rrweb/prerelease-browsers run-browserstack --only ${targetId} --check ${checkId}`
-    : `yarn workspace @rrweb/prerelease-browsers run-target --target ${targetId} --check ${checkId}`;
+const reproduceCommand = (r: TargetResult, checkId: string) =>
+  isBrowserStack(r)
+    ? `yarn workspace @rrweb/prerelease-browsers run-browserstack --only ${r.targetId} --check ${checkId}`
+    : `yarn workspace @rrweb/prerelease-browsers run-target --target ${r.targetId} --check ${checkId}`;
 
 function buildFailure(
   key: string,
@@ -244,7 +245,7 @@ export function collectFailures(
         message: messages.join('; '),
         ...(c.eventsFile ? { eventsFile: c.eventsFile } : {}),
         ...(r.sessionUrl ? { sessionUrl: r.sessionUrl } : {}),
-        reproduce: reproduceCommand(r.targetId, checkId),
+        reproduce: reproduceCommand(r, checkId),
       };
       const existing = byKey.get(key);
       if (existing) existing.targets.push(target);

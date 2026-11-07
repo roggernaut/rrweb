@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { checks as registeredChecks } from '../page/registry.ts';
+import { driverProbe, checks as registeredChecks } from '../page/registry.ts';
 import type { AttemptResult, CheckKind, CheckMeta } from '../types.ts';
 import type { BrowserInfo, PageDriver } from './drivers/types.ts';
 import { RealmReuseError } from './drivers/types.ts';
@@ -13,6 +13,7 @@ import type {
   TargetResult,
 } from './results.ts';
 import { writeResult } from './results.ts';
+import type { PageSource } from './run-check.ts';
 import {
   DeadlineReached,
   errorMessage,
@@ -32,6 +33,14 @@ const brokenChecksLimit = 2;
 
 const functionalTimeoutMs = 60_000;
 const performanceTimeoutMs = 180_000;
+/** For the driver probe, which settles at once on a working driver. */
+const probeTimeoutMs = 30_000;
+
+const probeMeta: CheckMeta = {
+  id: driverProbe.id,
+  kind: driverProbe.kind,
+  tier: driverProbe.tier,
+};
 
 function attemptTimeoutMs(kind: CheckKind): number {
   return kind === 'performance' ? performanceTimeoutMs : functionalTimeoutMs;
@@ -81,6 +90,7 @@ export function newResult(
     engine: t.engine,
     channel: t.channel,
     ...(t.pairGroup === undefined ? {} : { pairGroup: t.pairGroup }),
+    where: t.where,
     perf: t.perf,
     ceilingMs: t.ceilingMs ?? 1000,
     launch: { ok: true },
@@ -139,16 +149,35 @@ export async function runTarget(
     return finish(result, opts.resultsDir);
   }
 
+  const loadVia = t.loadVia ?? 'html';
+  if (loadVia === 'http' && !driver.canReachLocalhost) {
+    await driver.close().catch(() => undefined);
+    result.launch = {
+      ok: false,
+      error: `${t.id} loads checks over http from this machine, but its driver cannot reach this machine`,
+    };
+    return finish(result, opts.resultsDir);
+  }
+
   let server: FixtureServer | undefined;
   try {
     result.browser = await describeBrowser(driver);
     const bundle = await buildPageBundle();
     const rrweb = readRrwebUmd(opts.rrwebDist);
-    if (driver.canReachLocalhost && metas.some((m) => m.needsHttp)) {
+    if (
+      loadVia === 'http' ||
+      (driver.canReachLocalhost && metas.some((m) => m.needsHttp))
+    ) {
       server = await startFixtureServer({ bundle, rrweb });
     }
-    const src = { bundle, rrweb, httpOrigin: server?.origin };
-    let brokenInARow = 0;
+    const src: PageSource = {
+      bundle,
+      rrweb,
+      httpOrigin: server?.origin,
+      loadVia,
+    };
+    /** The checks in the current run of driver-broken ones. */
+    let brokenInARow: Array<[string, CheckOutcome]> = [];
     for (const meta of metas) {
       let checked: Awaited<ReturnType<typeof runCheck>>;
       try {
@@ -169,9 +198,34 @@ export async function runTarget(
       }
       // A skip never touched the browser, so it says nothing either way.
       if (outcome.status === 'skipped') continue;
-      brokenInARow = broken ? brokenInARow + 1 : 0;
-      if (brokenInARow >= brokenChecksLimit) {
-        stopHere('protocol broken');
+      brokenInARow = broken ? [...brokenInARow, [meta.id, outcome]] : [];
+      if (brokenInARow.length >= brokenChecksLimit) {
+        result.trippedBy = brokenInARow.map(([id]) => id);
+        // Past the deadline no probe starts, and without it nothing tells a
+        // broken driver from a hang: blame neither check.
+        if (Date.now() >= opts.deadline.getTime()) {
+          for (const [, tripped] of brokenInARow) tripped.status = 'not-run';
+          stopHere('deadline');
+          break;
+        }
+        // A page that loads and waits for frames, recording nothing, settles
+        // on a working driver.
+        const probe = await probeDriver(src);
+        if (probe === 'works') {
+          // Then rrweb hangs: the tripping checks failed, and alert. Every
+          // further check would likely hang too and only burn its timeouts.
+          stopHere('rrweb hang');
+          break;
+        }
+        // The driver broke, or cannot isolate pages: the checks that showed
+        // it did not really run. They keep their attempts and message for
+        // the status issue, but open no issue.
+        for (const [, tripped] of brokenInARow) tripped.status = 'not-run';
+        stopHere(
+          probe === 'no fresh window'
+            ? 'fresh window unavailable'
+            : 'protocol broken',
+        );
         break;
       }
     }
@@ -182,9 +236,27 @@ export async function runTarget(
   }
   return finish(result, opts.resultsDir);
 
+  /**
+   * Loads the probe page through `src`'s load path: 'works' when it settles,
+   * 'no fresh window' when the driver cannot give it a new Window, and
+   * 'broken' when it hangs or errors.
+   */
+  async function probeDriver(
+    src: PageSource,
+  ): Promise<'works' | 'broken' | 'no fresh window'> {
+    try {
+      const probe = await runAttempt(driver, probeMeta, src, {
+        timeoutMs: probeTimeoutMs * t.timeScale,
+      });
+      return probe.ok && probe.skipped === undefined ? 'works' : 'broken';
+    } catch (err) {
+      return err instanceof RealmReuseError ? 'no fresh window' : 'broken';
+    }
+  }
+
   async function runCheck(
     meta: CheckMeta,
-    src: { bundle: string; rrweb: string; httpOrigin?: string },
+    src: PageSource,
   ): Promise<{ outcome: CheckOutcome; broken: boolean }> {
     const timeoutMs = attemptTimeoutMs(meta.kind) * t.timeScale;
     /** A failed check whose failures all came from the driver, not rrweb. */
@@ -204,6 +276,9 @@ export async function runTarget(
         deadline: opts.deadline,
         onAttempt: (a) => samples.push(a),
       });
+      if (meta.ceilingMs !== undefined) {
+        outcome.ceilingMs = Math.max(result.ceilingMs, meta.ceilingMs);
+      }
       return { outcome, broken: brokenBy(outcome, samples) };
     }
     const { status, attempts } = await runWithRetry(
@@ -291,11 +366,14 @@ async function markSession(
     const failed = Object.entries(result.checks).filter(
       ([, c]) => c.status === 'fail',
     );
+    const incomplete = result.incomplete
+      ? `incomplete: ${result.incompleteReason ?? 'unknown reason'}`
+      : undefined;
     await driver.markSession?.(
-      failed.length === 0,
-      failed.length === 0
-        ? 'all checks passed'
-        : `failed: ${failed.map(([id]) => id).join(', ')}`,
+      failed.length === 0 && incomplete === undefined,
+      failed.length > 0
+        ? `failed: ${failed.map(([id]) => id).join(', ')}`
+        : incomplete ?? 'all checks passed',
     );
     return await driver.sessionUrl?.();
   } catch {

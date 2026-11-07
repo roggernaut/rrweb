@@ -121,18 +121,27 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
       - name: Setup Node.js 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: 'yarn'
 
+      # A registry hiccup (a 503) should not cost the job: retry with a
+      # short back-off. Every job's install step does the same.
       - name: Install Dependencies
-        run: yarn install --frozen-lockfile
+        id: install
+        run: |
+          for attempt in 1 2 3; do
+            if yarn install --frozen-lockfile; then exit 0; fi
+            echo "::warning::yarn install failed (attempt $attempt of 3)"
+            if [ "$attempt" -lt 3 ]; then sleep $((attempt * 20)); fi
+          done
+          exit 1
         env:
           PUPPETEER_SKIP_DOWNLOAD: true
 
@@ -140,7 +149,7 @@ jobs:
         run: NODE_OPTIONS='--max-old-space-size=4096' yarn turbo run prepublish --filter=rrweb
 
       - name: Upload the rrweb build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: rrweb-dist
           path: packages/rrweb/dist
@@ -161,37 +170,49 @@ jobs:
       PRERELEASE_DEADLINE: ${{ needs.gate.outputs.deadline }}
       T: ${{ matrix.target }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
       - name: Setup Node.js 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: 'yarn'
 
       - name: Install Dependencies
-        run: yarn install --frozen-lockfile
+        id: install
+        run: |
+          for attempt in 1 2 3; do
+            if yarn install --frozen-lockfile; then exit 0; fi
+            echo "::warning::yarn install failed (attempt $attempt of 3)"
+            if [ "$attempt" -lt 3 ]; then sleep $((attempt * 20)); fi
+          done
+          exit 1
         env:
           PUPPETEER_SKIP_DOWNLOAD: true
 
       - name: Download the rrweb build
-        uses: actions/download-artifact@v4
+        id: dist
+        uses: actions/download-artifact@v8
         with:
           name: rrweb-dist
           path: packages/rrweb/dist
 
       - name: Install ${{ matrix.target }}
+        id: browser
         working-directory: packages/prerelease-browsers
         run: node src/node/install.ts "$T" "$RUNNER_TEMP/browsers" >> "$GITHUB_ENV"
 
+      # Only after a good setup: without it the run would crash, not report.
+      # A target that never ran leaves no results file and shows as missing.
       - name: Run ${{ matrix.target }}
+        if: "!cancelled() && steps.install.outcome == 'success' && steps.dist.outcome == 'success' && steps.browser.outcome == 'success'"
         run: xvfb-run --server-args="-screen 0 1920x1080x24" yarn workspace @rrweb/prerelease-browsers run-target --target "$T" --deadline "$PRERELEASE_DEADLINE"
 
       - name: Upload results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: results-${{ matrix.target }}
           path: packages/prerelease-browsers/results
@@ -206,50 +227,62 @@ jobs:
     env:
       PRERELEASE_DEADLINE: ${{ needs.gate.outputs.deadline }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
       - name: Setup Node.js 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: 'yarn'
 
       - name: Install Dependencies
-        run: yarn install --frozen-lockfile
+        id: install
+        run: |
+          for attempt in 1 2 3; do
+            if yarn install --frozen-lockfile; then exit 0; fi
+            echo "::warning::yarn install failed (attempt $attempt of 3)"
+            if [ "$attempt" -lt 3 ]; then sleep $((attempt * 20)); fi
+          done
+          exit 1
         env:
           PUPPETEER_SKIP_DOWNLOAD: true
 
+      # Each setup step below is gated on what it needs, not on every step
+      # before it, so one Safari's failed setup cannot skip the other's.
       - name: Download the rrweb build
-        uses: actions/download-artifact@v4
+        id: dist
+        if: '!cancelled()'
+        uses: actions/download-artifact@v8
         with:
           name: rrweb-dist
           path: packages/rrweb/dist
 
       - name: Enable Safari's driver
-        if: contains(format(',{0},', needs.gate.outputs.expected), ',safari-stable,')
+        if: "!cancelled() && steps.install.outcome == 'success' && contains(format(',{0},', needs.gate.outputs.expected), ',safari-stable,')"
         run: sudo safaridriver --enable
 
       - name: Install Safari Technology Preview
-        if: contains(format(',{0},', needs.gate.outputs.expected), ',safari-tp,')
+        if: "!cancelled() && steps.install.outcome == 'success' && contains(format(',{0},', needs.gate.outputs.expected), ',safari-tp,')"
         run: |
           brew install --cask safari-technology-preview
           sudo "/Applications/Safari Technology Preview.app/Contents/MacOS/safaridriver" --enable
 
       # One after the other, without --port-offset: each driver has its own
-      # fixed port (4446 stable, 4445 Technology Preview).
+      # fixed port (4446 stable, 4445 Technology Preview). Each runs only
+      # after a good install and rrweb download, but whatever the other did.
       - name: Run safari-stable
-        if: "!cancelled() && contains(format(',{0},', needs.gate.outputs.expected), ',safari-stable,')"
+        if: "!cancelled() && steps.install.outcome == 'success' && steps.dist.outcome == 'success' && contains(format(',{0},', needs.gate.outputs.expected), ',safari-stable,')"
         run: yarn workspace @rrweb/prerelease-browsers run-target --target safari-stable --deadline "$PRERELEASE_DEADLINE"
 
       - name: Run safari-tp
-        if: "!cancelled() && contains(format(',{0},', needs.gate.outputs.expected), ',safari-tp,')"
+        if: "!cancelled() && steps.install.outcome == 'success' && steps.dist.outcome == 'success' && contains(format(',{0},', needs.gate.outputs.expected), ',safari-tp,')"
         run: yarn workspace @rrweb/prerelease-browsers run-target --target safari-tp --deadline "$PRERELEASE_DEADLINE"
 
       - name: Upload results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: results-macos
           path: packages/prerelease-browsers/results
@@ -264,39 +297,50 @@ jobs:
     env:
       PRERELEASE_DEADLINE: ${{ needs.gate.outputs.deadline }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
       - name: Setup Node.js 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: 'yarn'
 
       - name: Install Dependencies
-        run: yarn install --frozen-lockfile
+        id: install
+        run: |
+          for attempt in 1 2 3; do
+            if yarn install --frozen-lockfile; then exit 0; fi
+            echo "::warning::yarn install failed (attempt $attempt of 3)"
+            if [ "$attempt" -lt 3 ]; then sleep $((attempt * 20)); fi
+          done
+          exit 1
         env:
           PUPPETEER_SKIP_DOWNLOAD: true
 
       - name: Download the rrweb build
-        uses: actions/download-artifact@v4
+        id: dist
+        uses: actions/download-artifact@v8
         with:
           name: rrweb-dist
           path: packages/rrweb/dist
 
       - name: Enable KVM
+        id: kvm
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
 
       - name: Install firefox-android-nightly
+        id: browser
         working-directory: packages/prerelease-browsers
         run: node src/node/install.ts firefox-android-nightly "$RUNNER_TEMP/browsers" >> "$GITHUB_ENV"
 
       # The emulator stops when this step ends, so the log is saved inside the
       # script. The runner runs each script line on its own: keep it one line.
       - name: Run firefox-android-nightly
+        if: "!cancelled() && steps.install.outcome == 'success' && steps.dist.outcome == 'success' && steps.kvm.outcome == 'success' && steps.browser.outcome == 'success'"
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 34
@@ -306,7 +350,7 @@ jobs:
 
       - name: Upload the emulator log
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: android-logcat
           path: ${{ runner.temp }}/logcat.txt
@@ -315,7 +359,7 @@ jobs:
 
       - name: Upload results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: results-android
           path: packages/prerelease-browsers/results
@@ -330,28 +374,37 @@ jobs:
     env:
       PRERELEASE_DEADLINE: ${{ needs.gate.outputs.deadline }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
       - name: Setup Node.js 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: 'yarn'
 
       - name: Install Dependencies
-        run: yarn install --frozen-lockfile
+        id: install
+        run: |
+          for attempt in 1 2 3; do
+            if yarn install --frozen-lockfile; then exit 0; fi
+            echo "::warning::yarn install failed (attempt $attempt of 3)"
+            if [ "$attempt" -lt 3 ]; then sleep $((attempt * 20)); fi
+          done
+          exit 1
         env:
           PUPPETEER_SKIP_DOWNLOAD: true
 
       - name: Download the rrweb build
-        uses: actions/download-artifact@v4
+        id: dist
+        uses: actions/download-artifact@v8
         with:
           name: rrweb-dist
           path: packages/rrweb/dist
 
       - name: Run BrowserStack targets
+        if: "!cancelled() && steps.install.outcome == 'success' && steps.dist.outcome == 'success'"
         env:
           BROWSERSTACK_USERNAME: ${{ secrets.BROWSERSTACK_USERNAME }}
           BROWSERSTACK_ACCESS_KEY: ${{ secrets.BROWSERSTACK_ACCESS_KEY }}
@@ -359,7 +412,7 @@ jobs:
 
       - name: Upload results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: results-browserstack
           path: packages/prerelease-browsers/results
@@ -375,18 +428,25 @@ jobs:
       contents: read
       issues: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
       - name: Setup Node.js 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: 'yarn'
 
       - name: Install Dependencies
-        run: yarn install --frozen-lockfile
+        id: install
+        run: |
+          for attempt in 1 2 3; do
+            if yarn install --frozen-lockfile; then exit 0; fi
+            echo "::warning::yarn install failed (attempt $attempt of 3)"
+            if [ "$attempt" -lt 3 ]; then sleep $((attempt * 20)); fi
+          done
+          exit 1
         env:
           PUPPETEER_SKIP_DOWNLOAD: true
 
@@ -395,7 +455,7 @@ jobs:
       # missing, which keeps every issue open and shows in the status issue.
       - name: Download results
         continue-on-error: true
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: results-*
           merge-multiple: true

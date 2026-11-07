@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { createWriteStream, realpathSync } from 'node:fs';
-import { mkdir, rm } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { basename, dirname, join, resolve } from 'node:path';
 import { Readable } from 'node:stream';
@@ -9,8 +9,6 @@ import type { ReadableStream } from 'node:stream/web';
 import { fileURLToPath } from 'node:url';
 import {
   Browser,
-  Cache,
-  computeExecutablePath,
   detectBrowserPlatform,
   install,
   resolveBuildId,
@@ -98,7 +96,11 @@ export async function installTarget(
   }
 }
 
-/** Installs a Chrome for Testing or Firefox build for a channel; returns its executable. */
+/**
+ * Installs a Chrome for Testing or Firefox build for a channel; returns its
+ * executable. `@puppeteer/browsers` 3 unpacks zips with the system unzip, so
+ * Chrome for Testing needs no special path on Node 26.
+ */
 async function installBrowser(
   browser: Browser,
   tag: string,
@@ -109,23 +111,7 @@ async function installBrowser(
     throw new Error('@puppeteer/browsers does not know this platform');
   const buildId = await resolveBuildId(browser, platform, tag);
   log(`installing ${browser} ${buildId} (${tag})`);
-  if (browser !== Browser.CHROME) {
-    return (await install({ browser, buildId, cacheDir: dir })).executablePath;
-  }
-  // Chrome for Testing ships as a zip, and the extract-zip that
-  // @puppeteer/browsers unpacks it with never settles on Node 26: it stops
-  // after a few dozen files and the process exits mid-await. The system
-  // unzip does the same job.
-  const archive = await install({
-    browser,
-    buildId,
-    cacheDir: dir,
-    unpack: false,
-  });
-  const target = new Cache(dir).installationDir(browser, platform, buildId);
-  await run('unzip', ['-q', '-o', archive, '-d', target]);
-  await rm(archive);
-  return computeExecutablePath({ browser, buildId, cacheDir: dir, platform });
+  return (await install({ browser, buildId, cacheDir: dir })).executablePath;
 }
 
 /** The geckodriver release asset name for this machine. */

@@ -62,6 +62,47 @@ test('the ceiling uses each result own ceilingMs', () => {
   ).toEqual([]);
 });
 
+describe('a scenario with its own ceiling', () => {
+  /** perf-snapshot-50k blocking `blocksMs`, its outcome carrying `ceilingMs`. */
+  const big = (blocksMs: number[], ceilingMs: number, targetCeiling = 1000) => {
+    const r = perfBlock('firefox-stable', 'compare', blocksMs, {
+      checkId: 'perf-snapshot-50k',
+      ceilingMs: targetCeiling,
+    });
+    r.checks['perf-snapshot-50k'].ceilingMs = ceilingMs;
+    return r;
+  };
+
+  test('is held to that ceiling instead of the target one', () => {
+    // firefox-stable blocked about 1081 ms on the first scheduled run.
+    expect(evaluatePerf([big([1081, 1100, 1050], 3000)])).toEqual([]);
+    expect(evaluatePerf([big([3100, 3200, 3000], 3000)])).toEqual([
+      {
+        targetId: 'firefox-stable',
+        checkId: 'perf-snapshot-50k',
+        message: 'longest block 3100 ms over 3000 ms ceiling',
+      },
+    ]);
+  });
+
+  test('never gets a lower ceiling than its target', () => {
+    expect(evaluatePerf([big([3500, 3500, 3500], 3000, 4000)])).toEqual([]);
+  });
+
+  test('leaves the other scenarios on the target ceiling', () => {
+    const r = big([1081, 1081, 1081], 3000);
+    r.checks['perf-snapshot-5k'] = {
+      kind: 'performance',
+      status: 'pass',
+      attempts: 1,
+      samples: [{ durationMs: 100, maxBlockMs: 1081 }],
+    };
+    expect(evaluatePerf([r]).map((f) => [f.checkId, f.message])).toEqual([
+      ['perf-snapshot-5k', 'longest block 1081 ms over 1000 ms ceiling'],
+    ]);
+  });
+});
+
 test('perf none targets are not measured', () => {
   const r = perfBlock('chrome-canary', 'compare', [5000, 5000, 5000]);
   r.perf = 'none';
@@ -89,6 +130,93 @@ test('the compare list from the check selects the metrics', () => {
   expect(evaluatePerf([up, st]).map((f) => f.message)).toEqual([
     'maxBlockMs 200 vs stable 50 (4.00x)',
   ]);
+});
+
+describe('a BrowserStack pair compares duration only (R76)', () => {
+  /** perf-mutation-burst-10k: equal durations, the block 2.08x apart, all three metrics compared. */
+  const pair = (where: 'browserstack' | 'github-linux', prefix: string) => {
+    const mk = (id: string, channel: 'upcoming' | 'stable', block: number) => {
+      const r = perf(id, channel, [100, 100, 100], {
+        checkId: 'perf-mutation-burst-10k',
+        pairGroup: 'chrome-android',
+        where,
+        compare: ['durationMs', 'maxBlockMs', 'heapDeltaBytes'],
+      });
+      r.checks['perf-mutation-burst-10k'].samples = [100, 100, 100].map(
+        (durationMs) => ({
+          durationMs,
+          maxBlockMs: block,
+          heapDeltaBytes: block * 100_000,
+        }),
+      );
+      return r;
+    };
+    return [
+      mk(`${prefix}-beta`, 'upcoming', 322),
+      mk(`${prefix}-stable`, 'stable', 155),
+    ];
+  };
+
+  test('maxBlockMs 2.08x with equal durations gives no finding', () => {
+    expect(evaluatePerf(pair('browserstack', 'bs-android-chrome'))).toEqual([]);
+  });
+
+  test('a results file without where goes by the bs- id prefix', () => {
+    const rs = pair('browserstack', 'bs-android-chrome');
+    for (const r of rs) delete r.where;
+    expect(evaluatePerf(rs)).toEqual([]);
+  });
+
+  test('the same numbers on a GitHub-runner pair still give findings', () => {
+    expect(
+      evaluatePerf(pair('github-linux', 'android-chrome')).map(
+        (f) => f.message,
+      ),
+    ).toEqual([
+      expect.stringMatching(/^maxBlockMs 322 vs stable 155 \(2\.08x\)$/),
+      expect.stringMatching(/^heapDeltaBytes \d+ vs stable \d+ \(2\.08x\)$/),
+    ]);
+  });
+
+  test('duration is still compared between BrowserStack targets', () => {
+    const [up, st] = pair('browserstack', 'bs-android-chrome');
+    up.checks['perf-mutation-burst-10k'].samples = [200, 200, 200].map(
+      (durationMs) => ({ durationMs, maxBlockMs: 155 }),
+    );
+    expect(evaluatePerf([up, st]).map((f) => f.message)).toEqual([
+      'durationMs 200 vs stable 100 (2.00x)',
+    ]);
+  });
+
+  test('a maxBlockMs-only compare list leaves BrowserStack to the ceiling', () => {
+    const [up, st] = pair('browserstack', 'bs-android-chrome');
+    for (const r of [up, st]) {
+      r.checks['perf-mutation-burst-10k'].compare = ['maxBlockMs'];
+    }
+    expect(evaluatePerf([up, st])).toEqual([]); // 322 vs 155 ms: 2.08x, not compared
+    up.checks['perf-mutation-burst-10k'].samples = [100, 100, 100].map(
+      (durationMs) => ({ durationMs, maxBlockMs: 1200 }),
+    );
+    expect(evaluatePerf([up, st]).map((f) => f.message)).toEqual([
+      'longest block 1200 ms over 1000 ms ceiling',
+    ]);
+  });
+
+  test('a results file with neither where nor a bs- id compares every metric', () => {
+    const rs = pair('github-linux', 'android-chrome');
+    for (const r of rs) delete r.where;
+    expect(evaluatePerf(rs)).toHaveLength(2);
+  });
+
+  test('a BrowserStack target over the block ceiling is still flagged', () => {
+    const [up, st] = pair('browserstack', 'bs-android-chrome');
+    up.checks['perf-mutation-burst-10k'].samples = [100, 100, 100].map(
+      (durationMs) => ({ durationMs, maxBlockMs: 1200 }),
+    );
+    expect(evaluatePerf([up, st]).map((f) => f.message)).toEqual([
+      'longest block 1200 ms over 1000 ms ceiling',
+    ]);
+  });
 });
 
 test('heap needs more than 5 MB and is skipped when a side lacks it', () => {

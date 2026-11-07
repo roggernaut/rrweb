@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { checks } from '../page/registry.ts';
+import { checks, driverProbe } from '../page/registry.ts';
 import type { CheckMeta } from '../types.ts';
 import { composePage, escapeInlineScript } from './page-source.ts';
 
@@ -52,7 +52,11 @@ export async function startFixtureServer(
   /** Test-only checks to serve too, such as a test-* variant with its head. */
   opts: { extraChecks?: CheckMeta[] } = {},
 ): Promise<FixtureServer> {
-  const served: CheckMeta[] = [...checks, ...(opts.extraChecks ?? [])];
+  const served: CheckMeta[] = [
+    ...checks,
+    driverProbe,
+    ...(opts.extraChecks ?? []),
+  ];
   const basePort = process.env.PRERELEASE_HTTP_PORT
     ? Number(process.env.PRERELEASE_HTTP_PORT)
     : defaultHttpPort;

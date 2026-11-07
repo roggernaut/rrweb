@@ -1,3 +1,4 @@
+import { isBrowserStack } from '../node/results.ts';
 import type { CheckOutcome, TargetResult } from '../node/results.ts';
 import type { PerfSample } from '../types.ts';
 
@@ -41,11 +42,20 @@ function performanceChecks(
  * Performance findings, one per breached limit.
  *
  * - Ceiling: on every target whose `perf` is not 'none', the median longest
- *   block may not exceed that result's own `ceilingMs`.
+ *   block may not exceed that result's own `ceilingMs`, or the scenario's
+ *   `ceilingMs` on its outcome when that is higher.
  * - Compare: an upcoming target with `perf: 'compare'` is held against the
  *   stable target of its pair group, metric by metric (the check's `compare`
  *   list, default durationMs). It fails when it is over RATIO_LIMIT times
  *   slower and also over the absolute floor (MIN_DIFF_MS, MIN_HEAP_DIFF).
+ * - BrowserStack pairs: when both targets ran on BrowserStack, only durationMs
+ *   is compared. BrowserStack gives each session a different physical phone,
+ *   and the longest block moves with the phone: the same Chrome 152 on an
+ *   Android 17 Pixel 9 blocked 147-153 ms in one run and 322-344 ms an hour
+ *   later, while durationMs stayed near 100 ms. So a check whose `compare` list
+ *   is only maxBlockMs (perf-sampled-canvases) is held to the ceiling alone
+ *   there; that is intended. GitHub-runner pairs, and pr-summary (which never
+ *   uses BrowserStack), compare every metric in the list.
  *
  * A comparison that cannot be made because the stable side is missing is
  * skipped and pushed to `notes`.
@@ -61,13 +71,14 @@ export function evaluatePerf(
 
     for (const [checkId, c] of checks) {
       const block = median(values(c.samples, 'maxBlockMs'));
-      if (block > r.ceilingMs) {
+      const ceilingMs = Math.max(r.ceilingMs, c.ceilingMs ?? 0);
+      if (block > ceilingMs) {
         findings.push({
           targetId: r.targetId,
           checkId,
-          message: `longest block ${Math.round(block)} ms over ${
-            r.ceilingMs
-          } ms ceiling`,
+          message: `longest block ${Math.round(
+            block,
+          )} ms over ${ceilingMs} ms ceiling`,
         });
       }
     }
@@ -94,7 +105,10 @@ export function evaluatePerf(
         );
         continue;
       }
-      for (const metric of c.compare ?? (['durationMs'] as Metric[])) {
+      const metrics = c.compare ?? (['durationMs'] as Metric[]);
+      for (const metric of isBrowserStack(r) && isBrowserStack(stable)
+        ? metrics.filter((m) => m === 'durationMs')
+        : metrics) {
         const up = values(c.samples, metric);
         const st = values(stableCheck.samples, metric);
         if (up.length === 0 || st.length === 0) continue; // e.g. no heap numbers

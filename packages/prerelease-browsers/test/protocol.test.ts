@@ -6,7 +6,9 @@ import {
   readRrwebUmd,
 } from '../src/node/page-source.ts';
 import { runAttempt } from '../src/node/run-check.ts';
+import { driverProbe } from '../src/page/registry.ts';
 import type { CheckMeta } from '../src/types.ts';
+import { overHttpTests } from './helpers/over-http.ts';
 
 const meta = (id: string): CheckMeta => ({
   id,
@@ -115,4 +117,35 @@ test('replaying leaves the recorded events as they were', async () => {
   });
   expect(r.message ?? '').toBe('');
   expect(r.ok).toBe(true);
+});
+
+describe('a check loaded over http', () => {
+  overHttpTests(() => driver, 30_000);
+});
+
+describe('the driver probe', () => {
+  const probe: CheckMeta = {
+    id: driverProbe.id,
+    kind: driverProbe.kind,
+    tier: driverProbe.tier,
+  };
+
+  test('settles on a page that renders frames', async () => {
+    expect(await runAttempt(driver, probe, src, { timeoutMs: 10_000 })).toEqual(
+      { ok: true },
+    );
+  });
+
+  // A screen that is off or locked, or a hidden window, renders no frames.
+  // Every recording check then hangs in stop(), so the probe must too, or
+  // a driver that cannot render would read as an rrweb hang.
+  test('hangs on a page whose frames never fire, like a recording check', async () => {
+    const noFrames = {
+      ...probe,
+      head: '<script>window.requestAnimationFrame = () => 0</script>',
+    };
+    expect(
+      await runAttempt(driver, noFrames, src, { timeoutMs: 2_000 }),
+    ).toEqual({ ok: false, message: 'timed out after 2000 ms' });
+  });
 });

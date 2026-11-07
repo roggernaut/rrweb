@@ -4,9 +4,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readResults } from '../src/node/results.ts';
+import { collectFailures } from '../src/report/failures.ts';
 import { RealmReuseError } from '../src/node/drivers/selenium.ts';
 import { DeadlineReached } from '../src/node/run-check.ts';
-import { runTarget, runTargetOrRecordCrash } from '../src/node/run-targets.ts';
+import {
+  assertKnownChecks,
+  runTarget,
+  runTargetOrRecordCrash,
+} from '../src/node/run-targets.ts';
+import { checks, driverProbe } from '../src/page/registry.ts';
 import {
   applyPortOffset,
   asPrRole,
@@ -87,10 +93,13 @@ function brokenPollDriver(broken: (load: number) => boolean) {
   return driver;
 }
 
-test('two checks in a row with a broken protocol stop the target', async () => {
+test('two checks in a row with a broken protocol stop the target and blame neither', async () => {
   let closed = false;
+  const marks: Array<[boolean, string]> = [];
   const driver = brokenPollDriver(() => true);
   driver.close = async () => void (closed = true);
+  driver.markSession = async (passed, reason) =>
+    void marks.push([passed, reason]);
   const r = await runTarget(
     { ...findTarget('local-chromium'), connect: async () => driver },
     {
@@ -100,21 +109,242 @@ test('two checks in a row with a broken protocol stop the target', async () => {
       only: ['snapshot-basic', 'shadow-dom-open', 'iframe-same-origin'],
     },
   );
-  expect(driver.loads).toBe(4);
-  expect(r.checks['snapshot-basic']).toMatchObject({
-    status: 'fail',
-    attempts: 2,
-    message: 'malformed poll result from driver',
-  });
-  expect(r.checks['shadow-dom-open'].status).toBe('fail');
-  expect(r.checks['iframe-same-origin']).toEqual({
-    kind: 'functional',
-    status: 'not-run',
-    attempts: 0,
+  // Two attempts each, then the probe, which the driver garbles too.
+  expect(driver.loads).toBe(5);
+  // The checks that tripped the breaker keep what they took, for the status
+  // issue, but are not failures: the driver broke, not rrweb.
+  expect(r.checks).toEqual({
+    'snapshot-basic': {
+      kind: 'functional',
+      status: 'not-run',
+      attempts: 2,
+      message: 'malformed poll result from driver',
+    },
+    'shadow-dom-open': {
+      kind: 'functional',
+      status: 'not-run',
+      attempts: 2,
+      message: 'malformed poll result from driver',
+    },
+    'iframe-same-origin': {
+      kind: 'functional',
+      status: 'not-run',
+      attempts: 0,
+    },
   });
   expect(r.incomplete).toBe(true);
   expect(r.incompleteReason).toBe('protocol broken');
+  expect(r.trippedBy).toEqual(['snapshot-basic', 'shadow-dom-open']);
   expect(closed).toBe(true);
+  expect(marks).toEqual([[false, 'incomplete: protocol broken']]);
+  expect(collectFailures([r], [r.targetId], []).failures).toEqual([]);
+});
+
+test('two checks in a row that time out, and a probe that hangs too, stop the target and blame neither', async () => {
+  // Every poll says running, the probe's too, so each attempt runs into its
+  // timeout.
+  const driver = scriptedDriver(() => ({ ok: true }));
+  const inner = driver.evaluate;
+  driver.evaluate = async <T>(expression: string): Promise<T> =>
+    expression === '__prerelease.poll()'
+      ? ({ state: 'running' } as T)
+      : inner<T>(expression);
+  const r = await runTarget(
+    {
+      ...findTarget('local-chromium'),
+      // 60 ms attempts instead of 60 s.
+      timeScale: 0.001,
+      connect: async () => driver,
+    },
+    {
+      resultsDir: tmp,
+      deadline: future,
+      rrwebCommit: 'abc',
+      only: ['snapshot-basic', 'shadow-dom-open', 'iframe-same-origin'],
+    },
+  );
+  expect(Object.values(r.checks)).toEqual([
+    {
+      kind: 'functional',
+      status: 'not-run',
+      attempts: 2,
+      message: 'timed out after 60 ms',
+    },
+    {
+      kind: 'functional',
+      status: 'not-run',
+      attempts: 2,
+      message: 'timed out after 60 ms',
+    },
+    { kind: 'functional', status: 'not-run', attempts: 0 },
+  ]);
+  expect(driver.loads).toBe(5);
+  expect(Object.keys(r.checks)).not.toContain(driverProbe.id);
+  expect(r.incomplete).toBe(true);
+  expect(r.incompleteReason).toBe('protocol broken');
+  expect(r.trippedBy).toEqual(['snapshot-basic', 'shadow-dom-open']);
+  expect(collectFailures([r], [r.targetId], []).failures).toEqual([]);
+  expect(await readResults(tmp)).toEqual([r]);
+});
+
+/**
+ * A scripted driver on which every check hangs, its poll answering running,
+ * while the probe page settles at once: the driver works, rrweb hangs.
+ * `pages` lists every page loaded, by check id.
+ */
+function hangingChecksDriver(onLoad?: (n: number) => void) {
+  const driver = scriptedDriver(() => ({ ok: true }), onLoad);
+  const pages: string[] = [];
+  const load = (id: string) => pages.push(id);
+  const { loadHtml, open, evaluate } = driver;
+  driver.loadHtml = async (html) => {
+    load(/__prerelease\.beforeRrweb\("([^"]+)"\)/.exec(html)![1]);
+    await loadHtml(html);
+  };
+  driver.open = async (url) => {
+    // The fixture server must serve the probe like any check.
+    expect((await fetch(url)).status).toBe(200);
+    load(decodeURIComponent(url.split('/check/')[1]));
+    await open(url);
+  };
+  driver.evaluate = async <T>(expression: string): Promise<T> =>
+    expression === '__prerelease.poll()' && pages.at(-1) !== driverProbe.id
+      ? ({ state: 'running' } as T)
+      : evaluate<T>(expression);
+  return Object.assign(driver, { pages });
+}
+
+describe('a consistent rrweb hang on a working driver', () => {
+  const only = ['snapshot-basic', 'shadow-dom-open', 'iframe-same-origin'];
+  const timedOut = {
+    kind: 'functional',
+    status: 'fail',
+    attempts: 2,
+    message: 'timed out after 60 ms',
+  };
+
+  test.each(['html', 'http'] as const)(
+    'keeps both failures and stops the target as an rrweb hang (%s)',
+    async (loadVia) => {
+      const driver = hangingChecksDriver();
+      const port = process.env.PRERELEASE_HTTP_PORT;
+      process.env.PRERELEASE_HTTP_PORT = '0';
+      let r;
+      try {
+        r = await runTarget(
+          {
+            ...findTarget('local-chromium'),
+            timeScale: 0.001,
+            loadVia,
+            connect: async () => driver,
+          },
+          { resultsDir: tmp, deadline: future, rrwebCommit: 'abc', only },
+        );
+      } finally {
+        if (port === undefined) delete process.env.PRERELEASE_HTTP_PORT;
+        else process.env.PRERELEASE_HTTP_PORT = port;
+      }
+      // The breaker trips after two checks and the probe settles: rrweb
+      // hangs, so every further check would only burn its timeouts.
+      expect(driver.pages).toEqual([
+        'snapshot-basic',
+        'snapshot-basic',
+        'shadow-dom-open',
+        'shadow-dom-open',
+        driverProbe.id,
+      ]);
+      expect(r.checks).toEqual({
+        'snapshot-basic': timedOut,
+        'shadow-dom-open': timedOut,
+        'iframe-same-origin': {
+          kind: 'functional',
+          status: 'not-run',
+          attempts: 0,
+        },
+      });
+      expect(r.incomplete).toBe(true);
+      expect(r.incompleteReason).toBe('rrweb hang');
+      expect(r.trippedBy).toEqual(['snapshot-basic', 'shadow-dom-open']);
+      // The hang alerts.
+      expect(
+        collectFailures([r], [r.targetId], []).failures.map((f) => f.key),
+      ).toEqual(['shadow-dom-open:functional', 'snapshot-basic:functional']);
+      expect(await readResults(tmp)).toEqual([r]);
+    },
+  );
+
+  test('past the deadline no probe runs, and the target stops as cut off by it', async () => {
+    const deadline = new Date(future);
+    // The deadline passes during check 2's second attempt, which still
+    // finishes, so the breaker trips with the deadline gone.
+    const driver = hangingChecksDriver((n) => {
+      if (n === 4) deadline.setTime(0);
+    });
+    const r = await runTarget(
+      {
+        ...findTarget('local-chromium'),
+        timeScale: 0.001,
+        connect: async () => driver,
+      },
+      { resultsDir: tmp, deadline, rrwebCommit: 'abc', only },
+    );
+    expect(driver.pages).not.toContain(driverProbe.id);
+    expect(driver.loads).toBe(4);
+    // Without the probe nothing tells a broken driver from a hang, so
+    // neither check is blamed.
+    expect(r.checks).toEqual({
+      'snapshot-basic': { ...timedOut, status: 'not-run' },
+      'shadow-dom-open': { ...timedOut, status: 'not-run' },
+      'iframe-same-origin': {
+        kind: 'functional',
+        status: 'not-run',
+        attempts: 0,
+      },
+    });
+    expect(r.incomplete).toBe(true);
+    expect(r.incompleteReason).toBe('deadline');
+    expect(r.trippedBy).toEqual(['snapshot-basic', 'shadow-dom-open']);
+    expect(collectFailures([r], [r.targetId], []).failures).toEqual([]);
+  });
+
+  test('a probe that cannot get a fresh Window stops the target as that, blaming no check', async () => {
+    const driver = hangingChecksDriver();
+    const { loadHtml } = driver;
+    driver.loadHtml = async (html) => {
+      // The bundle names the probe on every page; its beforeRrweb call
+      // only on the probe's own.
+      if (html.includes(`__prerelease.beforeRrweb("${driverProbe.id}")`)) {
+        throw new RealmReuseError('no fresh tab');
+      }
+      await loadHtml(html);
+    };
+    const r = await runTarget(
+      {
+        ...findTarget('local-chromium'),
+        timeScale: 0.001,
+        connect: async () => driver,
+      },
+      { resultsDir: tmp, deadline: future, rrwebCommit: 'abc', only },
+    );
+    expect(r.checks).toEqual({
+      'snapshot-basic': { ...timedOut, status: 'not-run' },
+      'shadow-dom-open': { ...timedOut, status: 'not-run' },
+      'iframe-same-origin': {
+        kind: 'functional',
+        status: 'not-run',
+        attempts: 0,
+      },
+    });
+    expect(r.incomplete).toBe(true);
+    expect(r.incompleteReason).toBe('fresh window unavailable');
+    expect(r.trippedBy).toEqual(['snapshot-basic', 'shadow-dom-open']);
+    expect(collectFailures([r], [r.targetId], []).failures).toEqual([]);
+  });
+});
+
+test('the probe is not a check: no list, no selection, no report', () => {
+  expect(checks.map((c) => c.id)).not.toContain(driverProbe.id);
+  expect(() => assertKnownChecks([driverProbe.id])).toThrow(/unknown check/);
 });
 
 describe('a driver that cannot give a page a fresh Window', () => {
@@ -195,6 +425,12 @@ test('a working check between broken ones keeps the target going', async () => {
     },
   );
   expect(driver.loads).toBe(5);
+  // An isolated broken check trips nothing, so it stays a failure.
+  expect(r.checks['snapshot-basic']).toMatchObject({
+    status: 'fail',
+    attempts: 2,
+    message: 'malformed poll result from driver',
+  });
   expect(r.checks['shadow-dom-open'].status).toBe('pass');
   expect(r.checks['iframe-same-origin'].status).toBe('fail');
   expect(r.incomplete).toBe(false);
@@ -284,6 +520,147 @@ test('rrwebDist feeds both the composed pages and the fixture server', async () 
   }
 });
 
+test('an http target opens every check from the fixture server', async () => {
+  const opened: string[] = [];
+  const pages: string[] = [];
+  const driver = scriptedDriver(() => ({ ok: true }));
+  const open = driver.open;
+  driver.loadHtml = () => Promise.reject(new Error('loadHtml used'));
+  driver.open = async (url) => {
+    opened.push(url);
+    pages.push(await (await fetch(url)).text());
+    await open(url);
+  };
+  const port = process.env.PRERELEASE_HTTP_PORT;
+  process.env.PRERELEASE_HTTP_PORT = '0';
+  try {
+    const r = await runTarget(
+      {
+        ...findTarget('local-chromium'),
+        loadVia: 'http',
+        connect: async () => driver,
+      },
+      {
+        resultsDir: tmp,
+        deadline: future,
+        rrwebCommit: 'abc',
+        // Neither needs http, so only loadVia starts the fixture server.
+        only: ['snapshot-basic', 'patched-mutation-observer'],
+      },
+    );
+    expect(Object.values(r.checks).map((c) => c.status)).toEqual([
+      'pass',
+      'pass',
+    ]);
+  } finally {
+    if (port === undefined) delete process.env.PRERELEASE_HTTP_PORT;
+    else process.env.PRERELEASE_HTTP_PORT = port;
+  }
+  // In registry order.
+  expect(opened).toHaveLength(2);
+  expect(opened[0]).toMatch(
+    /^http:\/\/127\.0\.0\.1:\d+\/check\/patched-mutation-observer$/,
+  );
+  expect(opened[1]).toMatch(/\/check\/snapshot-basic$/);
+  // The served page is the composed one, beforeRrweb included. A real
+  // browser runs it in protocol.test.ts and selenium.test.ts.
+  expect(pages[0]).toContain(
+    '<script>__prerelease.beforeRrweb("patched-mutation-observer")</script>',
+  );
+});
+
+test('an html target loads checks that need no http in memory', async () => {
+  const opened: string[] = [];
+  const driver = scriptedDriver(() => ({ ok: true }));
+  const open = driver.open;
+  driver.open = async (url) => {
+    opened.push(url);
+    await open(url);
+  };
+  const r = await runTarget(
+    { ...findTarget('local-chromium'), connect: async () => driver },
+    {
+      resultsDir: tmp,
+      deadline: future,
+      rrwebCommit: 'abc',
+      only: ['snapshot-basic'],
+    },
+  );
+  expect(r.checks['snapshot-basic'].status).toBe('pass');
+  expect(driver.loads).toBe(1);
+  expect(opened).toEqual([]);
+});
+
+test('an http load that keeps the previous Window stops the target cleanly', async () => {
+  // From the second open on, the marker the first page got is still there.
+  const driver = scriptedDriver(() => ({ ok: true }));
+  const { evaluate, open } = driver;
+  let opens = 0;
+  driver.open = async (url) => {
+    opens++;
+    await open(url);
+  };
+  driver.evaluate = async <T>(expression: string): Promise<T> =>
+    expression.includes('__prerelease_http_load')
+      ? ((opens > 1) as T)
+      : evaluate<T>(expression);
+  const port = process.env.PRERELEASE_HTTP_PORT;
+  process.env.PRERELEASE_HTTP_PORT = '0';
+  try {
+    const r = await runTarget(
+      {
+        ...findTarget('local-chromium'),
+        loadVia: 'http',
+        connect: async () => driver,
+      },
+      {
+        resultsDir: tmp,
+        deadline: future,
+        rrwebCommit: 'abc',
+        only: ['snapshot-basic', 'shadow-dom-open'],
+      },
+    );
+    expect(r.checks).toEqual({
+      'snapshot-basic': { kind: 'functional', status: 'pass', attempts: 1 },
+      'shadow-dom-open': { kind: 'functional', status: 'not-run', attempts: 0 },
+    });
+    expect(r.incomplete).toBe(true);
+    expect(r.incompleteReason).toBe('fresh window unavailable');
+  } finally {
+    if (port === undefined) delete process.env.PRERELEASE_HTTP_PORT;
+    else process.env.PRERELEASE_HTTP_PORT = port;
+  }
+});
+
+test('an http target whose driver cannot reach this machine fails at launch', async () => {
+  let closed = false;
+  const driver = {
+    ...scriptedDriver(() => ({ ok: true })),
+    canReachLocalhost: false,
+    close: async () => void (closed = true),
+  };
+  const r = await runTarget(
+    {
+      ...findTarget('local-chromium'),
+      loadVia: 'http',
+      connect: async () => driver,
+    },
+    {
+      resultsDir: tmp,
+      deadline: future,
+      rrwebCommit: 'abc',
+      only: ['snapshot-basic'],
+    },
+  );
+  expect(r.launch).toEqual({
+    ok: false,
+    error: expect.stringMatching(/loads checks over http.*cannot reach/),
+  });
+  expect(r.checks).toEqual({});
+  expect(closed).toBe(true);
+  expect(await readResults(tmp)).toEqual([r]);
+});
+
 test('an unknown check id is rejected', async () => {
   await expect(
     runTarget(findTarget('local-chromium'), {
@@ -352,6 +729,33 @@ test('performance scenarios take perfSamples samples and leave the run complete'
     'maxBlockMs',
   ]);
   expect(await readResults(tmp)).toEqual([r]);
+});
+
+test('a scenario with its own ceiling carries the higher of it and the target one', async () => {
+  const run = (ceilingMs?: number) =>
+    runTarget(
+      {
+        ...findTarget('local-chromium'),
+        perfSamples: 1,
+        ceilingMs,
+        connect: async () =>
+          scriptedDriver(() => ({
+            ok: true,
+            sample: { durationMs: 1, maxBlockMs: 1 },
+          })),
+      },
+      {
+        resultsDir: tmp,
+        deadline: future,
+        rrwebCommit: 'abc',
+        only: ['perf-snapshot-5k', 'perf-snapshot-50k'],
+      },
+    );
+  const r = await run();
+  expect(r.ceilingMs).toBe(1000);
+  expect(r.checks['perf-snapshot-50k'].ceilingMs).toBe(3000);
+  expect(r.checks['perf-snapshot-5k']).not.toHaveProperty('ceilingMs');
+  expect((await run(5000)).checks['perf-snapshot-50k'].ceilingMs).toBe(5000);
 });
 
 test('a deadline passing mid-scenario stops sampling and marks the run incomplete', async () => {
@@ -459,8 +863,16 @@ describe('GitHub-runner targets', () => {
         t.perf,
       ]),
     ).toEqual(table);
+    // Fenix on the Android emulator hangs on pages written into a blank
+    // one, and is slow: it loads every check over http, with longer timeouts.
+    const android = (id: string) => id === 'firefox-android-nightly';
     for (const t of githubTargets) {
-      expect([t.id, t.timeScale, t.perfSamples]).toEqual([t.id, 1, 5]);
+      expect([t.id, t.timeScale, t.perfSamples, t.loadVia]).toEqual([
+        t.id,
+        android(t.id) ? 2 : 1,
+        5,
+        android(t.id) ? 'http' : undefined,
+      ]);
     }
   });
 

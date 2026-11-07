@@ -473,6 +473,15 @@ describe('sessions', () => {
     });
     expect(JSON.stringify(t)).not.toContain('accessKey');
   });
+  test('the low-end Android target has a 3 s block ceiling; the others keep the default', () => {
+    const low = toTarget(spec('bs-android-lowend'), run);
+    expect(low.ceilingMs).toBe(3000);
+    for (const s of resolveBrowserStackTargets(cat)) {
+      if (s.id === 'bs-android-lowend') continue;
+      expect(toTarget(s, run).ceilingMs, s.id).toBeUndefined();
+    }
+  });
+
   test('toTarget fails the launch when credentials are missing', async () => {
     const saved = { ...process.env };
     delete process.env.BROWSERSTACK_USERNAME;

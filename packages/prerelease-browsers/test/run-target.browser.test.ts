@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import type { PageDriver } from '../src/node/drivers/types.ts';
 import { launchPlaywright } from '../src/node/drivers/playwright.ts';
 import { readResults } from '../src/node/results.ts';
+import { collectFailures } from '../src/report/failures.ts';
 import { runTarget } from '../src/node/run-targets.ts';
 import { findTarget } from '../src/node/targets.ts';
 
@@ -142,3 +143,52 @@ describe('run-target command line', () => {
     });
   }, 60_000);
 });
+
+test('a browser that renders no frames is a broken driver, not an rrweb hang', async () => {
+  const real = await launchPlaywright({ engine: 'chromium' });
+  // Every page, the probe's too, gets a requestAnimationFrame that never
+  // calls back, like a screen that is off or a hidden window.
+  const noFrames = '<script>window.requestAnimationFrame = () => 0</script>';
+  const driver: PageDriver = {
+    ...real,
+    canReachLocalhost: real.canReachLocalhost,
+    loadHtml: (html) =>
+      real.loadHtml(
+        html.replace(
+          '<meta charset="utf-8">',
+          `<meta charset="utf-8">${noFrames}`,
+        ),
+      ),
+  };
+  const r = await runTarget(
+    {
+      ...findTarget('local-chromium'),
+      // 3 s checks and a 1.5 s probe.
+      timeScale: 0.05,
+      connect: async () => driver,
+    },
+    {
+      resultsDir: tmp,
+      deadline: future,
+      rrwebCommit: 'abc',
+      only: ['snapshot-basic', 'shadow-dom-open', 'iframe-same-origin'],
+    },
+  );
+  const timedOut = {
+    kind: 'functional',
+    status: 'not-run',
+    attempts: 2,
+    message: 'timed out after 3000 ms',
+  };
+  expect(r.checks).toEqual({
+    'snapshot-basic': timedOut,
+    'shadow-dom-open': timedOut,
+    'iframe-same-origin': {
+      kind: 'functional',
+      status: 'not-run',
+      attempts: 0,
+    },
+  });
+  expect(r.incompleteReason).toBe('protocol broken');
+  expect(collectFailures([r], [r.targetId], []).failures).toEqual([]);
+}, 60_000);

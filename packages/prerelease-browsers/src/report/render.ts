@@ -1,4 +1,4 @@
-import type { TargetResult } from '../node/results.ts';
+import type { CheckOutcome, TargetResult } from '../node/results.ts';
 import type { Engine } from '../types.ts';
 import type { Failure, RunSummary } from './failures.ts';
 import type { IssuePlan, IssueRecord } from './issues-plan.ts';
@@ -492,14 +492,36 @@ export function statusBody(
   ];
   const incompleteReasons = sorted
     .filter((r) => r.incomplete)
-    .map(
-      (r) =>
-        `${cell(r.targetId)}: ${untrusted(
-          r.incompleteReason ?? 'unknown reason',
-          SHORT_MESSAGE,
-          false,
-        )}`,
-    );
+    .map((r) => {
+      const reason = `${cell(r.targetId)}: ${untrusted(
+        r.incompleteReason ?? 'unknown reason',
+        SHORT_MESSAGE,
+        false,
+      )}`;
+      // The checks that tripped the breaker and stopped the target. Read
+      // back untrusted, so only ids of recorded checks count.
+      const tripped = (Array.isArray(r.trippedBy) ? r.trippedBy : []).flatMap(
+        (id): Array<[string, CheckOutcome]> => {
+          const c =
+            typeof id === 'string' && Object.hasOwn(r.checks, id)
+              ? r.checks[id]
+              : undefined;
+          return c ? [[id, c]] : [];
+        },
+      );
+      if (tripped.length === 0) return reason;
+      return [
+        `${reason}, after`,
+        ...tripped.map(
+          ([id, c]) =>
+            `  - ${cell(id)} (${plural(
+              c.attempts,
+              'attempt',
+              'attempts',
+            )}): ${untrusted(c.message ?? '', SHORT_MESSAGE, false)}`,
+        ),
+      ].join('\n');
+    });
 
   const lines = [
     STATUS_MARKER,

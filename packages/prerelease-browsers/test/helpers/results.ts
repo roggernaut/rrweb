@@ -18,6 +18,7 @@ export interface ResultOpts {
   engine?: Engine;
   checkId?: string;
   ceilingMs?: number;
+  where?: TargetResult['where'];
   compare?: Array<'durationMs' | 'maxBlockMs' | 'heapDeltaBytes'>;
 }
 
@@ -42,6 +43,7 @@ function base(
     channel:
       opts.channel ?? (targetId.endsWith('-stable') ? 'stable' : 'upcoming'),
     pairGroup: opts.pairGroup ?? prefix,
+    ...(opts.where ? { where: opts.where } : {}),
     perf: 'none',
     ceilingMs: opts.ceilingMs ?? 1000,
     launch: { ok: true },

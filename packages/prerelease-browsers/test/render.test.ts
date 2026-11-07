@@ -18,6 +18,7 @@ import {
 import {
   countLine,
   fail,
+  ids,
   incomplete,
   launchFailed,
   passing,
@@ -313,6 +314,81 @@ describe('statusBody', () => {
     expect(body).toMatch(/dom-shadow:functional.*chrome-stable/);
     expect(body).not.toMatch(/pre-release build/i);
     expect(body).not.toMatch(/@[a-z0-9]/i);
+  });
+
+  test('lists the checks that tripped the breaker under their target', () => {
+    const broken = incomplete('firefox-android-nightly', {
+      reason: 'protocol broken',
+    });
+    broken.checks = {
+      'css-shorthand-roundtrip': {
+        kind: 'functional',
+        status: 'not-run',
+        attempts: 2,
+        message: 'timed out after 120000 ms',
+      },
+      // Results files are read back untrusted.
+      'css-selector-colon-escape': {
+        kind: 'functional',
+        status: 'not-run',
+        attempts: 2,
+        message: 'garbled `poll` from @driver | <!-- x',
+      },
+      'css-grid-template-areas': {
+        kind: 'functional',
+        status: 'not-run',
+        attempts: 0,
+      },
+    };
+    broken.trippedBy = ['css-shorthand-roundtrip', 'css-selector-colon-escape'];
+    // A working driver on which rrweb hung: the tripping checks failed.
+    const hang = incomplete('chrome-dev', { reason: 'rrweb hang' });
+    hang.checks = {
+      'snapshot-basic': {
+        kind: 'functional',
+        status: 'fail',
+        attempts: 2,
+        message: 'timed out after 60000 ms',
+      },
+      'shadow-dom-open': {
+        kind: 'functional',
+        status: 'fail',
+        attempts: 2,
+        message: 'timed out after 60000 ms',
+      },
+      'custom-elements': { kind: 'functional', status: 'not-run', attempts: 0 },
+    };
+    hang.trippedBy = ['snapshot-basic', 'shadow-dom-open'];
+    // Cut off by the deadline mid-check: nothing tripped the breaker.
+    const late = incomplete('chrome-canary', { reason: 'deadline' });
+    late.checks['css-nested-rules'] = {
+      kind: 'functional',
+      status: 'not-run',
+      attempts: 1,
+      message: 'bad',
+    };
+    const rs = [broken, hang, late];
+    const s = collectFailures(rs, ids(rs), []);
+    const body = statusBody(s, planIssueActions(s, []), run, rs, {});
+    const section = body.slice(body.indexOf('### Incomplete'));
+    expect(section).toContain(
+      [
+        '- firefox-android-nightly: `protocol broken`, after',
+        '  - css-shorthand-roundtrip (2 attempts): `timed out after 120000 ms`',
+        "  - css-selector-colon-escape (2 attempts): `garbled 'poll' from ＠driver | < !-- x`",
+      ].join('\n'),
+    );
+    expect(section).toContain(
+      [
+        '- chrome-dev: `rrweb hang`, after',
+        '  - snapshot-basic (2 attempts): `timed out after 60000 ms`',
+        '  - shadow-dom-open (2 attempts): `timed out after 60000 ms`',
+      ].join('\n'),
+    );
+    expect(section).not.toContain('css-grid-template-areas');
+    expect(section).not.toContain('custom-elements');
+    expect(section).toContain('- chrome-canary: `deadline`\n');
+    expect(section).not.toContain('css-nested-rules');
   });
 
   test('a clean run reads complete', () => {

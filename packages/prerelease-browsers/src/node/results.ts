@@ -2,6 +2,7 @@ import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { CheckKind, Engine, PerfSample } from '../types.ts';
 import type { BrowserInfo } from './drivers/types.ts';
+import type { TargetDefinition } from './targets.ts';
 
 export type CheckStatus = 'pass' | 'fail' | 'flaky' | 'skipped' | 'not-run';
 
@@ -12,17 +13,20 @@ export interface CheckOutcome {
   attempts: number;
   samples?: PerfSample[]; // performance only
   compare?: Array<'durationMs' | 'maxBlockMs' | 'heapDeltaBytes'>; // performance only
+  ceilingMs?: number; // performance only: the scenario's own ceiling, when it has one, at least the target's
   eventsFile?: string; // relative to the results dir, last failing attempt's events
 }
 
 /**
  * Why a target stopped early: the run's deadline came, the driver garbled the
- * page protocol, or the driver could not give pages a fresh Window.
+ * page protocol, the driver could not give pages a fresh Window, or rrweb
+ * hung page after page on a driver that works.
  */
 export type IncompleteReason =
   | 'deadline'
   | 'protocol broken'
-  | 'fresh window unavailable';
+  | 'fresh window unavailable'
+  | 'rrweb hang';
 
 export interface TargetResult {
   schema: 1;
@@ -30,6 +34,7 @@ export interface TargetResult {
   engine: Engine;
   channel: 'upcoming' | 'stable';
   pairGroup?: string;
+  where?: TargetDefinition['where']; // where the target ran; older results files lack it
   perf: 'compare' | 'ceiling-only' | 'none';
   ceilingMs: number; // default 1000
   browser?: BrowserInfo;
@@ -39,8 +44,21 @@ export interface TargetResult {
   finishedAt: string;
   incomplete: boolean; // true when something stopped work early
   incompleteReason?: IncompleteReason;
+  trippedBy?: string[]; // the checks in a row that timed out or garbled the protocol, when that stopped the target
   sessionUrl?: string;
   checks: Record<string, CheckOutcome>;
+}
+
+/**
+ * Whether a result ran on BrowserStack. Results files written before `where`
+ * existed go by the `bs-` id prefix.
+ */
+export function isBrowserStack(
+  r: Pick<TargetResult, 'targetId' | 'where'>,
+): boolean {
+  return r.where === undefined
+    ? r.targetId.startsWith('bs-')
+    : r.where === 'browserstack';
 }
 
 const isObject = (x: unknown): x is object =>

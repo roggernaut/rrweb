@@ -25,6 +25,8 @@ export interface BrowserStackSpec {
   pairGroup?: string;
   checks: 'focused';
   perf: 'compare' | 'ceiling-only';
+  /** Longest-block ceiling for this target, when the 1000 ms default is too tight. */
+  ceilingMs?: number;
   route:
     | 'playwright-desktop'
     | 'playwright-ios'
@@ -312,6 +314,10 @@ export function resolveBrowserStackTargets(
       channel: 'stable',
       checks: 'focused',
       perf: 'ceiling-only',
+      // 3 s: the first real run measured a 1054 ms longest block for the 20k-node
+      // snapshot on a Samsung Galaxy M32; every other BrowserStack target stayed
+      // at or under 352 ms.
+      ceilingMs: 3000,
       route: 'playwright-android',
       caps: {
         deviceName: lowEnd.device,
@@ -744,6 +750,7 @@ export function toTarget(
     where: 'browserstack',
     checks: spec.checks,
     perf: spec.perf,
+    ...(spec.ceilingMs === undefined ? {} : { ceilingMs: spec.ceilingMs }),
     perfSamples: 3,
     timeScale: 5,
     async connect() {
