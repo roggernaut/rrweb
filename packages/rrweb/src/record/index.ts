@@ -1,3 +1,4 @@
+// Throwaway change to exercise the per-PR browser workflow; do not merge.
 import {
   snapshot,
   slimDOMDefaults,
