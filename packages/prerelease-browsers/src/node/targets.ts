@@ -284,6 +284,21 @@ export const githubTargets: TargetDefinition[] = [
           'moz:firefoxOptions': {
             androidPackage: 'org.mozilla.fenix',
             androidDeviceSerial: 'emulator-5554',
+            // A fresh profile opens on Fenix's "Welcome to Firefox" screen,
+            // which covers the page: it gets a 0x0 viewport and stops
+            // painting, so requestAnimationFrame never fires and every
+            // recording check hangs in stop(). Fenix skips onboarding for a
+            // performance test. Setting these replaces geckodriver's default
+            // intent arguments, so the first two pairs repeat them.
+            androidIntentArguments: [
+              '-a',
+              'android.intent.action.VIEW',
+              '-d',
+              'about:blank',
+              '--ez',
+              'performancetest',
+              'true',
+            ],
           },
         },
       }),
