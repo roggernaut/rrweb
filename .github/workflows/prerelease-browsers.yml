@@ -121,12 +121,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
       - name: Setup Node.js 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: 'yarn'
@@ -149,7 +149,7 @@ jobs:
         run: NODE_OPTIONS='--max-old-space-size=4096' yarn turbo run prepublish --filter=rrweb
 
       - name: Upload the rrweb build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: rrweb-dist
           path: packages/rrweb/dist
@@ -170,12 +170,12 @@ jobs:
       PRERELEASE_DEADLINE: ${{ needs.gate.outputs.deadline }}
       T: ${{ matrix.target }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
       - name: Setup Node.js 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: 'yarn'
@@ -194,7 +194,7 @@ jobs:
 
       - name: Download the rrweb build
         id: dist
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: rrweb-dist
           path: packages/rrweb/dist
@@ -212,7 +212,7 @@ jobs:
 
       - name: Upload results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: results-${{ matrix.target }}
           path: packages/prerelease-browsers/results
@@ -227,12 +227,12 @@ jobs:
     env:
       PRERELEASE_DEADLINE: ${{ needs.gate.outputs.deadline }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
       - name: Setup Node.js 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: 'yarn'
@@ -254,7 +254,7 @@ jobs:
       - name: Download the rrweb build
         id: dist
         if: '!cancelled()'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: rrweb-dist
           path: packages/rrweb/dist
@@ -282,7 +282,7 @@ jobs:
 
       - name: Upload results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: results-macos
           path: packages/prerelease-browsers/results
@@ -297,12 +297,12 @@ jobs:
     env:
       PRERELEASE_DEADLINE: ${{ needs.gate.outputs.deadline }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
       - name: Setup Node.js 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: 'yarn'
@@ -321,7 +321,7 @@ jobs:
 
       - name: Download the rrweb build
         id: dist
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: rrweb-dist
           path: packages/rrweb/dist
@@ -350,7 +350,7 @@ jobs:
 
       - name: Upload the emulator log
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: android-logcat
           path: ${{ runner.temp }}/logcat.txt
@@ -359,7 +359,7 @@ jobs:
 
       - name: Upload results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: results-android
           path: packages/prerelease-browsers/results
@@ -374,12 +374,12 @@ jobs:
     env:
       PRERELEASE_DEADLINE: ${{ needs.gate.outputs.deadline }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
       - name: Setup Node.js 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: 'yarn'
@@ -398,7 +398,7 @@ jobs:
 
       - name: Download the rrweb build
         id: dist
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: rrweb-dist
           path: packages/rrweb/dist
@@ -412,7 +412,7 @@ jobs:
 
       - name: Upload results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: results-browserstack
           path: packages/prerelease-browsers/results
@@ -428,12 +428,12 @@ jobs:
       contents: read
       issues: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
       - name: Setup Node.js 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: 'yarn'
@@ -455,7 +455,7 @@ jobs:
       # missing, which keeps every issue open and shows in the status issue.
       - name: Download results
         continue-on-error: true
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: results-*
           merge-multiple: true
