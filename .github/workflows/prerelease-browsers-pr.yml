@@ -42,8 +42,17 @@ jobs:
           node-version: 24
           cache: 'yarn'
 
+      # A registry hiccup (a 503) should not cost the job: retry with a
+      # short back-off. Every job's install step does the same.
       - name: Install Dependencies
-        run: yarn install --frozen-lockfile
+        id: install
+        run: |
+          for attempt in 1 2 3; do
+            if yarn install --frozen-lockfile; then exit 0; fi
+            echo "::warning::yarn install failed (attempt $attempt of 3)"
+            if [ "$attempt" -lt 3 ]; then sleep $((attempt * 20)); fi
+          done
+          exit 1
         env:
           PUPPETEER_SKIP_DOWNLOAD: true
 
@@ -86,7 +95,14 @@ jobs:
           cache: 'yarn'
 
       - name: Install Dependencies
-        run: yarn install --frozen-lockfile
+        id: install
+        run: |
+          for attempt in 1 2 3; do
+            if yarn install --frozen-lockfile; then exit 0; fi
+            echo "::warning::yarn install failed (attempt $attempt of 3)"
+            if [ "$attempt" -lt 3 ]; then sleep $((attempt * 20)); fi
+          done
+          exit 1
         env:
           PUPPETEER_SKIP_DOWNLOAD: true
 
@@ -119,7 +135,14 @@ jobs:
           cache: 'yarn'
 
       - name: Install Dependencies
-        run: yarn install --frozen-lockfile
+        id: install
+        run: |
+          for attempt in 1 2 3; do
+            if yarn install --frozen-lockfile; then exit 0; fi
+            echo "::warning::yarn install failed (attempt $attempt of 3)"
+            if [ "$attempt" -lt 3 ]; then sleep $((attempt * 20)); fi
+          done
+          exit 1
         env:
           PUPPETEER_SKIP_DOWNLOAD: true
 
@@ -164,23 +187,33 @@ jobs:
           cache: 'yarn'
 
       - name: Install Dependencies
-        run: yarn install --frozen-lockfile
+        id: install
+        run: |
+          for attempt in 1 2 3; do
+            if yarn install --frozen-lockfile; then exit 0; fi
+            echo "::warning::yarn install failed (attempt $attempt of 3)"
+            if [ "$attempt" -lt 3 ]; then sleep $((attempt * 20)); fi
+          done
+          exit 1
         env:
           PUPPETEER_SKIP_DOWNLOAD: true
 
       - name: Download the pull request's rrweb build
+        id: dist
         uses: actions/download-artifact@v4
         with:
           name: rrweb-dist-pr
           path: packages/rrweb/dist
 
       - name: Download the base branch's rrweb build
+        id: base-dist
         uses: actions/download-artifact@v4
         with:
           name: rrweb-dist-base
           path: ${{ runner.temp }}/base-dist
 
       - name: Install ${{ matrix.target }}
+        id: browser
         working-directory: packages/prerelease-browsers
         run: |
           set -euo pipefail
@@ -190,11 +223,14 @@ jobs:
             node src/node/install.ts "$T" "$RUNNER_TEMP/browsers" >> "$GITHUB_ENV"
           fi
 
+      # Each role runs only after a good setup for it, but whatever the other
+      # role did. A role that never ran shows as a missing target.
       - name: Run ${{ matrix.target }} with the pull request's rrweb
+        if: "!cancelled() && steps.install.outcome == 'success' && steps.dist.outcome == 'success' && steps.browser.outcome == 'success'"
         run: xvfb-run --server-args="-screen 0 1920x1080x24" yarn workspace @rrweb/prerelease-browsers run-target --target "$T" --pr-role pr --deadline "$PRERELEASE_DEADLINE"
 
       - name: Run ${{ matrix.target }} with the base branch's rrweb
-        if: '!cancelled()'
+        if: "!cancelled() && steps.install.outcome == 'success' && steps.base-dist.outcome == 'success' && steps.browser.outcome == 'success'"
         run: xvfb-run --server-args="-screen 0 1920x1080x24" yarn workspace @rrweb/prerelease-browsers run-target --target "$T" --pr-role base --rrweb-dist "$RUNNER_TEMP/base-dist" --rrweb-commit "$BASE_SHA" --deadline "$PRERELEASE_DEADLINE"
 
       - name: Upload results
@@ -228,17 +264,26 @@ jobs:
           cache: 'yarn'
 
       - name: Install Dependencies
-        run: yarn install --frozen-lockfile
+        id: install
+        run: |
+          for attempt in 1 2 3; do
+            if yarn install --frozen-lockfile; then exit 0; fi
+            echo "::warning::yarn install failed (attempt $attempt of 3)"
+            if [ "$attempt" -lt 3 ]; then sleep $((attempt * 20)); fi
+          done
+          exit 1
         env:
           PUPPETEER_SKIP_DOWNLOAD: true
 
       - name: Download the pull request's rrweb build
+        id: dist
         uses: actions/download-artifact@v4
         with:
           name: rrweb-dist-pr
           path: packages/rrweb/dist
 
       - name: Download the base branch's rrweb build
+        id: base-dist
         uses: actions/download-artifact@v4
         with:
           name: rrweb-dist-base
@@ -248,10 +293,11 @@ jobs:
         run: sudo safaridriver --enable
 
       - name: Run safari-stable with the pull request's rrweb
+        if: "!cancelled() && steps.install.outcome == 'success' && steps.dist.outcome == 'success'"
         run: yarn workspace @rrweb/prerelease-browsers run-target --target safari-stable --pr-role pr --deadline "$PRERELEASE_DEADLINE"
 
       - name: Run safari-stable with the base branch's rrweb
-        if: '!cancelled()'
+        if: "!cancelled() && steps.install.outcome == 'success' && steps.base-dist.outcome == 'success'"
         run: yarn workspace @rrweb/prerelease-browsers run-target --target safari-stable --pr-role base --rrweb-dist "$RUNNER_TEMP/base-dist" --rrweb-commit "$BASE_SHA" --deadline "$PRERELEASE_DEADLINE"
 
       - name: Upload results
