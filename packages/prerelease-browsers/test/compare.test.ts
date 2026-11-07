@@ -132,6 +132,73 @@ test('the compare list from the check selects the metrics', () => {
   ]);
 });
 
+describe('a BrowserStack pair compares duration only (R76)', () => {
+  /** perf-mutation-burst-10k: equal durations, the block 2.08x apart, all three metrics compared. */
+  const pair = (where: 'browserstack' | 'github-linux', prefix: string) => {
+    const mk = (id: string, channel: 'upcoming' | 'stable', block: number) => {
+      const r = perf(id, channel, [100, 100, 100], {
+        checkId: 'perf-mutation-burst-10k',
+        pairGroup: 'chrome-android',
+        where,
+        compare: ['durationMs', 'maxBlockMs', 'heapDeltaBytes'],
+      });
+      r.checks['perf-mutation-burst-10k'].samples = [100, 100, 100].map(
+        (durationMs) => ({
+          durationMs,
+          maxBlockMs: block,
+          heapDeltaBytes: block * 100_000,
+        }),
+      );
+      return r;
+    };
+    return [
+      mk(`${prefix}-beta`, 'upcoming', 322),
+      mk(`${prefix}-stable`, 'stable', 155),
+    ];
+  };
+
+  test('maxBlockMs 2.08x with equal durations gives no finding', () => {
+    expect(evaluatePerf(pair('browserstack', 'bs-android-chrome'))).toEqual([]);
+  });
+
+  test('a results file without where goes by the bs- id prefix', () => {
+    const rs = pair('browserstack', 'bs-android-chrome');
+    for (const r of rs) delete r.where;
+    expect(evaluatePerf(rs)).toEqual([]);
+  });
+
+  test('the same numbers on a GitHub-runner pair still give findings', () => {
+    expect(
+      evaluatePerf(pair('github-linux', 'android-chrome')).map(
+        (f) => f.message,
+      ),
+    ).toEqual([
+      expect.stringMatching(/^maxBlockMs 322 vs stable 155 \(2\.08x\)$/),
+      expect.stringMatching(/^heapDeltaBytes \d+ vs stable \d+ \(2\.08x\)$/),
+    ]);
+  });
+
+  test('duration is still compared between BrowserStack targets', () => {
+    const [up, st] = pair('browserstack', 'bs-android-chrome');
+    up.checks['perf-mutation-burst-10k'].samples = [200, 200, 200].map(
+      (durationMs) => ({ durationMs, maxBlockMs: 155 }),
+    );
+    expect(evaluatePerf([up, st]).map((f) => f.message)).toEqual([
+      'durationMs 200 vs stable 100 (2.00x)',
+    ]);
+  });
+
+  test('a BrowserStack target over the block ceiling is still flagged', () => {
+    const [up, st] = pair('browserstack', 'bs-android-chrome');
+    up.checks['perf-mutation-burst-10k'].samples = [100, 100, 100].map(
+      (durationMs) => ({ durationMs, maxBlockMs: 1200 }),
+    );
+    expect(evaluatePerf([up, st]).map((f) => f.message)).toEqual([
+      'longest block 1200 ms over 1000 ms ceiling',
+    ]);
+  });
+});
+
 test('heap needs more than 5 MB and is skipped when a side lacks it', () => {
   const heap = (mb: number) => ({
     durationMs: 100,

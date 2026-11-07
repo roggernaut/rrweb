@@ -2,6 +2,7 @@ import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { CheckKind, Engine, PerfSample } from '../types.ts';
 import type { BrowserInfo } from './drivers/types.ts';
+import type { TargetDefinition } from './targets.ts';
 
 export type CheckStatus = 'pass' | 'fail' | 'flaky' | 'skipped' | 'not-run';
 
@@ -33,6 +34,7 @@ export interface TargetResult {
   engine: Engine;
   channel: 'upcoming' | 'stable';
   pairGroup?: string;
+  where?: TargetDefinition['where']; // where the target ran; older results files lack it
   perf: 'compare' | 'ceiling-only' | 'none';
   ceilingMs: number; // default 1000
   browser?: BrowserInfo;

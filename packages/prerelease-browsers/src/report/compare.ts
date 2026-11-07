@@ -27,6 +27,13 @@ function values(samples: PerfSample[], metric: Metric): number[] {
   });
 }
 
+/** Whether `r` ran on BrowserStack; results files without `where` go by the `bs-` id prefix. */
+function onBrowserStack(r: TargetResult): boolean {
+  return r.where === undefined
+    ? r.targetId.startsWith('bs-')
+    : r.where === 'browserstack';
+}
+
 function performanceChecks(
   r: TargetResult,
 ): Array<[string, CheckOutcome & { samples: PerfSample[] }]> {
@@ -47,6 +54,14 @@ function performanceChecks(
  *   stable target of its pair group, metric by metric (the check's `compare`
  *   list, default durationMs). It fails when it is over RATIO_LIMIT times
  *   slower and also over the absolute floor (MIN_DIFF_MS, MIN_HEAP_DIFF).
+ *
+ * - Between two BrowserStack targets only durationMs is compared. BrowserStack
+ *   gives each session a different physical phone, and the longest block moves
+ *   with the phone: the same Chrome 152 on an Android 17 Pixel 9 blocked
+ *   147-153 ms in one run and 322-344 ms an hour later, while durationMs stayed
+ *   near 100 ms. The ceiling above still applies to every target. GitHub-runner
+ *   pairs (and pr-summary, which never uses BrowserStack) compare every metric
+ *   in the `compare` list.
  *
  * A comparison that cannot be made because the stable side is missing is
  * skipped and pushed to `notes`.
@@ -96,7 +111,10 @@ export function evaluatePerf(
         );
         continue;
       }
-      for (const metric of c.compare ?? (['durationMs'] as Metric[])) {
+      const metrics = c.compare ?? (['durationMs'] as Metric[]);
+      for (const metric of onBrowserStack(r) && onBrowserStack(stable)
+        ? metrics.filter((m) => m === 'durationMs')
+        : metrics) {
         const up = values(c.samples, metric);
         const st = values(stableCheck.samples, metric);
         if (up.length === 0 || st.length === 0) continue; // e.g. no heap numbers

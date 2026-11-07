@@ -90,6 +90,7 @@ export function newResult(
     engine: t.engine,
     channel: t.channel,
     ...(t.pairGroup === undefined ? {} : { pairGroup: t.pairGroup }),
+    where: t.where,
     perf: t.perf,
     ceilingMs: t.ceilingMs ?? 1000,
     launch: { ok: true },
