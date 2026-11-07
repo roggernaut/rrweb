@@ -156,7 +156,8 @@ some things differently, so a check asserts what must hold everywhere: the
 right events exist, the right nodes are present, masked content never appears,
 and a replayed snapshot has the same visible structure.
 
-**A check failing on stable too is labelled "also fails on stable".** That
+**A check failing on stable too says so in the issue body, and a check that
+fails only on upcoming builds says so in the title.** A failure on stable
 points at rrweb or the test rather than the browser.
 
 ## Run shape
@@ -217,7 +218,8 @@ same checks answer both.
   command that reruns the check.
 - **A pinned status issue shows the latest run,** with date, versions tested
   and pass and fail counts. An old date means a run didn't happen.
-- **Privacy failures get the most severe label.**
+- **Privacy failures carry rrweb's `privacy` label** and are opened first when
+  the per-run cap applies.
 
 ## Proven so far
 

@@ -9,8 +9,20 @@ browser.
 The workflow `.github/workflows/prerelease-browsers.yml` runs every other
 Monday and can be started by hand from the Actions tab. It reports through
 GitHub issues labelled `prerelease`. A failing check gets one issue, which
-lists every target it fails on. A pinned status issue describes the latest
-run. If the status issue shows an old date, a run didn't happen. A run
+lists every target it fails on. The title is the check and the engines, for
+example `privacy-canvas-block fails on chromium, gecko, webkit`, with
+` (upcoming builds only)` added when no stable build fails too. A failure on
+a stable browser is also said in the issue body. A pinned status issue,
+titled `Pre-release browsers: status of the latest run`, describes the latest
+run. Many failures at once become a single issue titled
+`Pre-release browsers: run broken, N checks failed`.
+
+Labels: every issue has `prerelease`. Functional and performance failures add
+`prerelease:functional` or `prerelease:performance`; privacy failures add
+rrweb's `privacy` label instead. Each failing engine adds `engine:chromium`,
+`engine:gecko` or `engine:webkit`. Closed issues get `prerelease:recovered`,
+and the status and run-broken issues get `prerelease:status` and
+`prerelease:run-broken`. If the status issue shows an old date, a run didn't happen. A run
 started by hand with only some targets, or without BrowserStack, shows as a
 partial run and lists what it left out under "Not covered by this run".
 

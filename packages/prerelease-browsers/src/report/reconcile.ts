@@ -68,10 +68,20 @@ const BASE_LABELS = [
   STATUS_LABEL,
 ];
 
+/**
+ * Labels that older runs put on issues and this one no longer does. They are
+ * treated as derived so an update takes them off.
+ */
+const RETIRED_LABELS = [
+  'severity:critical',
+  'prerelease:also-fails-on-stable',
+  'prerelease:privacy',
+];
+
 /** Labels the reporter derives from a failure, so it may take them away. */
 const derived = (label: string) =>
   label.startsWith('engine:') ||
-  label === 'prerelease:also-fails-on-stable' ||
+  RETIRED_LABELS.includes(label) ||
   label === RECOVERED_LABEL;
 
 /** The issue's labels with the derived ones replaced by `wanted`. */

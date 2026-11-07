@@ -175,19 +175,27 @@ export function parseMarkers(body: string): {
   };
 }
 
+/**
+ * `<checkId> fails on <engines>`, with a note when no stable build fails too,
+ * so a title says at a glance whether the browser or rrweb is the likelier
+ * cause.
+ */
 export function issueTitle(f: Failure): string {
-  return `[pre-release] ${f.kind}: ${f.checkId} fails on ${f.engines.join(
-    ', ',
-  )}`;
+  const upcomingOnly = !f.targets.some((t) => t.channel === 'stable');
+  return `${f.checkId} fails on ${f.engines.join(', ')}${
+    upcomingOnly ? ' (upcoming builds only)' : ''
+  }`;
 }
 
+/**
+ * `prerelease` finds every issue the reporter owns. The kind label is left
+ * off privacy failures, which carry rrweb's own `privacy` label instead.
+ */
 export function labelsFor(f: Failure): string[] {
   return [
     'prerelease',
-    `prerelease:${f.kind}`,
+    ...(f.kind === 'privacy' ? ['privacy'] : [`prerelease:${f.kind}`]),
     ...f.engines.map((e) => `engine:${e}`),
-    ...(f.kind === 'privacy' ? ['privacy', 'severity:critical'] : []),
-    ...(f.alsoFailsOnStable ? ['prerelease:also-fails-on-stable'] : []),
   ];
 }
 
@@ -331,10 +339,10 @@ export function issueBody(
   return capBody(body);
 }
 
-export const statusTitle = '[pre-release] Status of the latest run';
+export const statusTitle = 'Pre-release browsers: status of the latest run';
 
 export const runBrokenTitle = (failures: Failure[]): string =>
-  `[pre-release] Run broken: ${failures.length} checks failed`;
+  `Pre-release browsers: run broken, ${failures.length} checks failed`;
 
 /** The single run-broken issue: what failed, without per-check issues. */
 export function runBrokenBody(

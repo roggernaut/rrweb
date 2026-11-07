@@ -26,9 +26,7 @@ export interface IssuePatch {
 export const LABEL_COLOURS: Record<string, string> = {
   prerelease: '5319e7',
   'prerelease:functional': 'c5def5',
-  'prerelease:privacy': 'b60205',
   'prerelease:performance': 'fbca04',
-  'prerelease:also-fails-on-stable': 'd4c5f9',
   'prerelease:recovered': '0e8a16',
   'prerelease:run-broken': 'e99695',
   'prerelease:status': 'bfdadc',
@@ -36,7 +34,6 @@ export const LABEL_COLOURS: Record<string, string> = {
   'engine:gecko': 'e36209',
   'engine:webkit': '0075ca',
   privacy: 'b60205',
-  'severity:critical': 'b60205',
 };
 const DEFAULT_COLOUR = 'ededed';
 const PAGE = 100;

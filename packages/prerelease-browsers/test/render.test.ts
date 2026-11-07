@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { readResults, type TargetResult } from '../src/node/results.ts';
 import { collectFailures, type Failure } from '../src/report/failures.ts';
+import { LABEL_COLOURS } from '../src/report/github.ts';
 import { planIssueActions } from '../src/report/issues-plan.ts';
 import {
   issueBody,
@@ -8,7 +9,9 @@ import {
   labelsFor,
   parseMarkers,
   runBrokenBody,
+  runBrokenTitle,
   statusBody,
+  statusTitle,
   type RunCount,
   type RunMeta,
 } from '../src/report/render.ts';
@@ -90,28 +93,80 @@ test('bodies never mention anyone', () => {
     ),
   ).not.toMatch(/@[a-z0-9]/i);
 });
-test('privacy failures get the severe labels', () => {
-  expect(labelsFor({ ...failure, kind: 'privacy' })).toEqual(
-    expect.arrayContaining([
-      'privacy',
-      'severity:critical',
-      'prerelease:privacy',
-    ]),
+test('privacy failures carry the privacy label and no kind label', () => {
+  const labels = labelsFor(fail('mask-check:privacy', ['chrome-canary']));
+  expect(labels).toEqual(['prerelease', 'privacy', 'engine:chromium']);
+  expect(labels).not.toContain('prerelease:privacy');
+  expect(labels).not.toContain('severity:critical');
+});
+
+test('functional and performance failures keep their kind label', () => {
+  expect(
+    labelsFor(fail('css-nested-rules:functional', ['chrome-canary'])),
+  ).toEqual(['prerelease', 'prerelease:functional', 'engine:chromium']);
+  expect(labelsFor(fail('record-cost:performance', ['chrome-canary']))).toEqual(
+    ['prerelease', 'prerelease:performance', 'engine:chromium'],
   );
+});
+
+test('no label says a stable browser fails too, and the body still does', () => {
+  const both = fail('css-nested-rules:functional', [
+    'chrome-canary',
+    'chrome-stable',
+  ]);
+  expect(both.alsoFailsOnStable).toBe(true);
+  expect(labelsFor(both)).not.toContain('prerelease:also-fails-on-stable');
+  expect(issueBody(both, run, one)).toContain('fails on a stable browser too');
+  expect(Object.keys(LABEL_COLOURS)).not.toContain('severity:critical');
+  expect(Object.keys(LABEL_COLOURS)).not.toContain(
+    'prerelease:also-fails-on-stable',
+  );
+  expect(Object.keys(LABEL_COLOURS)).not.toContain('prerelease:privacy');
+});
+
+test('a title is the check and the engines, without a prefix', () => {
+  expect(
+    issueTitle(
+      fail('privacy-canvas-block:privacy', [
+        'chrome-stable',
+        'firefox-nightly',
+        'safari-tp',
+      ]),
+    ),
+  ).toBe('privacy-canvas-block fails on chromium, gecko, webkit');
+});
+
+test('a title notes when only upcoming builds fail', () => {
+  expect(
+    issueTitle(fail('privacy-canvas-block:privacy', ['chrome-canary'])),
+  ).toBe('privacy-canvas-block fails on chromium (upcoming builds only)');
+  expect(
+    issueTitle(
+      fail('privacy-canvas-block:privacy', [
+        'chrome-canary',
+        'firefox-nightly',
+      ]),
+    ),
+  ).toBe(
+    'privacy-canvas-block fails on chromium, gecko (upcoming builds only)',
+  );
+  // One stable target is enough to drop the note.
+  expect(
+    issueTitle(
+      fail('privacy-canvas-block:privacy', ['chrome-canary', 'firefox-stable']),
+    ),
+  ).toBe('privacy-canvas-block fails on chromium, gecko');
 });
 
 test('title, labels and summary line name the check, engines and commit', () => {
   expect(issueTitle(failure)).toBe(
-    '[pre-release] functional: css-nested-rules fails on chromium',
+    'css-nested-rules fails on chromium (upcoming builds only)',
   );
   expect(labelsFor(failure)).toEqual([
     'prerelease',
     'prerelease:functional',
     'engine:chromium',
   ]);
-  expect(labelsFor({ ...failure, alsoFailsOnStable: true })).toContain(
-    'prerelease:also-fails-on-stable',
-  );
   const body = issueBody(failure, run, one);
   expect(body).toContain('`abc123`');
   expect(body).toContain('132.0.0.0');
@@ -552,4 +607,14 @@ describe('held-back failures in the status body', () => {
     const body = statusBody(s, planIssueActions(s, []), run, results, {});
     expect(body).not.toContain('Held back');
   });
+});
+
+test('the run-broken and status titles read plainly', () => {
+  expect(
+    runBrokenTitle([
+      fail('a:functional', ['chrome-canary']),
+      fail('b:functional', ['chrome-canary']),
+    ]),
+  ).toBe('Pre-release browsers: run broken, 2 checks failed');
+  expect(statusTitle).toBe('Pre-release browsers: status of the latest run');
 });

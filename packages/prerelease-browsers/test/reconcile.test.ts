@@ -149,7 +149,7 @@ test('a new failure opens an issue with its labels, and the status issue is pinn
   const [issue] = keyed(gh);
   expect(issue).toMatchObject({
     state: 'open',
-    title: '[pre-release] functional: css-nested-rules fails on chromium',
+    title: 'css-nested-rules fails on chromium (upcoming builds only)',
     labels: ['prerelease', 'prerelease:functional', 'engine:chromium'],
   });
   expect(parseMarkers(issue.body).targets).toEqual(['chrome-canary']);
@@ -166,6 +166,27 @@ test('a new failure opens an issue with its labels, and the status issue is pinn
       'prerelease:recovered',
     ]),
   );
+});
+
+test('a new privacy failure opens an issue labelled privacy, not prerelease:privacy', async () => {
+  const gh = fakeGitHub();
+  const r = failing('safari-tp', 'mask-check');
+  r.checks['mask-check'].kind = 'privacy';
+  await reconcile({
+    gh,
+    results: [r],
+    expected: ['safari-tp'],
+    apply: true,
+    run,
+  });
+  const [issue] = gh.created.filter((i) => parseMarkers(i.body).key);
+  expect(issue).toMatchObject({
+    title: 'mask-check fails on webkit (upcoming builds only)',
+    labels: ['prerelease', 'privacy', 'engine:webkit'],
+  });
+  expect(gh.ensured.flat()).toContain('privacy');
+  expect(gh.ensured.flat()).not.toContain('prerelease:privacy');
+  expect(gh.ensured.flat()).not.toContain('severity:critical');
 });
 
 test('recovery closes with one comment and the recovered label', async () => {
@@ -282,6 +303,34 @@ test('an update keeps labels a maintainer added', async () => {
   expect(gh.comments).toEqual([]);
 });
 
+test('an update drops the labels earlier runs added and keeps the rest', async () => {
+  const gh = fakeGitHub([
+    {
+      title: '[pre-release] functional: css-nested-rules fails on chromium',
+      labels: [
+        'prerelease',
+        'prerelease:functional',
+        'prerelease:also-fails-on-stable',
+        'prerelease:privacy',
+        'severity:critical',
+        'engine:gecko',
+        'triaged',
+      ],
+      body: '<!-- prerelease:key=css-nested-rules:functional -->\n<!-- prerelease:engines=chromium -->\n<!-- prerelease:targets=chrome-canary -->\n',
+    },
+  ]);
+  await reconcile({ gh, results: fixtureResults, expected, apply: true, run });
+  expect(gh.issues[0].title).toBe(
+    'css-nested-rules fails on chromium (upcoming builds only)',
+  );
+  expect(gh.issues[0].labels).toEqual([
+    'prerelease',
+    'prerelease:functional',
+    'triaged',
+    'engine:chromium',
+  ]);
+});
+
 /** One target on which `n` functional checks fail. */
 function massFailure(n: number): TargetResult[] {
   const r = failing('chrome-canary', 'c0');
@@ -303,7 +352,9 @@ test('a mass failure opens one run-broken issue and nothing else', async () => {
     i.body.includes('<!-- prerelease:run-broken -->'),
   );
   expect(broken.labels).toEqual(['prerelease', 'prerelease:run-broken']);
-  expect(broken.title).toBe('[pre-release] Run broken: 6 checks failed');
+  expect(broken.title).toBe(
+    'Pre-release browsers: run broken, 6 checks failed',
+  );
   expect(gh.issues.filter((i) => parseMarkers(i.body).key)).toEqual([]);
   expect(statusIssues(gh)[0].body).toMatch(/### Run broken[\s\S]*#1/);
 });
