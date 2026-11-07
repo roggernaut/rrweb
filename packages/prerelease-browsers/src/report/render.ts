@@ -1,4 +1,4 @@
-import type { TargetResult } from '../node/results.ts';
+import type { CheckOutcome, TargetResult } from '../node/results.ts';
 import type { Engine } from '../types.ts';
 import type { Failure, RunSummary } from './failures.ts';
 import type { IssuePlan, IssueRecord } from './issues-plan.ts';
@@ -498,11 +498,16 @@ export function statusBody(
         SHORT_MESSAGE,
         false,
       )}`;
-      if (r.incompleteReason !== 'protocol broken') return reason;
-      // The checks that tripped the breaker: not-run, yet they took attempts.
-      const tripped = Object.entries(r.checks).filter(
-        ([, c]) =>
-          c.status === 'not-run' && c.attempts > 0 && c.message !== undefined,
+      // The checks that tripped the breaker and stopped the target. Read
+      // back untrusted, so only ids of recorded checks count.
+      const tripped = (Array.isArray(r.trippedBy) ? r.trippedBy : []).flatMap(
+        (id): Array<[string, CheckOutcome]> => {
+          const c =
+            typeof id === 'string' && Object.hasOwn(r.checks, id)
+              ? r.checks[id]
+              : undefined;
+          return c ? [[id, c]] : [];
+        },
       );
       if (tripped.length === 0) return reason;
       return [

@@ -176,7 +176,7 @@ export async function runTarget(
       loadVia,
     };
     /** The checks in the current run of driver-broken ones. */
-    let brokenInARow: CheckOutcome[] = [];
+    let brokenInARow: Array<[string, CheckOutcome]> = [];
     for (const meta of metas) {
       let checked: Awaited<ReturnType<typeof runCheck>>;
       try {
@@ -197,20 +197,26 @@ export async function runTarget(
       }
       // A skip never touched the browser, so it says nothing either way.
       if (outcome.status === 'skipped') continue;
-      brokenInARow = broken ? [...brokenInARow, outcome] : [];
+      brokenInARow = broken ? [...brokenInARow, [meta.id, outcome]] : [];
       if (brokenInARow.length >= brokenChecksLimit) {
-        // A page that does nothing but load settles on a working driver:
-        // then rrweb hangs, which is a failure like any other, and the
-        // target goes on.
-        if (await driverWorks(src)) {
-          brokenInARow = [];
-          continue;
+        result.trippedBy = brokenInARow.map(([id]) => id);
+        // A page that does nothing but load settles on a working driver.
+        const probe = await probeDriver(src);
+        if (probe === 'works') {
+          // Then rrweb hangs: the tripping checks failed, and alert. Every
+          // further check would likely hang too and only burn its timeouts.
+          stopHere('rrweb hang');
+          break;
         }
-        // The driver broke, not rrweb: the checks that showed it did not
-        // really run. They keep their attempts and message for the status
-        // issue, but open no issue.
-        for (const tripped of brokenInARow) tripped.status = 'not-run';
-        stopHere('protocol broken');
+        // The driver broke, or cannot isolate pages: the checks that showed
+        // it did not really run. They keep their attempts and message for
+        // the status issue, but open no issue.
+        for (const [, tripped] of brokenInARow) tripped.status = 'not-run';
+        stopHere(
+          probe === 'no fresh window'
+            ? 'fresh window unavailable'
+            : 'protocol broken',
+        );
         break;
       }
     }
@@ -221,15 +227,21 @@ export async function runTarget(
   }
   return finish(result, opts.resultsDir);
 
-  /** True when the probe page loads and settles through `src`'s load path. */
-  async function driverWorks(src: PageSource): Promise<boolean> {
+  /**
+   * Loads the probe page through `src`'s load path: 'works' when it settles,
+   * 'no fresh window' when the driver cannot give it a new Window, and
+   * 'broken' when it hangs or errors.
+   */
+  async function probeDriver(
+    src: PageSource,
+  ): Promise<'works' | 'broken' | 'no fresh window'> {
     try {
       const probe = await runAttempt(driver, probeMeta, src, {
         timeoutMs: probeTimeoutMs * t.timeScale,
       });
-      return probe.ok && probe.skipped === undefined;
-    } catch {
-      return false;
+      return probe.ok && probe.skipped === undefined ? 'works' : 'broken';
+    } catch (err) {
+      return err instanceof RealmReuseError ? 'no fresh window' : 'broken';
     }
   }
 

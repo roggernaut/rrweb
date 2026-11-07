@@ -18,12 +18,14 @@ export interface CheckOutcome {
 
 /**
  * Why a target stopped early: the run's deadline came, the driver garbled the
- * page protocol, or the driver could not give pages a fresh Window.
+ * page protocol, the driver could not give pages a fresh Window, or rrweb
+ * hung page after page on a driver that works.
  */
 export type IncompleteReason =
   | 'deadline'
   | 'protocol broken'
-  | 'fresh window unavailable';
+  | 'fresh window unavailable'
+  | 'rrweb hang';
 
 export interface TargetResult {
   schema: 1;
@@ -40,6 +42,7 @@ export interface TargetResult {
   finishedAt: string;
   incomplete: boolean; // true when something stopped work early
   incompleteReason?: IncompleteReason;
+  trippedBy?: string[]; // the checks in a row that timed out or garbled the protocol, when that stopped the target
   sessionUrl?: string;
   checks: Record<string, CheckOutcome>;
 }

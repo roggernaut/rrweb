@@ -134,6 +134,7 @@ test('two checks in a row with a broken protocol stop the target and blame neith
   });
   expect(r.incomplete).toBe(true);
   expect(r.incompleteReason).toBe('protocol broken');
+  expect(r.trippedBy).toEqual(['snapshot-basic', 'shadow-dom-open']);
   expect(closed).toBe(true);
   expect(marks).toEqual([[false, 'incomplete: protocol broken']]);
   expect(collectFailures([r], [r.targetId], []).failures).toEqual([]);
@@ -181,6 +182,7 @@ test('two checks in a row that time out, and a probe that hangs too, stop the ta
   expect(Object.keys(r.checks)).not.toContain(driverProbe.id);
   expect(r.incomplete).toBe(true);
   expect(r.incompleteReason).toBe('protocol broken');
+  expect(r.trippedBy).toEqual(['snapshot-basic', 'shadow-dom-open']);
   expect(collectFailures([r], [r.targetId], []).failures).toEqual([]);
   expect(await readResults(tmp)).toEqual([r]);
 });
@@ -222,7 +224,7 @@ describe('a consistent rrweb hang on a working driver', () => {
   };
 
   test.each(['html', 'http'] as const)(
-    'fails each check and keeps the target going (%s)',
+    'keeps both failures and stops the target as an rrweb hang (%s)',
     async (loadVia) => {
       const driver = hangingChecksDriver();
       const port = process.env.PRERELEASE_HTTP_PORT;
@@ -242,32 +244,68 @@ describe('a consistent rrweb hang on a working driver', () => {
         if (port === undefined) delete process.env.PRERELEASE_HTTP_PORT;
         else process.env.PRERELEASE_HTTP_PORT = port;
       }
-      // The breaker trips after two checks; the probe settles, so the
-      // third check still runs.
+      // The breaker trips after two checks and the probe settles: rrweb
+      // hangs, so every further check would only burn its timeouts.
       expect(driver.pages).toEqual([
         'snapshot-basic',
         'snapshot-basic',
         'shadow-dom-open',
         'shadow-dom-open',
         driverProbe.id,
-        'iframe-same-origin',
-        'iframe-same-origin',
       ]);
       expect(r.checks).toEqual({
         'snapshot-basic': timedOut,
         'shadow-dom-open': timedOut,
-        'iframe-same-origin': timedOut,
+        'iframe-same-origin': {
+          kind: 'functional',
+          status: 'not-run',
+          attempts: 0,
+        },
       });
-      expect(r.incomplete).toBe(false);
+      expect(r.incomplete).toBe(true);
+      expect(r.incompleteReason).toBe('rrweb hang');
+      expect(r.trippedBy).toEqual(['snapshot-basic', 'shadow-dom-open']);
+      // The hang alerts.
       expect(
         collectFailures([r], [r.targetId], []).failures.map((f) => f.key),
-      ).toEqual([
-        'iframe-same-origin:functional',
-        'shadow-dom-open:functional',
-        'snapshot-basic:functional',
-      ]);
+      ).toEqual(['shadow-dom-open:functional', 'snapshot-basic:functional']);
+      expect(await readResults(tmp)).toEqual([r]);
     },
   );
+
+  test('a probe that cannot get a fresh Window stops the target as that, blaming no check', async () => {
+    const driver = hangingChecksDriver();
+    const { loadHtml } = driver;
+    driver.loadHtml = async (html) => {
+      // The bundle names the probe on every page; its beforeRrweb call
+      // only on the probe's own.
+      if (html.includes(`__prerelease.beforeRrweb("${driverProbe.id}")`)) {
+        throw new RealmReuseError('no fresh tab');
+      }
+      await loadHtml(html);
+    };
+    const r = await runTarget(
+      {
+        ...findTarget('local-chromium'),
+        timeScale: 0.001,
+        connect: async () => driver,
+      },
+      { resultsDir: tmp, deadline: future, rrwebCommit: 'abc', only },
+    );
+    expect(r.checks).toEqual({
+      'snapshot-basic': { ...timedOut, status: 'not-run' },
+      'shadow-dom-open': { ...timedOut, status: 'not-run' },
+      'iframe-same-origin': {
+        kind: 'functional',
+        status: 'not-run',
+        attempts: 0,
+      },
+    });
+    expect(r.incomplete).toBe(true);
+    expect(r.incompleteReason).toBe('fresh window unavailable');
+    expect(r.trippedBy).toEqual(['snapshot-basic', 'shadow-dom-open']);
+    expect(collectFailures([r], [r.targetId], []).failures).toEqual([]);
+  });
 });
 
 test('the probe is not a check: no list, no selection, no report', () => {
