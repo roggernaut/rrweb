@@ -425,8 +425,12 @@ jobs:
           fi
           echo "expected targets: $EXPECTED"
           echo "left out: ${LEFT_OUT:-nothing}"
+          # One argument with '=', so a value starting with '-' still
+          # reaches reconcile's own error message.
           if [ -n "${ISSUE_CAP//[[:space:]]/}" ]; then
-            flags+=(--issue-cap "$ISSUE_CAP")
+            flags+=("--issue-cap=$ISSUE_CAP")
+            echo "issue cap: $ISSUE_CAP"
+          else
+            echo "issue cap: none"
           fi
-          echo "issue cap: ${ISSUE_CAP:-none}"
           node src/report/reconcile.ts --results results --expected "$EXPECTED" --left-out "$LEFT_OUT" --apply "${flags[@]}"

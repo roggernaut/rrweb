@@ -23,6 +23,7 @@ import {
 
 const run: RunMeta = {
   runUrl: 'https://github.com/rrweb-io/rrweb/actions/runs/1',
+  runId: '1',
   date: '2026-11-06',
   rrwebCommit: 'abc123',
 };
@@ -432,6 +433,7 @@ describe('a hard size cap on every body', () => {
 const runN = (n: number): RunMeta => ({
   ...run,
   runUrl: `https://github.com/rrweb-io/rrweb/actions/runs/${n}`,
+  runId: String(n),
 });
 
 describe("the run's failure count", () => {
@@ -495,6 +497,17 @@ test('the notified marker names the run that last opened or reopened the issue',
     reopened: true,
   });
   expect(parseMarkers(reopened).notified).toBe(runN(3).runUrl);
+});
+
+test('a run without an id writes no notified marker of its own', () => {
+  const local: RunMeta = { ...run, runId: undefined };
+  expect(parseMarkers(issueBody(failure, local, one)).notified).toBeUndefined();
+  const stamped = issueBody(failure, runN(1), one);
+  expect(
+    parseMarkers(
+      issueBody(failure, local, one, { body: stamped, reopened: true }),
+    ).notified,
+  ).toBeUndefined();
 });
 
 describe('held-back failures in the status body', () => {

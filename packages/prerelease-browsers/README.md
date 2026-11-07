@@ -233,6 +233,9 @@ issues one run may open or reopen. The report job passes it to
 - Unset or empty (the default while the maintainers are testing): there is
   no cap, and every failing check gets its own issue.
 - Live value: `5`. Going live is only this settings change.
+- Anything other than a positive whole number fails the report step before
+  it touches the tracker: that run opens, updates and closes no issue, and
+  the status issue isn't rewritten.
 
 When more checks fail than the cap allows, privacy failures go first, then
 failures on more engines, then failures on more targets, then the lower key.
@@ -243,9 +246,14 @@ slot again in the next run. The cap never limits updates to open issues,
 closes, or the run-broken issue.
 
 Every issue body a run writes starts with how many checks failed in that
-run, parked ones not counted, and how many the cap held back. A re-run of the
-report on the same run keeps the issues it already opened, and opens no
-more.
+run, parked ones not counted, and how many the cap held back.
+
+The cap holds for the whole workflow run, across re-runs of the report job
+or of failed jobs. Each issue a run opens or reopens records the run in a
+hidden marker, and every issue that an earlier attempt of the same run
+opened or reopened keeps its slot, even if it has since passed and closed.
+A local `--apply` run has no run id, so it records no marker and counts
+none.
 
 ## Change the limits
 

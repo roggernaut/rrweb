@@ -97,7 +97,8 @@ const preferred = (issues: IssueData[]): IssueData | undefined =>
  * Sorts the `prerelease` issues by their markers: per-check issues carry a
  * key; the status and run-broken issues carry their own marker. Anything else
  * is left alone. A per-check issue whose notified marker names `run` was
- * opened or reopened by an earlier pass of the report on this run.
+ * opened or reopened by an earlier attempt of this run; a run without an id
+ * matches none.
  */
 function classify(listed: IssueData[], run: RunMeta) {
   const existing: ExistingIssue[] = [];
@@ -114,7 +115,7 @@ function classify(listed: IssueData[], run: RunMeta) {
         key: m.key,
         engines: m.engines,
         failingTargets: m.targets,
-        notifiedThisRun: m.notified === run.runUrl,
+        notifiedThisRun: run.runId !== undefined && m.notified === run.runUrl,
       });
     } else if (i.body.includes(STATUS_MARKER)) {
       status.push(i);
@@ -144,10 +145,12 @@ export function runMetaFromEnv(
   const repo = env.GITHUB_REPOSITORY ?? 'rrweb-io/rrweb';
   const started = results.map((r) => r.startedAt).sort()[0];
   const commits = [...new Set(results.map((r) => r.rrwebCommit))].sort();
+  const runId = env.GITHUB_RUN_ID || undefined;
   return {
-    runUrl: env.GITHUB_RUN_ID
-      ? `${server}/${repo}/actions/runs/${env.GITHUB_RUN_ID}`
+    runUrl: runId
+      ? `${server}/${repo}/actions/runs/${runId}`
       : `${server}/${repo}/actions`,
+    ...(runId ? { runId } : {}),
     date: (started ?? new Date().toISOString()).slice(0, 10),
     rrwebCommit:
       commits.length > 0 ? commits.join(', ') : env.GITHUB_SHA ?? 'unknown',

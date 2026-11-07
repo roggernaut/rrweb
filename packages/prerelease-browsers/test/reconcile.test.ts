@@ -9,6 +9,7 @@ import {
 import {
   parseCli,
   reconcile,
+  runMetaFromEnv,
   type GitHubLike,
 } from '../src/report/reconcile.ts';
 import { parseMarkers, type RunMeta } from '../src/report/render.ts';
@@ -80,11 +81,13 @@ function fakeGitHub(seed: Array<Partial<IssueData>> = []) {
 
 const run: RunMeta = {
   runUrl: 'https://github.com/rrweb-io/rrweb/actions/runs/1',
+  runId: '1',
   date: '2026-11-06',
   rrwebCommit: 'abc123',
 };
 const runN = (n: number): RunMeta => ({
   runUrl: `https://github.com/rrweb-io/rrweb/actions/runs/${n}`,
+  runId: String(n),
   date: `2026-11-${String(n).padStart(2, '0')}`,
   rrwebCommit: 'abc123',
 });
@@ -750,16 +753,20 @@ describe('the per-run issue cap', () => {
     ],
     'safari-tp': [['mask-check', 'privacy']],
   };
-  const four = (): TargetResult[] =>
+  /** The four checks failing, or only those in `failed`, the rest passing. */
+  const four = (failed?: string[]): TargetResult[] =>
     targets.map((id) => {
       const r = passing(id, 'other-check');
       for (const [checkId, kind] of fails[id]) {
-        r.checks[checkId] = {
-          kind,
-          status: 'fail',
-          attempts: 3,
-          message: `${checkId} broke`,
-        };
+        r.checks[checkId] =
+          !failed || failed.includes(checkId)
+            ? {
+                kind,
+                status: 'fail',
+                attempts: 3,
+                message: `${checkId} broke`,
+              }
+            : { kind, status: 'pass', attempts: 1 };
       }
       return r;
     });
@@ -808,6 +815,62 @@ describe('the per-run issue cap', () => {
       updates: gh.updates.length,
       comments: gh.comments.length,
     }).toEqual(writes);
+  });
+
+  test('a later attempt of the same run with other results opens no more than the cap', async () => {
+    const gh = fakeGitHub();
+    await reconcile(opts(gh, runN(1)));
+    // Re-running failed jobs: the two opened checks now pass everywhere.
+    await reconcile({
+      ...opts(gh, runN(1)),
+      results: four(['a-check', 'b-check']),
+    });
+    expect(
+      perCheck(gh).map((i) => [parseMarkers(i.body).key, i.state]),
+    ).toEqual([
+      ['c-check:functional', 'closed'],
+      ['mask-check:privacy', 'closed'],
+    ]);
+    expect(statusIssues(gh)[0].body).toContain(
+      '### Held back by the per-run issue cap (2)\n\n' +
+        '- `b-check:functional` on chromium, gecko, 2 targets\n' +
+        '- `a-check:functional` on chromium, 1 target\n',
+    );
+    // The next run starts with every slot free.
+    await reconcile({
+      ...opts(gh, runN(2)),
+      results: four(['a-check', 'b-check']),
+    });
+    expect(perCheck(gh)).toHaveLength(4);
+  });
+
+  test('a local run, without GITHUB_RUN_ID, neither stamps nor matches the notified marker', async () => {
+    const local = runMetaFromEnv(four(), {});
+    expect(local.runId).toBeUndefined();
+    expect(local.runUrl).toBe('https://github.com/rrweb-io/rrweb/actions');
+    // An issue an earlier local run stamped with that same constant URL.
+    const gh = fakeGitHub([
+      {
+        body: `<!-- prerelease:key=c-check:functional -->\n<!-- prerelease:engines=chromium,gecko -->\n<!-- prerelease:targets=chrome-canary,chrome-dev,firefox-nightly -->\n<!-- prerelease:notified=${local.runUrl} -->\n`,
+      },
+    ]);
+    await reconcile(opts(gh, local));
+    // c-check is only updated, and holds no slot: two more open.
+    expect(gh.created.filter((i) => parseMarkers(i.body).key)).toHaveLength(2);
+    for (const i of gh.created) {
+      expect(parseMarkers(i.body).notified).toBeUndefined();
+    }
+  });
+
+  test('a run in Actions stamps its run id', () => {
+    const meta = runMetaFromEnv(four(), {
+      GITHUB_RUN_ID: '42',
+      GITHUB_REPOSITORY: 'o/r',
+    });
+    expect(meta).toMatchObject({
+      runId: '42',
+      runUrl: 'https://github.com/o/r/actions/runs/42',
+    });
   });
 
   test('the next run opens the held-back ones and updates the rest', async () => {

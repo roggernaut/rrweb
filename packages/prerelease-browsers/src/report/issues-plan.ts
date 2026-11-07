@@ -10,8 +10,9 @@ export interface ExistingIssue {
   engines: Engine[]; // parsed from the body marker
   failingTargets: string[]; // parsed from the body marker
   /**
-   * This run already opened or reopened the issue: the report ran before on
-   * the same run. The issue keeps its slot under the per-run cap.
+   * An earlier attempt of this run (a re-run of the report or of failed
+   * jobs) opened or reopened the issue. It holds a slot under the per-run
+   * cap whatever its state now, and whether or not its key failed again.
    */
   notifiedThisRun?: boolean;
 }
@@ -120,8 +121,8 @@ const preference = (a: ExistingIssue, b: ExistingIssue) =>
  * not broken; missing or incomplete targets keep it open. Actions come out
  * ordered by key, then issue number, whatever the order of the inputs.
  *
- * With a `cap`, at most that many issues open or reopen. Issues this run
- * already opened or reopened (a re-run of the report) hold their slots
+ * With a `cap`, at most that many issues open or reopen in one run. Every
+ * issue an earlier attempt of this run opened or reopened holds a slot
  * first; the rest go by `priority`. A failure that gets no slot has no
  * action and is listed in `heldBack`. It still failed, so it closes nothing.
  * Updates, closes and the run-broken actions are never capped.
@@ -168,7 +169,7 @@ export function planIssueActions(
   const failed = new Set<string>();
   /** Creates and reopens, which notify; they compete for the cap's slots. */
   const notifying: Array<{ failure: Failure; entry: Planned }> = [];
-  let slotsUsed = 0;
+  const slotsUsed = existing.filter((i) => i.notifiedThisRun).length;
 
   for (const failure of failures) {
     failed.add(failure.key);
@@ -187,7 +188,6 @@ export function planIssueActions(
     const at = { key: failure.key, issue: match.number };
     const rec = record(failure, match, summary.passedOn[failure.key] ?? []);
     if (match.state === 'open') {
-      if (match.notifiedThisRun) slotsUsed++;
       planned.push({
         ...at,
         action: { type: 'update', issue: match.number, failure, ...rec },

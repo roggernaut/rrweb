@@ -7,6 +7,11 @@ export interface RunMeta {
   runUrl: string;
   date: string; // YYYY-MM-DD
   rrwebCommit: string;
+  /**
+   * GITHUB_RUN_ID. Without it (a local run) the run URL is not unique, so
+   * bodies get no notified marker of this run's own.
+   */
+  runId?: string;
 }
 
 /** What the count line at the top of every body this run writes says. */
@@ -195,7 +200,8 @@ const historyRow = (run: RunMeta) => `| ${run.date} | [run](${run.runUrl}) |`;
  * include earlier targets this run did not confirm. The history carries over
  * from the prior body, newest first, and a re-run of the same run replaces
  * its row instead of adding one. The notified marker names this run on a
- * create or a reopen, and carries over on an update.
+ * create or a reopen (none for a run without an id), and carries over on an
+ * update.
  */
 export function issueBody(
   f: Failure,
@@ -206,7 +212,9 @@ export function issueBody(
   const { body: previousBody, record } = prior;
   const notified =
     previousBody === undefined || prior.reopened
-      ? run.runUrl
+      ? run.runId === undefined
+        ? undefined
+        : run.runUrl
       : parseMarkers(previousBody).notified;
   const recordTargets =
     record?.recordTargets ??

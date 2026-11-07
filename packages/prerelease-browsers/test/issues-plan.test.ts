@@ -801,6 +801,37 @@ describe('the per-run issue cap', () => {
     expect(again.heldBack).toEqual(first.heldBack);
   });
 
+  test('every issue this run notified holds a slot, failing or not, open or closed', () => {
+    const s = summary(four());
+    const first = planIssueActions(s, [], undefined, 2);
+    const opened = applyPlan([], first).map((i) => ({
+      ...i,
+      notifiedThisRun: true,
+    }));
+    // A later attempt of the run: the two opened checks pass everywhere.
+    const later = summary(
+      four().filter((f) => ['a:functional', 'b:functional'].includes(f.key)),
+      {
+        passedOn: {
+          'c:functional': ['chrome-canary', 'chrome-dev', 'firefox-nightly'],
+          'z:privacy': ['safari-tp'],
+        },
+      },
+    );
+    const plan = planIssueActions(later, opened, undefined, 2);
+    expect(plan.actions.map((a) => a.type)).toEqual(['close', 'close']);
+    expect(plan.heldBack.map((h) => h.key)).toEqual([
+      'b:functional',
+      'a:functional',
+    ]);
+    // Once closed, they still hold their slots for the rest of the run.
+    const closed = applyPlan(opened, plan);
+    expect(closed.map((i) => i.state)).toEqual(['closed', 'closed']);
+    expect(planIssueActions(later, closed, undefined, 2).heldBack).toEqual(
+      plan.heldBack,
+    );
+  });
+
   test('a mass failure still collapses into run-broken and holds nothing back', () => {
     const s = summary(
       Array.from({ length: 10 }, (_, i) =>
