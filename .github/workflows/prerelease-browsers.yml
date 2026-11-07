@@ -249,19 +249,22 @@ jobs:
         env:
           PUPPETEER_SKIP_DOWNLOAD: true
 
+      # Each setup step below is gated on what it needs, not on every step
+      # before it, so one Safari's failed setup cannot skip the other's.
       - name: Download the rrweb build
         id: dist
+        if: '!cancelled()'
         uses: actions/download-artifact@v4
         with:
           name: rrweb-dist
           path: packages/rrweb/dist
 
       - name: Enable Safari's driver
-        if: contains(format(',{0},', needs.gate.outputs.expected), ',safari-stable,')
+        if: "!cancelled() && steps.install.outcome == 'success' && contains(format(',{0},', needs.gate.outputs.expected), ',safari-stable,')"
         run: sudo safaridriver --enable
 
       - name: Install Safari Technology Preview
-        if: contains(format(',{0},', needs.gate.outputs.expected), ',safari-tp,')
+        if: "!cancelled() && steps.install.outcome == 'success' && contains(format(',{0},', needs.gate.outputs.expected), ',safari-tp,')"
         run: |
           brew install --cask safari-technology-preview
           sudo "/Applications/Safari Technology Preview.app/Contents/MacOS/safaridriver" --enable

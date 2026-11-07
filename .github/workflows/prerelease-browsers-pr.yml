@@ -198,8 +198,13 @@ jobs:
         env:
           PUPPETEER_SKIP_DOWNLOAD: true
 
+      # Each role needs the install and its own rrweb build; the browser
+      # needs only the install. So each setup step is gated on what it
+      # needs, not on every step before it, and one role's failed setup
+      # cannot skip the other role.
       - name: Download the pull request's rrweb build
         id: dist
+        if: '!cancelled()'
         uses: actions/download-artifact@v4
         with:
           name: rrweb-dist-pr
@@ -207,6 +212,7 @@ jobs:
 
       - name: Download the base branch's rrweb build
         id: base-dist
+        if: '!cancelled()'
         uses: actions/download-artifact@v4
         with:
           name: rrweb-dist-base
@@ -214,6 +220,7 @@ jobs:
 
       - name: Install ${{ matrix.target }}
         id: browser
+        if: "!cancelled() && steps.install.outcome == 'success'"
         working-directory: packages/prerelease-browsers
         run: |
           set -euo pipefail
@@ -223,8 +230,8 @@ jobs:
             node src/node/install.ts "$T" "$RUNNER_TEMP/browsers" >> "$GITHUB_ENV"
           fi
 
-      # Each role runs only after a good setup for it, but whatever the other
-      # role did. A role that never ran shows as a missing target.
+      # Each role runs once its own setup is good, whatever the other role
+      # did. A role that never ran shows as a missing target.
       - name: Run ${{ matrix.target }} with the pull request's rrweb
         if: "!cancelled() && steps.install.outcome == 'success' && steps.dist.outcome == 'success' && steps.browser.outcome == 'success'"
         run: xvfb-run --server-args="-screen 0 1920x1080x24" yarn workspace @rrweb/prerelease-browsers run-target --target "$T" --pr-role pr --deadline "$PRERELEASE_DEADLINE"
@@ -275,8 +282,13 @@ jobs:
         env:
           PUPPETEER_SKIP_DOWNLOAD: true
 
+      # Each role needs the install and its own rrweb build; the browser
+      # needs only the install. So each setup step is gated on what it
+      # needs, not on every step before it, and one role's failed setup
+      # cannot skip the other role.
       - name: Download the pull request's rrweb build
         id: dist
+        if: '!cancelled()'
         uses: actions/download-artifact@v4
         with:
           name: rrweb-dist-pr
@@ -284,14 +296,18 @@ jobs:
 
       - name: Download the base branch's rrweb build
         id: base-dist
+        if: '!cancelled()'
         uses: actions/download-artifact@v4
         with:
           name: rrweb-dist-base
           path: ${{ runner.temp }}/base-dist
 
       - name: Enable Safari's driver
+        if: "!cancelled() && steps.install.outcome == 'success'"
         run: sudo safaridriver --enable
 
+      # Each role runs once its own setup is good, whatever the other role
+      # did. A role that never ran shows as a missing target.
       - name: Run safari-stable with the pull request's rrweb
         if: "!cancelled() && steps.install.outcome == 'success' && steps.dist.outcome == 'success'"
         run: yarn workspace @rrweb/prerelease-browsers run-target --target safari-stable --pr-role pr --deadline "$PRERELEASE_DEADLINE"
