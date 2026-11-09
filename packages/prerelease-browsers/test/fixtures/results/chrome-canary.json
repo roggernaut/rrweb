@@ -4,6 +4,7 @@
   "engine": "chromium",
   "channel": "upcoming",
   "pairGroup": "chrome",
+  "where": "github-linux",
   "perf": "compare",
   "ceilingMs": 1000,
   "browser": {

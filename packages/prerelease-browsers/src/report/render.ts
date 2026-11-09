@@ -411,6 +411,7 @@ export function statusBody(
   const complete =
     s.missingTargets.length === 0 &&
     s.incompleteTargets.length === 0 &&
+    s.launchFailures.length === 0 &&
     !opts.browserstackMissing;
   const leftOut = (opts.leftOut ?? []).map((t) =>
     t === 'browserstack' ? 'BrowserStack' : cell(t),

@@ -216,6 +216,19 @@ const iframeCrossOrigin: CheckDefinition = {
         events,
       };
     }
+    // The hard part is remapping the child's node ids, which only a replay
+    // that puts the text back inside the iframe shows.
+    const replay = await ctx.replay(events);
+    const replayedText = [...replay.querySelectorAll('iframe')].some((f) =>
+      f.contentDocument?.body?.textContent?.includes(text),
+    );
+    if (!replayedText) {
+      return {
+        ok: false,
+        message: 'the replayed iframe does not hold the child control string',
+        events,
+      };
+    }
     return { ok: true, events };
   },
 };
@@ -232,18 +245,25 @@ const dialogTopLayer: CheckDefinition = {
     dialog.showModal();
     const events = await recording.stop();
 
-    const opened = events.some(
+    // Any recorder sees the open attribute; rr_open_mode is rrweb's own
+    // record that the dialog is modal, which puts it in the top layer on
+    // replay.
+    const modal = events.some(
       (e) =>
         e.type === 3 /* IncrementalSnapshot */ &&
         e.data.source === 0 /* Mutation */ &&
-        e.data.attributes.some((a) => 'open' in a.attributes),
+        e.data.attributes.some((a) => a.attributes.rr_open_mode === 'modal'),
     );
-    if (!opened) {
+    if (!modal) {
       return {
         ok: false,
-        message: 'no Mutation event setting the open attribute',
+        message: 'no Mutation event recording the dialog as modal',
         events,
       };
+    }
+    const replayed = (await ctx.replay(events)).querySelector('dialog');
+    if (!replayed?.matches(':modal')) {
+      return { ok: false, message: 'the replayed dialog is not modal', events };
     }
     return { ok: true, events };
   },

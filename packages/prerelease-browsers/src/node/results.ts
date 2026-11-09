@@ -19,14 +19,18 @@ export interface CheckOutcome {
 
 /**
  * Why a target stopped early: the run's deadline came, the driver garbled the
- * page protocol, the driver could not give pages a fresh Window, or rrweb
- * hung page after page on a driver that works.
+ * page protocol, the driver could not give pages a fresh Window, rrweb hung
+ * page after page on a driver that works, or the runner itself crashed.
+ * 'interrupted' is only ever read from a checkpoint: the job died before the
+ * target finished.
  */
 export type IncompleteReason =
   | 'deadline'
   | 'protocol broken'
   | 'fresh window unavailable'
-  | 'rrweb hang';
+  | 'rrweb hang'
+  | 'crashed'
+  | 'interrupted';
 
 export interface TargetResult {
   schema: 1;
@@ -34,7 +38,7 @@ export interface TargetResult {
   engine: Engine;
   channel: 'upcoming' | 'stable';
   pairGroup?: string;
-  where?: TargetDefinition['where']; // where the target ran; older results files lack it
+  where: TargetDefinition['where'];
   perf: 'compare' | 'ceiling-only' | 'none';
   ceilingMs: number; // default 1000
   browser?: BrowserInfo;
@@ -49,16 +53,9 @@ export interface TargetResult {
   checks: Record<string, CheckOutcome>;
 }
 
-/**
- * Whether a result ran on BrowserStack. Results files written before `where`
- * existed go by the `bs-` id prefix.
- */
-export function isBrowserStack(
-  r: Pick<TargetResult, 'targetId' | 'where'>,
-): boolean {
-  return r.where === undefined
-    ? r.targetId.startsWith('bs-')
-    : r.where === 'browserstack';
+/** Whether a result ran on BrowserStack. */
+export function isBrowserStack(r: Pick<TargetResult, 'where'>): boolean {
+  return r.where === 'browserstack';
 }
 
 const isObject = (x: unknown): x is object =>

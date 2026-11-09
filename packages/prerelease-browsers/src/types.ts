@@ -27,10 +27,12 @@ export interface AttemptResult {
   events?: unknown[];
   sample?: PerfSample;
   /**
-   * Overrides the check's kind for this failure: a privacy check whose public
-   * control never got recorded failed at recording, not at masking.
+   * What this failure was: 'privacy' for a leak. Without it a privacy check's
+   * failure broke recording, not masking, and is filed as functional.
    */
   kind?: CheckKind;
+  /** Privacy checks: every canary planted, and those found in the events. */
+  canaries?: { planted: number; leaked: string[] };
 }
 export interface RunOptions {
   disableMasking?: boolean;

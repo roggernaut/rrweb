@@ -14,6 +14,15 @@ export interface NewIssue {
   labels: string[];
 }
 
+export interface AdvisoryData {
+  description: string;
+}
+
+export interface NewAdvisory {
+  summary: string;
+  description: string;
+}
+
 export interface IssuePatch {
   title?: string;
   body?: string;
@@ -36,6 +45,8 @@ export const LABEL_COLOURS: Record<string, string> = {
   privacy: 'b60205',
 };
 const DEFAULT_COLOUR = 'ededed';
+/** rrweb's security advisories are few, so the newest page covers them. */
+const ADVISORY_PAGE = 100;
 const PAGE = 100;
 
 /**
@@ -191,6 +202,25 @@ export class GitHub {
       });
       existing.add(name.toLowerCase());
     }
+  }
+
+  /** The newest security advisories in any state, drafts included. */
+  async listAdvisories(): Promise<AdvisoryData[]> {
+    const batch = await this.#request<Array<{ description: string | null }>>(
+      'GET',
+      `/repos/${
+        this.#repo
+      }/security-advisories?per_page=${ADVISORY_PAGE}&sort=created&direction=desc`,
+    );
+    return batch.map((a) => ({ description: a.description ?? '' }));
+  }
+
+  /** Opens a draft advisory, visible only to the repository's maintainers. */
+  async createAdvisory(advisory: NewAdvisory): Promise<void> {
+    await this.#request('POST', `/repos/${this.#repo}/security-advisories`, {
+      ...advisory,
+      vulnerabilities: [{ package: { ecosystem: 'npm', name: 'rrweb' } }],
+    });
   }
 
   /** Pins an issue to the repository through GraphQL, at `<api>/graphql`. */

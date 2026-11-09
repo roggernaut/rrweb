@@ -19,6 +19,17 @@ the status issue shows an old date, a run didn't happen. Many failures at once
 become a single issue titled `Pre-release browsers: run broken, N checks
 failed`.
 
+A privacy failure on upcoming builds only is a public issue, so downstream
+users can prepare for it. A privacy failure that also happens on a stable
+browser already affects users, so it becomes a draft
+[security advisory](../../SECURITY.md) instead, and no issue, status line or
+log names it. Filing one needs the `PRERELEASE_ADVISORY_TOKEN` secret, a token
+from a repository admin or security manager that can write repository
+advisories, because `GITHUB_TOKEN` can't. Without it, or if filing fails, the
+failure still stays out of public view, the status issue says a private report
+couldn't be filed, and the report step fails. Recorded events uploaded as run
+artifacts are not covered: anyone signed in to GitHub can download those.
+
 Labels: every issue has `prerelease`. Functional and performance failures add
 `prerelease:functional` or `prerelease:performance`; privacy failures add
 rrweb's `privacy` label instead. Each failing engine adds `engine:chromium`,
@@ -154,15 +165,15 @@ to the run's summary page:
   the base branch always fails, even when the base branch breaks the ceiling
   on that check. The pull request fails only for what it caused.
 - **Warning** when a check fails with both builds, or both break the
-  ceiling, or a check fails only with the base branch's rrweb, or the browser
-  fails to launch only for the base branch's run. Warnings don't fail the
-  pull request.
-- **Incomplete** when a run is missing, stopped at its deadline, or its
-  browser didn't launch with the pull request's rrweb. An incomplete run
-  fails the summary job, because it proves nothing. Re-run the jobs.
+  ceiling, or a check fails only with the base branch's rrweb. Warnings don't
+  fail the pull request.
+- **Incomplete** when a run is missing, stopped at its deadline or crashed,
+  when its browser didn't launch with either build, or when a performance
+  comparison couldn't be made, for example because the base run has no
+  samples. An incomplete run fails the summary job, because a pull request
+  with nothing to compare against has proved nothing. Re-run the jobs.
 
-Notes, such as a performance comparison that was skipped because the base
-run has no samples, are listed under **Notes**.
+The reason for each skipped comparison is listed under **Notes**.
 
 Failures parked in `known-failures.json` count for neither.
 
@@ -202,6 +213,17 @@ skips, so a pull request that touches none of those paths would wait for the
 check forever and couldn't merge. Make **Pre-release browsers summary** a
 required check only after removing the `paths` filter, or after adding an
 always-run no-op job that reports under the same name.
+
+## What counts as evidence
+
+Only a check that ran and passed can close an issue. A performance check whose
+limit couldn't be measured, because the stable build didn't launch, has no
+samples or was cut short, closes nothing and is listed under **Notes** in the
+status issue. A browser that failed to launch makes the run read as
+**incomplete** and keeps an open run-broken issue open. A skip on a retry counts
+as neither a pass nor a failure. A failed privacy check is filed as a privacy
+failure only when an attempt found a leak; a crash, a timeout or lost recording
+is filed as functional.
 
 ## Park a known failure
 

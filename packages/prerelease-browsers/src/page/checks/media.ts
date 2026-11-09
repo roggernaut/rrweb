@@ -1,5 +1,5 @@
 import type { eventWithTime } from '@rrweb/types';
-import type { CheckDefinition } from '../harness.ts';
+import type { CheckContext, CheckDefinition } from '../harness.ts';
 
 /** CanvasMutation events (IncrementalSnapshot source 9). */
 function canvasEvents(events: eventWithTime[]) {
@@ -8,6 +8,31 @@ function canvasEvents(events: eventWithTime[]) {
     e.data.source === 9 /* CanvasMutation */
       ? [e.data]
       : [],
+  );
+}
+
+/** The commands recorded for this canvas, in order. */
+function canvasCommands(
+  ctx: CheckContext,
+  events: eventWithTime[],
+  canvas: HTMLCanvasElement,
+) {
+  const id = ctx.rrweb.record.mirror.getId(canvas);
+  return canvasEvents(events)
+    .filter((e) => e.id === id)
+    .flatMap((e) => ('commands' in e ? e.commands : [e]));
+}
+
+/** Whether `property` was recorded, with exactly `args` when given. */
+function recordedCommand(
+  commands: ReturnType<typeof canvasCommands>,
+  property: string,
+  args?: unknown[],
+): boolean {
+  return commands.some(
+    (c) =>
+      c.property === property &&
+      (!args || JSON.stringify(c.args) === JSON.stringify(args)),
   );
 }
 
@@ -25,8 +50,18 @@ const canvas2d: CheckDefinition = {
     context.fillRect(4, 4, 20, 20);
     const events = await recording.stop();
 
-    if (!canvasEvents(events).length) {
-      return { ok: false, message: 'no CanvasMutation event', events };
+    const commands = canvasCommands(ctx, events, canvas);
+    if (
+      !recordedCommand(commands, 'fillStyle', ['#c00']) ||
+      !recordedCommand(commands, 'fillRect', [4, 4, 20, 20])
+    ) {
+      return {
+        ok: false,
+        message: `canvas commands recorded: [${commands
+          .map((c) => c.property)
+          .join(', ')}], expected fillStyle and fillRect with their arguments`,
+        events,
+      };
     }
     return { ok: true, events };
   },
@@ -49,8 +84,18 @@ const canvasWebgl: CheckDefinition = {
     gl.clear(gl.COLOR_BUFFER_BIT);
     const events = await recording.stop();
 
-    if (!canvasEvents(events).length) {
-      return { ok: false, message: 'no CanvasMutation event', events };
+    const commands = canvasCommands(ctx, events, canvas);
+    if (
+      !recordedCommand(commands, 'clearColor', [1, 0, 0, 1]) ||
+      !recordedCommand(commands, 'clear')
+    ) {
+      return {
+        ok: false,
+        message: `canvas commands recorded: [${commands
+          .map((c) => c.property)
+          .join(', ')}], expected clearColor and clear`,
+        events,
+      };
     }
     return { ok: true, events };
   },
@@ -93,8 +138,12 @@ const canvasSampled: CheckDefinition = {
     while (!seen && Date.now() < deadline) await ctx.sleep(50);
     const events = await recording.stop();
 
-    if (!canvasEvents(events).length) {
-      return { ok: false, message: 'no CanvasMutation event', events };
+    if (!recordedCommand(canvasCommands(ctx, events, canvas), 'drawImage')) {
+      return {
+        ok: false,
+        message: 'no sampled frame (drawImage) recorded for the canvas',
+        events,
+      };
     }
     return { ok: true, events };
   },

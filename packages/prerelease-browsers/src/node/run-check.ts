@@ -184,7 +184,8 @@ const pastDeadline = (deadline?: Date) =>
 
 /**
  * Applies the 2-of-3 rule: stop at a first pass, at two failures, or after a
- * third attempt breaks the tie. No attempt starts once `deadline` has passed;
+ * third attempt breaks the tie. A failure no attempt contradicts stays a
+ * failure, even when the other attempts skipped. No attempt starts once `deadline` has passed;
  * a check stopped that way is `not-run`, keeping the attempts it took.
  */
 export async function runWithRetry(
@@ -198,18 +199,17 @@ export async function runWithRetry(
     if (pastDeadline(deadline)) return { status: 'not-run', attempts };
     const result = await attempt();
     attempts.push(result);
-    if (result.ok) {
-      if (result.skipped && attempts.length === 1) {
-        return { status: 'skipped', attempts };
-      }
-      passes++;
-    } else {
+    if (!result.ok) {
       failures++;
-    }
+    } else if (!result.skipped) {
+      passes++;
+    } else if (attempts.length === 1) {
+      return { status: 'skipped', attempts };
+    } // A skip on a retry says nothing either way, so it counts as neither.
     if (passes === 1 && failures === 0) return { status: 'pass', attempts };
     if (failures === 2) return { status: 'fail', attempts };
   }
-  return { status: passes === 2 ? 'flaky' : 'fail', attempts };
+  return { status: passes > 0 ? 'flaky' : 'fail', attempts };
 }
 
 /**

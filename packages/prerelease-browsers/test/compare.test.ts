@@ -1,4 +1,4 @@
-import { evaluatePerf, median } from '../src/report/compare.ts';
+import { evaluatePerf, median, perfId } from '../src/report/compare.ts';
 import { perf, perfBlock } from './helpers/results.ts';
 
 test('median of odd and even lengths', () => {
@@ -16,6 +16,7 @@ test('upcoming 1.6x slower than stable by more than 50 ms fails', () => {
     {
       targetId: 'chrome-canary',
       checkId: 'perf-snapshot-5k',
+      limit: 'ratio',
       message: expect.stringMatching(
         /^durationMs 165 vs stable 102 \(1\.6\dx\)$/,
       ),
@@ -80,6 +81,7 @@ describe('a scenario with its own ceiling', () => {
       {
         targetId: 'firefox-stable',
         checkId: 'perf-snapshot-50k',
+        limit: 'ceiling',
         message: 'longest block 3100 ms over 3000 ms ceiling',
       },
     ]);
@@ -161,12 +163,6 @@ describe('a BrowserStack pair compares duration only (R76)', () => {
     expect(evaluatePerf(pair('browserstack', 'bs-android-chrome'))).toEqual([]);
   });
 
-  test('a results file without where goes by the bs- id prefix', () => {
-    const rs = pair('browserstack', 'bs-android-chrome');
-    for (const r of rs) delete r.where;
-    expect(evaluatePerf(rs)).toEqual([]);
-  });
-
   test('the same numbers on a GitHub-runner pair still give findings', () => {
     expect(
       evaluatePerf(pair('github-linux', 'android-chrome')).map(
@@ -200,12 +196,6 @@ describe('a BrowserStack pair compares duration only (R76)', () => {
     expect(evaluatePerf([up, st]).map((f) => f.message)).toEqual([
       'longest block 1200 ms over 1000 ms ceiling',
     ]);
-  });
-
-  test('a results file with neither where nor a bs- id compares every metric', () => {
-    const rs = pair('github-linux', 'android-chrome');
-    for (const r of rs) delete r.where;
-    expect(evaluatePerf(rs)).toHaveLength(2);
   });
 
   test('a BrowserStack target over the block ceiling is still flagged', () => {
@@ -258,6 +248,77 @@ test('a missing stable result skips the comparison and says so', () => {
     evaluatePerf([perf('chrome-canary', 'upcoming', [500, 500, 500])], notes),
   ).toEqual([]);
   expect(notes).toEqual([expect.stringContaining('chrome-canary')]);
+});
+
+describe('a limit that could not be measured', () => {
+  const up = () => perf('chrome-canary', 'upcoming', [500, 500]);
+  const unmeasuredBy = (...rs: Parameters<typeof evaluatePerf>[0]) => {
+    const notes: string[] = [];
+    const unmeasured = new Set<string>();
+    evaluatePerf(rs, notes, unmeasured);
+    return { notes, unmeasured: [...unmeasured] };
+  };
+  const id = perfId('chrome-canary', 'perf-snapshot-5k');
+
+  test('no stable result leaves the check unmeasured', () => {
+    expect(unmeasuredBy(up()).unmeasured).toEqual([id]);
+  });
+  test('a stable run cut short by the deadline is not compared', () => {
+    const st = perf('chrome-stable', 'stable', [100]);
+    st.checks['perf-snapshot-5k'].status = 'not-run';
+    const { notes, unmeasured } = unmeasuredBy(up(), st);
+    expect(unmeasured).toEqual([id]);
+    expect(notes[0]).toContain('cut short');
+  });
+  test('a metric on only one side leaves the check unmeasured', () => {
+    const u = perf('chrome-canary', 'upcoming', [100], {
+      compare: ['heapDeltaBytes'],
+    });
+    u.checks['perf-snapshot-5k'].samples![0].heapDeltaBytes = 1;
+    const st = perf('chrome-stable', 'stable', [100]);
+    expect(unmeasuredBy(u, st).unmeasured).toEqual([id]);
+  });
+  test('a metric neither side has is simply not compared', () => {
+    const u = perf('chrome-canary', 'upcoming', [100], {
+      compare: ['heapDeltaBytes'],
+    });
+    const st = perf('chrome-stable', 'stable', [100]);
+    expect(unmeasuredBy(u, st)).toEqual({ notes: [], unmeasured: [] });
+  });
+  test('no longest block leaves the ceiling unchecked', () => {
+    const u = perf('chrome-canary', 'upcoming', [100]);
+    u.checks['perf-snapshot-5k'].samples = [
+      { durationMs: 100, maxBlockMs: Number.NaN },
+    ];
+    const st = perf('chrome-stable', 'stable', [100]);
+    const { notes, unmeasured } = unmeasuredBy(u, st);
+    expect(unmeasured).toEqual([id]);
+    expect(notes[0]).toContain('no longest block');
+  });
+  test('a fully measured pair leaves nothing unmeasured', () => {
+    const st = perf('chrome-stable', 'stable', [400, 400]);
+    expect(unmeasuredBy(up(), st)).toEqual({ notes: [], unmeasured: [] });
+  });
+});
+
+describe('exact boundaries', () => {
+  const at = (u: number, s: number) =>
+    evaluatePerf([
+      perf('chrome-canary', 'upcoming', [u]),
+      perf('chrome-stable', 'stable', [s]),
+    ]);
+  test('exactly the ratio limit is not a slowdown', () => {
+    expect(at(300, 200)).toEqual([]);
+  });
+  test('just over the ratio limit is', () => {
+    expect(at(301, 200)).toHaveLength(1);
+  });
+  test('exactly the ceiling is not a breach, just over it is', () => {
+    expect(evaluatePerf([perfBlock('a', 'ceiling-only', [1000])])).toEqual([]);
+    expect(evaluatePerf([perfBlock('a', 'ceiling-only', [1001])])).toHaveLength(
+      1,
+    );
+  });
 });
 
 test('a stable result without samples skips the comparison and says so', () => {

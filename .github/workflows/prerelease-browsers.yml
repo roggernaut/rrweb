@@ -465,6 +465,8 @@ jobs:
         working-directory: packages/prerelease-browsers
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # GITHUB_TOKEN cannot create security advisories.
+          PRERELEASE_ADVISORY_TOKEN: ${{ secrets.PRERELEASE_ADVISORY_TOKEN }}
           EXPECTED: ${{ needs.gate.outputs.expected }}
           BROWSERSTACK_DUE: ${{ needs.gate.outputs.browserstack }}
           LEFT_OUT: ${{ needs.gate.outputs.left_out }}
@@ -479,6 +481,9 @@ jobs:
             if [ -f results/bs-expected.txt ]; then
               bs=$(grep -v '^[[:space:]]*$' results/bs-expected.txt | paste -sd, - || true)
               EXPECTED="${EXPECTED:+$EXPECTED${bs:+,}}$bs"
+              if [ -f results/bs-unavailable.txt ]; then
+                flags+=("--unavailable=$(grep -v '^[[:space:]]*$' results/bs-unavailable.txt | paste -sd, - || true)")
+              fi
             else
               flags+=(--browserstack-missing)
             fi

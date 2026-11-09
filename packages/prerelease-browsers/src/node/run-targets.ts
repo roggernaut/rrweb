@@ -134,6 +134,24 @@ export async function runTarget(
     result.incompleteReason ??= reason;
   }
 
+  /**
+   * Writes what has run so far, marked unfinished, so a job killed before
+   * this target ends still reports the checks it finished.
+   */
+  async function checkpoint(): Promise<void> {
+    const checks = { ...result.checks };
+    for (const meta of metas) {
+      checks[meta.id] ??= { kind: meta.kind, status: 'not-run', attempts: 0 };
+    }
+    await writeResult(opts.resultsDir, {
+      ...result,
+      checks,
+      finishedAt: new Date().toISOString(),
+      incomplete: true,
+      incompleteReason: 'interrupted',
+    });
+  }
+
   // Past the deadline no session opens: it would only run nothing.
   if (Date.now() >= opts.deadline.getTime()) {
     stopHere('deadline');
@@ -191,6 +209,7 @@ export async function runTarget(
       }
       const { outcome, broken } = checked;
       result.checks[meta.id] = outcome;
+      await checkpoint();
       // runCheck leaves a check not-run only at the deadline.
       if (outcome.status === 'not-run') {
         stopHere('deadline');
@@ -230,6 +249,11 @@ export async function runTarget(
       }
     }
     result.sessionUrl = await markSession(driver, result);
+  } catch (err) {
+    // With nothing run there is nothing to keep: a launch failure says more.
+    if (Object.keys(result.checks).length === 0) throw err;
+    console.warn(`${t.id} crashed: ${errorMessage(err)}`);
+    stopHere('crashed');
   } finally {
     await server?.close().catch(() => undefined);
     await driver.close().catch(() => undefined);
@@ -312,19 +336,18 @@ export async function runTarget(
 }
 
 /**
- * The kind a check is filed under: for a failed check, the kind its failed
- * attempts named, if they all named the same one; otherwise the check's own.
- * A privacy check whose public control went missing is a functional failure,
- * but a single leak among its failed attempts keeps it a privacy one.
+ * The kind a check is filed under. A failed privacy check is a privacy
+ * failure only if an attempt saw a leak: a crash, a timeout or a missing
+ * control broke recording, so it is functional and files no public privacy
+ * issue. One leak among the failed attempts is enough.
  */
 function failedAs(
   kind: CheckKind,
   status: CheckOutcome['status'],
   failed: AttemptResult[],
 ): CheckKind {
-  const override = failed.at(-1)?.kind;
-  if (status !== 'fail' || override === undefined) return kind;
-  return failed.every((a) => a.kind === override) ? override : kind;
+  if (kind !== 'privacy' || status !== 'fail') return kind;
+  return failed.some((a) => a.kind === 'privacy') ? 'privacy' : 'functional';
 }
 
 /**

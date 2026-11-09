@@ -200,6 +200,36 @@ test('notes, such as a skipped comparison, are shown as code', () => {
   expect(v.markdown).not.toMatch(/@[a-z0-9]/i);
 });
 
+test('a comparison with no base samples makes the run incomplete', () => {
+  const v = summarizePr(
+    [
+      perf('chrome-stable@pr', 'upcoming', [160, 170, 165], pr),
+      passing('chrome-stable@base', 'css-nested-rules', base),
+    ],
+    expected,
+    [],
+  );
+  expect(v.failures).toEqual([]);
+  expect(v.incomplete).toEqual(['chrome-stable@pr']);
+  expect(v.markdown).toMatch(/^Incomplete/m);
+  expect(v.markdown).toContain(
+    'no performance comparison for perf-snapshot-5k',
+  );
+});
+
+test('a measured comparison within the limits still passes', () => {
+  const v = summarizePr(
+    [
+      perf('chrome-stable@pr', 'upcoming', [100, 110, 105], pr),
+      perf('chrome-stable@base', 'stable', [100, 110, 105], base),
+    ],
+    expected,
+    [],
+  );
+  expect(v.incomplete).toEqual([]);
+  expect(v.markdown).toMatch(/^Pass/m);
+});
+
 test('a missing base result makes the run incomplete', () => {
   const v = summarizePr(
     [passing('chrome-stable@pr', 'css-nested-rules', pr)],
@@ -257,7 +287,7 @@ test('a role stopped for want of a fresh window makes the run incomplete', () =>
   );
 });
 
-test('a browser that fails to launch only with the base rrweb is a warning', () => {
+test('a browser that fails to launch only with the base rrweb makes the run incomplete', () => {
   const v = summarizePr(
     [
       passing('chrome-stable@pr', 'css-nested-rules', pr),
@@ -267,14 +297,15 @@ test('a browser that fails to launch only with the base rrweb is a warning', () 
     [],
   );
   expect(v.failures).toEqual([]);
-  expect(v.incomplete).toEqual([]);
+  expect(v.incomplete).toEqual(['chrome-stable@base']);
   expect(v.warnings).toEqual([
     expect.objectContaining({
       targetId: 'chrome-stable',
       message: 'browser failed to launch: no binary',
     }),
   ]);
-  expect(v.markdown).toMatch(/^Pass/m);
+  expect(v.markdown).toMatch(/^Incomplete/m);
+  expect(v.markdown).toContain('so nothing was compared');
 });
 
 test('a browser that fails to launch with the PR rrweb makes the run incomplete', () => {
@@ -364,6 +395,31 @@ test('the summary mentions nobody and renders messages as code', () => {
   expect(v.markdown).toContain(
     "`expected ＠octocat and ＠1team \\| [x](https://evil.invalid) 'rm'`",
   );
+});
+
+test('a crash with the base rrweb makes the run incomplete', () => {
+  const crashed = incomplete('chrome-stable@base', {
+    ...base,
+    reason: 'crashed',
+  });
+  const v = summarizePr(
+    [passing('chrome-stable@pr', 'css-nested-rules', pr), crashed],
+    expected,
+    [],
+  );
+  expect(v.incomplete).toEqual(['chrome-stable@base']);
+  expect(v.warnings).toEqual([]);
+  expect(v.markdown).toMatch(/^Incomplete/m);
+});
+
+test('a crash with the pull request rrweb makes the run incomplete', () => {
+  const crashed = incomplete('chrome-stable@pr', { ...pr, reason: 'crashed' });
+  const v = summarizePr(
+    [crashed, passing('chrome-stable@base', 'css-nested-rules', base)],
+    expected,
+    [],
+  );
+  expect(v.incomplete).toEqual(['chrome-stable@pr']);
 });
 
 describe('the command line', () => {

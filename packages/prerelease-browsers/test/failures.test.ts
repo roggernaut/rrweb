@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   collectFailures,
+  loadKnownFailures,
   parseKnownFailures,
   type KnownFailure,
 } from '../src/report/failures.ts';
@@ -267,11 +268,65 @@ describe('performance', () => {
     );
   });
 
+  test('a pass with an unmeasured limit is no evidence of recovery', () => {
+    const rs = [
+      perf('chrome-canary', 'upcoming', [100, 100]),
+      launchFailed('chrome-stable', 'no browser', { channel: 'stable' }),
+    ];
+    const s = collectFailures(rs, ids(rs), []);
+    expect(s.passedOn['perf-snapshot-5k:performance']).toBeUndefined();
+    expect(s.failures).toEqual([]);
+  });
+
+  test('a measured performance pass counts', () => {
+    const rs = [
+      perf('chrome-canary', 'upcoming', [100, 100]),
+      perf('chrome-stable', 'stable', [100, 100]),
+    ];
+    expect(collectFailures(rs, ids(rs), []).passedOn).toEqual({
+      'perf-snapshot-5k:performance': ['chrome-canary', 'chrome-stable'],
+    });
+  });
+
+  test('an unknown status is not a pass, and says so', () => {
+    const r = passing('chrome-canary', 'css-nested-rules');
+    (r.checks['css-nested-rules'].status as string) = 'exploded';
+    const s = collectFailures([r], ids([r]), []);
+    expect(s.passedOn).toEqual({});
+    expect(s.notes).toEqual([expect.stringContaining('exploded')]);
+  });
+
   test('evaluatePerf notes reach the summary', () => {
     const rs = [perf('chrome-canary', 'upcoming', [500, 500, 500])];
     expect(collectFailures(rs, ids(rs), []).notes).toEqual([
       expect.stringContaining('chrome-canary'),
     ]);
+  });
+});
+
+describe('loadKnownFailures', () => {
+  test('keeps only the entries in force and warns about the rest', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'prerelease-known-'));
+    const file = join(dir, 'known.json');
+    const entry = (key: string, expires: string) => ({
+      key,
+      upstream: 'https://example.com/1',
+      expires,
+    });
+    await writeFile(
+      file,
+      JSON.stringify([
+        entry('a:functional', '2000-01-01'),
+        entry('b:functional', '2999-01-01'),
+      ]),
+    );
+    const warnings: string[] = [];
+    const known = await loadKnownFailures(file, new Date('2026-11-08'), (l) =>
+      warnings.push(l),
+    );
+    expect(known.map((k) => k.key)).toEqual(['b:functional']);
+    expect(warnings).toEqual([expect.stringContaining('a:functional')]);
+    await rm(dir, { recursive: true, force: true });
   });
 });
 

@@ -45,6 +45,68 @@ const patchedMutationObserver: CheckDefinition = {
   },
 };
 
+const taintedInputGetters: CheckDefinition = {
+  id: 'tainted-input-getters',
+  kind: 'functional',
+  tier: 'full',
+  beforeRrweb() {
+    // Models a Firefox extension content script (rrweb#1950), where the
+    // prototypes are Xray wrappers: defineProperty does not merge with the
+    // existing descriptor, so a descriptor holding only `set` loses the
+    // getter, and redefining the result is silently ignored.
+    const define = Object.defineProperty.bind(Object);
+    Object.defineProperty = function (
+      target: object,
+      key: PropertyKey,
+      descriptor: PropertyDescriptor,
+    ) {
+      if (target !== HTMLInputElement.prototype || key !== 'value') {
+        return define(target, key, descriptor);
+      }
+      try {
+        define(target, key, {
+          get: undefined,
+          set: undefined,
+          ...descriptor,
+          enumerable: false,
+          configurable: false,
+        });
+      } catch {
+        // already non-configurable
+      }
+      return target;
+    } as typeof Object.defineProperty;
+  },
+  async run(ctx) {
+    document.body.innerHTML = '<input type="text" id="i">';
+    const input = document.querySelector<HTMLInputElement>('#i')!;
+    const recording = ctx.record();
+    await ctx.nextFrame();
+    input.value = 'typed';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    const events = await recording.stop();
+
+    const id = ctx.rrweb.record.mirror.getId(input);
+    const texts = events.flatMap((e) =>
+      e.type === 3 /* IncrementalSnapshot */ &&
+      e.data.source === 5 /* Input */ &&
+      e.data.id === id
+        ? [e.data.text]
+        : [],
+    );
+    if (!texts.includes('typed')) {
+      return {
+        ok: false,
+        message: `Input events recorded ${JSON.stringify(
+          texts,
+        )}, expected "typed"`,
+        events,
+      };
+    }
+    return { ok: true, events };
+  },
+};
+
 const missingWebglTypes: CheckDefinition = {
   id: 'missing-webgl-types',
   kind: 'functional',
@@ -57,11 +119,24 @@ const missingWebglTypes: CheckDefinition = {
   },
   async run(ctx) {
     document.body.innerHTML = '<canvas id="c" width="20" height="20"></canvas>';
+    const canvas = document.querySelector<HTMLCanvasElement>('#c')!;
     const recording = ctx.record({ recordCanvas: true });
     await ctx.nextFrame();
+    // 2d recording must survive the missing WebGL types.
+    canvas.getContext('2d')!.fillRect(1, 1, 2, 2);
     const events = await recording.stop();
     if (!events.some((e) => e.type === 2 /* FullSnapshot */)) {
       return { ok: false, message: 'no FullSnapshot event', events };
+    }
+    const id = ctx.rrweb.record.mirror.getId(canvas);
+    const drawn = events.some(
+      (e) =>
+        e.type === 3 /* IncrementalSnapshot */ &&
+        e.data.source === 9 /* CanvasMutation */ &&
+        e.data.id === id,
+    );
+    if (!drawn) {
+      return { ok: false, message: 'no CanvasMutation event', events };
     }
     return { ok: true, events };
   },
@@ -78,7 +153,7 @@ const missingCssGroupingRule: CheckDefinition = {
     const style = document.createElement('style');
     style.textContent = '@media screen{.m{color:red}}';
     document.head.appendChild(style);
-    document.body.innerHTML = '<p class="m">grouped</p>';
+    document.body.innerHTML = '<p class="m">grouped</p><p class="m2">added</p>';
     const recording = ctx.record();
     await ctx.nextFrame();
     const media = style.sheet!.cssRules[0] as CSSMediaRule;
@@ -96,12 +171,22 @@ const missingCssGroupingRule: CheckDefinition = {
     if (!ruleEvent) {
       return { ok: false, message: 'no StyleSheetRule event', events };
     }
-    return { ok: true, events };
+    // Not liveMustBe: an insertRule that rrweb's patch broke is rrweb's fault.
+    const live = getComputedStyle(document.querySelector('.m2')!).color;
+    if (live !== 'rgb(0, 0, 255)') {
+      return {
+        ok: false,
+        message: `insertRule did not reach the live page: .m2 is ${live}`,
+        events,
+      };
+    }
+    return ctx.compareComputed(events, [{ selector: '.m2', props: ['color'] }]);
   },
 };
 
 export const builtinChecks: CheckDefinition[] = [
   patchedMutationObserver,
+  taintedInputGetters,
   missingWebglTypes,
   missingCssGroupingRule,
 ];

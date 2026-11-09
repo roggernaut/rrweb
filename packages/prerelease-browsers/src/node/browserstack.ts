@@ -452,6 +452,23 @@ function redacting(driver: PageDriver, creds: Credentials): PageDriver {
   };
 }
 
+/**
+ * The devices to list as no longer offered. Not bs-safari-newer: having no
+ * newer macOS than the runner is the normal case, not a device that went away.
+ */
+export function unavailableDevices(
+  ids: readonly string[],
+  offered: Array<{ id: string }>,
+  only?: string[],
+): string[] {
+  return ids.filter(
+    (id) =>
+      id !== 'bs-safari-newer' &&
+      !offered.some((s) => s.id === id) &&
+      (!only || only.includes(id)),
+  );
+}
+
 const project = 'rrweb prerelease browsers';
 
 /** The capabilities one session is opened with: the spec's, the run's and the account's. */

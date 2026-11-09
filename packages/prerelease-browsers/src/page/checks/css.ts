@@ -43,6 +43,8 @@ const shorthandRoundtrip = staticStyleCheck({
       props: [
         'background-color',
         'background-repeat',
+        'background-image',
+        'background-position',
         'margin-left',
         'margin-top',
       ],
@@ -55,7 +57,13 @@ const selectorColonEscape = staticStyleCheck({
   tier: 'full',
   css: '.a\\:b{color:rgb(0,128,0)}',
   html: '<p class="a:b">escaped</p>',
-  probes: [{ selector: '.a\\:b', props: ['color'] }],
+  probes: [
+    {
+      selector: '.a\\:b',
+      props: ['color'],
+      liveMustBe: ['rgb(0, 128, 0)'],
+    },
+  ],
 });
 
 const gridTemplateAreas = staticStyleCheck({
@@ -71,7 +79,13 @@ const nestedRules = staticStyleCheck({
   tier: 'full',
   css: '.n{color:rgb(7,8,9); & .c{color:rgb(10,11,12)}}',
   html: '<div class="n">outer<span class="c">inner</span></div>',
-  probes: [{ selector: '.n .c', props: ['color'] }],
+  probes: [
+    {
+      selector: '.n .c',
+      props: ['color'],
+      liveMustBe: ['rgb(10, 11, 12)'],
+    },
+  ],
 });
 
 /**
@@ -96,11 +110,11 @@ export async function runEarlyLinkedStylesheet(
     ...recordOptions,
   });
   if (link.sheet !== null) {
-    const events = await recording.stop();
+    // Nothing about rrweb was tried, so it says nothing about rrweb.
+    await recording.stop();
     return {
-      ok: false,
-      message: 'precondition: slow.css already loaded when recording started',
-      events,
+      ok: true,
+      skipped: 'slow.css already loaded when recording started',
     };
   }
   const early = document.createElement('div');
@@ -212,6 +226,7 @@ const adoptedStylesheets: CheckDefinition = {
 
     const recording = ctx.record();
     await ctx.nextFrame();
+    await ctx.sleep(50); // past the event rrweb emits for the attached sheet
     // Replaced after record(), so the replay must apply the new sheet.
     const replacement = new CSSStyleSheet();
     replacement.replaceSync('.sh{color:rgb(13,14,15)}');
@@ -220,7 +235,8 @@ const adoptedStylesheets: CheckDefinition = {
     const hasAdoptedEvent = events.some(
       (e) =>
         e.type === 3 /* IncrementalSnapshot */ &&
-        e.data.source === 15 /* AdoptedStyleSheet */,
+        e.data.source === 15 /* AdoptedStyleSheet */ &&
+        /rgb\(13,\s*14,\s*15\)/.test(JSON.stringify(e.data)),
     );
     if (!hasAdoptedEvent) {
       return {

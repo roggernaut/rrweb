@@ -31,6 +31,27 @@ test('a skipped first attempt is final', async () => {
   expect(r.attempts).toHaveLength(1);
 });
 
+describe('a skip on a retry counts as neither a pass nor a failure', () => {
+  const skip: AttemptResult = { ok: true, skipped: 'play rejected' };
+  test.each([
+    ['fail, skip, skip stays a failure', [bad, skip, skip], 'fail'],
+    ['fail, skip, fail is a failure', [bad, skip, bad], 'fail'],
+    ['fail, skip, pass is flaky', [bad, skip, ok], 'flaky'],
+    ['fail, pass, skip is flaky', [bad, ok, skip], 'flaky'],
+    [
+      'a skipped attempt that also failed is a failure',
+      [
+        { ok: false, skipped: 'x', message: 'page error' },
+        { ok: false, message: 'bad' },
+      ],
+      'fail',
+    ],
+  ] as const)('%s', async (_name, results, status) => {
+    const r = await runWithRetry(seq(...results));
+    expect(r.status).toBe(status);
+  });
+});
+
 test('no attempt starts after the deadline', async () => {
   const r = await runWithRetry(seq(ok), new Date(0));
   expect(r).toEqual({ status: 'not-run', attempts: [] });

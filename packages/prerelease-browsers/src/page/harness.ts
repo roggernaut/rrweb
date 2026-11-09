@@ -20,6 +20,19 @@ export interface Probe {
   selector: string;
   props: string[];
   shadowHost?: string;
+  /**
+   * What `props` must compute to on the live page. Otherwise this engine does
+   * not apply the CSS under test, and live and replay would agree on nothing.
+   */
+  liveMustBe?: string[];
+}
+
+/** What, besides leaks and public text, a privacy recording must show. */
+export interface PrivacyProof {
+  /** Values rrweb must have recorded in masked form: one `*` per character. */
+  maskedAs?: string[];
+  /** Named facts about the recording, such as a blocked element's placeholder. */
+  evidence?: Record<string, boolean>;
 }
 
 export interface CheckContext {
@@ -42,6 +55,7 @@ export interface CheckContext {
     events: eventWithTime[],
     canaries: string[],
     controls: string[],
+    proof?: PrivacyProof,
   ): AttemptResult;
   nextFrame(): Promise<void>;
   sleep(ms: number): Promise<void>;
@@ -93,6 +107,24 @@ function probeName(probe: Probe): string {
     : probe.selector;
 }
 
+/**
+ * An attempt during which the page threw: it failed, even if the check
+ * skipped, and a failure keeps what it found, such as a leak.
+ */
+export function withPageError(
+  outcome: AttemptResult,
+  pageError: string,
+): AttemptResult {
+  const { skipped: _skipped, ...rest } = outcome;
+  return {
+    ...rest,
+    ok: false,
+    message: outcome.ok
+      ? `page error: ${pageError}`
+      : `${outcome.message ?? 'check failed'}; page error: ${pageError}`,
+  };
+}
+
 export function createContext(runOptions: RunOptions): CheckContext {
   const rrweb = window.rrweb;
   const options: Required<RunOptions> = {
@@ -100,6 +132,7 @@ export function createContext(runOptions: RunOptions): CheckContext {
     scale: runOptions.scale ?? 1,
   };
 
+  const canaryLengths = new Set<number>();
   const ctx: CheckContext = {
     rrweb,
     options,
@@ -187,6 +220,17 @@ export function createContext(runOptions: RunOptions): CheckContext {
         }
         live.push(computed(el, probe.props));
       }
+      const unapplied = probes.find(
+        (probe, i) =>
+          probe.liveMustBe && probe.liveMustBe.join() !== live[i].join(),
+      );
+      if (unapplied) {
+        return {
+          ok: true,
+          skipped: `engine does not apply the CSS for ${probeName(unapplied)}`,
+          events,
+        };
+      }
       const doc = await ctx.replay(events);
       const problems: string[] = [];
       probes.forEach((probe, i) => {
@@ -247,31 +291,64 @@ export function createContext(runOptions: RunOptions): CheckContext {
     },
 
     canary(name, format = 'text') {
-      if (format === 'digits') return randomDigits(16);
-      if (format === 'email') return `rrcanary${randomDigits(6)}@example.com`;
-      return `RRCANARY${name.toUpperCase()}${randomDigits(6)}`;
+      // Each one a different length, so a masked run of `*` can only be that
+      // value's: another canary's masked form cannot stand in for it.
+      for (let extra = 0; ; extra++) {
+        const digits = randomDigits(6 + extra);
+        const value =
+          format === 'digits'
+            ? randomDigits(16 + extra)
+            : format === 'email'
+            ? `rrcanary${digits}@example.com`
+            : `RRCANARY${name.toUpperCase()}${digits}`;
+        if (!canaryLengths.has(value.length)) {
+          canaryLengths.add(value.length);
+          return value;
+        }
+      }
     },
 
     control(name) {
       return `RRPUBLIC${name.toUpperCase()}${randomDigits(6)}`;
     },
 
-    assertPrivate(events, canaries, controls) {
+    assertPrivate(events, canaries, controls, proof = {}) {
       const json = JSON.stringify(events);
-      const leak = canaries.find((canary) => json.includes(canary));
-      if (leak) return { ok: false, message: `privacy leak: ${leak}`, events };
-      const missing = controls.find((control) => !json.includes(control));
-      // Nothing leaked, but the recording lost public text too: a broken
-      // recorder, which is a functional failure, not a privacy one.
-      if (missing) {
+      const leaked = canaries.filter((canary) => json.includes(canary));
+      const report = { planted: canaries.length, leaked };
+      if (leaked.length > 0) {
         return {
           ok: false,
-          kind: 'functional',
-          message: `public control missing: ${missing}`,
+          kind: 'privacy',
+          message: `privacy leak: ${leaked[0]}`,
+          canaries: report,
           events,
         };
       }
-      return { ok: true, events };
+      // Nothing leaked, but the recording lost something it must hold: a
+      // broken recorder, which is a functional failure, not a privacy one.
+      const lost = (message: string): AttemptResult => ({
+        ok: false,
+        kind: 'functional',
+        message,
+        canaries: report,
+        events,
+      });
+      const missing = controls.find((control) => !json.includes(control));
+      if (missing) return lost(`public control missing: ${missing}`);
+      // Dropping the content would also leak nothing, so its masked form must
+      // be there. A run of `*` exactly as long as the value.
+      const runs = new Set((json.match(/\*+/g) ?? []).map((r) => r.length));
+      const dropped = proof.maskedAs?.find((value) => !runs.has(value.length));
+      if (dropped !== undefined) {
+        return lost(
+          `masked content not recorded: no run of ${dropped.length} * characters`,
+        );
+      }
+      for (const [name, held] of Object.entries(proof.evidence ?? {})) {
+        if (!held) return lost(`not recorded: ${name}`);
+      }
+      return { ok: true, canaries: report, events };
     },
   };
   return ctx;

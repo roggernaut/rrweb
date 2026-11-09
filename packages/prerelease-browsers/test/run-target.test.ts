@@ -1,9 +1,10 @@
 import { spawnSync } from 'node:child_process';
+import { readdirSync, readFileSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readResults } from '../src/node/results.ts';
+import { readResults, type TargetResult } from '../src/node/results.ts';
 import { collectFailures } from '../src/report/failures.ts';
 import { RealmReuseError } from '../src/node/drivers/selenium.ts';
 import { DeadlineReached } from '../src/node/run-check.ts';
@@ -23,6 +24,13 @@ import {
 import { findFenixNightlyApk } from '../src/node/install.ts';
 import type { AttemptResult } from '../src/types.ts';
 import { scriptedDriver } from './fake-driver.ts';
+
+/** The results written so far, read synchronously from inside a page load. */
+function readdirResults(dir: string): TargetResult[] {
+  return readdirSync(dir)
+    .filter((n) => n.endsWith('.json'))
+    .map((n) => JSON.parse(readFileSync(join(dir, n), 'utf8')) as TargetResult);
+}
 
 let tmp: string;
 const future = new Date(Date.now() + 60 * 60 * 1000);
@@ -473,6 +481,65 @@ test('a crash around the checks still leaves a results file', async () => {
   expect(await readResults(tmp)).toEqual([r]);
 });
 
+test('a crash after checks ran keeps them', async () => {
+  // A file where the events directory goes, so writing the events throws.
+  await writeFile(join(tmp, 'local-chromium'), '');
+  const r = await runTargetOrRecordCrash(
+    {
+      ...findTarget('local-chromium'),
+      connect: async () =>
+        scriptedDriver((n) =>
+          n === 1 ? { ok: true } : { ok: false, message: 'x', events: [] },
+        ),
+    },
+    {
+      resultsDir: tmp,
+      deadline: future,
+      rrwebCommit: 'abc',
+      only: ['snapshot-basic', 'shadow-dom-open', 'custom-elements'],
+    },
+  );
+  expect(r.launch).toEqual({ ok: true });
+  expect(r.incomplete).toBe(true);
+  expect(r.incompleteReason).toBe('crashed');
+  expect(r.checks['snapshot-basic'].status).toBe('pass');
+  expect(r.checks['custom-elements'].status).toBe('not-run');
+  expect(await readResults(tmp)).toEqual([r]);
+});
+
+test('a job killed mid-target still leaves the checks it finished', async () => {
+  let midway: Awaited<ReturnType<typeof readResults>> = [];
+  const pending = runTarget(
+    {
+      ...findTarget('local-chromium'),
+      connect: async () =>
+        scriptedDriver(
+          () => ({ ok: true }),
+          (n) => {
+            if (n === 2) midway = readdirResults(tmp);
+          },
+        ),
+    },
+    {
+      resultsDir: tmp,
+      deadline: future,
+      rrwebCommit: 'abc',
+      only: ['snapshot-basic', 'shadow-dom-open'],
+    },
+  );
+  const final = await pending;
+  expect(midway).toHaveLength(1);
+  expect(midway[0]).toMatchObject({
+    incomplete: true,
+    incompleteReason: 'interrupted',
+  });
+  expect(midway[0].checks['snapshot-basic'].status).toBe('pass');
+  expect(midway[0].checks['shadow-dom-open'].status).toBe('not-run');
+  // Once the target ends, the finished result replaces the checkpoint.
+  expect(final.incomplete).toBe(false);
+  expect(await readResults(tmp)).toEqual([final]);
+});
+
 test('rrwebDist feeds both the composed pages and the fixture server', async () => {
   const dist = join(tmp, 'other-dist');
   await mkdir(dist);
@@ -793,7 +860,11 @@ describe('a privacy check whose public control went missing', () => {
     kind: 'functional',
     message: 'public control missing: RRPUBLICX',
   };
-  const leak: AttemptResult = { ok: false, message: 'privacy leak: RRCANARYX' };
+  const leak: AttemptResult = {
+    ok: false,
+    kind: 'privacy',
+    message: 'privacy leak: RRCANARYX',
+  };
   const run = (next: (n: number) => AttemptResult) =>
     runTarget(
       {
@@ -815,6 +886,22 @@ describe('a privacy check whose public control went missing', () => {
       status: 'fail',
       attempts: 2,
       message: 'public control missing: RRPUBLICX',
+    });
+  });
+
+  test('a crash or timeout files no privacy failure', async () => {
+    const r = await run(() => ({ ok: false, message: 'page error: boom' }));
+    expect(r.checks['privacy-mask-all-inputs']).toMatchObject({
+      kind: 'functional',
+      status: 'fail',
+    });
+  });
+
+  test('a leak on every attempt is a privacy failure', async () => {
+    const r = await run(() => leak);
+    expect(r.checks['privacy-mask-all-inputs']).toMatchObject({
+      kind: 'privacy',
+      status: 'fail',
     });
   });
 

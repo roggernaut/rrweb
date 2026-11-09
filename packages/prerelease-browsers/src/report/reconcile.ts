@@ -1,18 +1,19 @@
 /* eslint-disable camelcase -- GitHub's REST API names its fields in snake_case */
-import { readFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { readResults, type TargetResult } from '../node/results.ts';
 import type { Engine } from '../types.ts';
 import {
   collectFailures,
-  parseKnownFailures,
+  loadKnownFailures,
+  reportedPrivately,
   type Failure,
   type KnownFailure,
 } from './failures.ts';
 import { GitHub, type IssueData } from './github.ts';
 import {
   planIssueActions,
+  preference,
   RECOVERED_LABEL,
   type ExistingIssue,
   type IssuePlan,
@@ -43,8 +44,12 @@ export type GitHubLike = Pick<
   | 'pinIssue'
 >;
 
+export type AdvisoryClient = Pick<GitHub, 'listAdvisories' | 'createAdvisory'>;
+
 export interface ReconcileOptions {
   gh: GitHubLike;
+  /** Files private advisories; absent, they count as not filed. */
+  advisories?: AdvisoryClient;
   results: TargetResult[];
   expected: string[];
   apply: boolean;
@@ -54,6 +59,8 @@ export interface ReconcileOptions {
   browserstackMissing?: boolean;
   /** Targets a hand-started run left out; the status then reads as a partial run. */
   leftOut?: string[];
+  /** BrowserStack devices the catalogue no longer offers; listed in the status notes. */
+  unavailable?: string[];
   /** At most this many issues open or reopen in one run; absent, no cap. */
   issueCap?: number;
   log?: (line: string) => void;
@@ -97,11 +104,8 @@ const sameSet = (a: string[], b: string[]) =>
 const withLabel = (labels: string[], label: string) =>
   labels.includes(label) ? labels : [...labels, label];
 
-/** Open before closed, then the newest. */
 const preferred = (issues: IssueData[]): IssueData | undefined =>
-  [...issues].sort((a, b) =>
-    a.state !== b.state ? (a.state === 'open' ? -1 : 1) : b.number - a.number,
-  )[0];
+  [...issues].sort(preference)[0];
 
 /**
  * Sorts the `prerelease` issues by their markers: per-check issues carry a
@@ -167,6 +171,52 @@ export function runMetaFromEnv(
   };
 }
 
+/**
+ * Files a draft advisory per failure, once per key, and returns how many
+ * could not be filed. Logs name no check: the run's log is public.
+ */
+async function fileAdvisories(
+  client: AdvisoryClient | undefined,
+  failures: Failure[],
+  run: RunMeta,
+  count: RunCount,
+  log: (line: string) => void,
+): Promise<number> {
+  if (failures.length === 0) return 0;
+  if (!client) {
+    log('no advisory token, so private failures were not filed');
+    return failures.length;
+  }
+  let unfiled = 0;
+  try {
+    const filed = new Set(
+      (await client.listAdvisories()).map(
+        (a) => parseMarkers(a.description).key,
+      ),
+    );
+    for (const f of failures) {
+      if (filed.has(f.key)) continue;
+      try {
+        await client.createAdvisory({
+          summary: issueTitle(f),
+          description: issueBody(f, run, count),
+        });
+        log('filed a private advisory');
+      } catch (err) {
+        unfiled++;
+        log(`could not file an advisory: ${errorText(err)}`);
+      }
+    }
+  } catch (err) {
+    log(`could not list advisories: ${errorText(err)}`);
+    return failures.length;
+  }
+  return unfiled;
+}
+
+const errorText = (err: unknown) =>
+  err instanceof Error ? err.message : String(err);
+
 const withEngines = (f: Failure, engines: Engine[]): Failure => ({
   ...f,
   engines,
@@ -182,6 +232,11 @@ export async function reconcile(opts: ReconcileOptions): Promise<IssuePlan> {
   const log = opts.log ?? (() => undefined);
   const run = opts.run ?? runMetaFromEnv(results);
   const summary = collectFailures(results, expected, opts.known ?? []);
+  for (const id of opts.unavailable ?? []) {
+    summary.notes.push(
+      `${id}: BrowserStack does not offer this device now, so it was not tested`,
+    );
+  }
   const listed = await gh.listIssues('prerelease');
   const { existing, status, runBroken } = classify(listed, run);
 
@@ -200,8 +255,14 @@ export async function reconcile(opts: ReconcileOptions): Promise<IssuePlan> {
   const plan = planIssueActions(planned, existing, runBroken, opts.issueCap);
   if (!apply) return plan;
 
+  // Everything public is written from this summary, so it cannot name a
+  // failure that is reported privately.
+  const publicSummary = {
+    ...summary,
+    failures: summary.failures.filter((f) => !reportedPrivately(f)),
+  };
   const count: RunCount = {
-    failing: summary.failures.length,
+    failing: publicSummary.failures.length,
     heldBack: plan.heldBack.length,
     ...(opts.issueCap === undefined ? {} : { cap: opts.issueCap }),
   };
@@ -287,7 +348,7 @@ export async function reconcile(opts: ReconcileOptions): Promise<IssuePlan> {
       }
       case 'run-broken': {
         const title = runBrokenTitle(a.failures);
-        const body = runBrokenBody(a.failures, summary, run);
+        const body = runBrokenBody(a.failures, publicSummary, run);
         if (a.issue === undefined) {
           const created = await gh.createIssue({
             title,
@@ -327,6 +388,8 @@ export async function reconcile(opts: ReconcileOptions): Promise<IssuePlan> {
         log(`closed run-broken #${a.issue}`);
         break;
       }
+      case 'advisory':
+        break; // filed together below
     }
   }
 
@@ -334,7 +397,35 @@ export async function reconcile(opts: ReconcileOptions): Promise<IssuePlan> {
     log(`held back ${h.key} by the per-run issue cap`);
   }
 
-  const body = statusBody(summary, plan, run, results, links, {
+  const toFile = plan.actions.flatMap((a) =>
+    a.type === 'advisory' ? [a.failure] : [],
+  );
+  const unfiled = await fileAdvisories(
+    opts.advisories,
+    toFile,
+    run,
+    count,
+    log,
+  );
+  const withheld = summary.failures.length - publicSummary.failures.length;
+  if (toFile.length - unfiled > 0) {
+    publicSummary.notes.push(
+      `Failing checks reported privately and not listed here: ${
+        toFile.length - unfiled
+      }`,
+    );
+  }
+  if (unfiled > 0) {
+    publicSummary.notes.push(
+      `Failing checks whose private report could not be filed: ${unfiled}`,
+    );
+  } else if (withheld > toFile.length) {
+    publicSummary.notes.push(
+      `Failing checks not listed here and not reported, because the run is broken: ${withheld}`,
+    );
+  }
+
+  const body = statusBody(publicSummary, plan, run, results, links, {
     browserstackMissing: opts.browserstackMissing,
     leftOut: opts.leftOut,
     issueCap: opts.issueCap,
@@ -370,6 +461,12 @@ export async function reconcile(opts: ReconcileOptions): Promise<IssuePlan> {
       );
     }
   }
+  if (unfiled > 0) {
+    // Last, so every public issue and the status are already written.
+    throw new Error(
+      `${unfiled} failures need a private report that could not be filed; check PRERELEASE_ADVISORY_TOKEN`,
+    );
+  }
   return plan;
 }
 
@@ -383,6 +480,15 @@ function parseIssueCap(value: string | undefined): number | undefined {
   }
   return n;
 }
+
+/** A dry run's plan for the log, which is public: advisories stay unnamed. */
+export const printablePlan = (plan: IssuePlan): string =>
+  JSON.stringify(
+    plan,
+    (_, v: { type?: unknown } | null) =>
+      v?.type === 'advisory' ? { type: 'advisory' } : v,
+    2,
+  );
 
 const commaList = (value: string | undefined) =>
   (value ?? '')
@@ -401,6 +507,7 @@ export function parseCli(argv: string[]) {
       apply: { type: 'boolean', default: false },
       'browserstack-missing': { type: 'boolean', default: false },
       'left-out': { type: 'string', default: '' },
+      unavailable: { type: 'string', default: '' },
       'issue-cap': { type: 'string' },
     },
   });
@@ -412,6 +519,7 @@ export function parseCli(argv: string[]) {
     apply: values.apply === true,
     browserstackMissing: values['browserstack-missing'] === true,
     leftOut: commaList(values['left-out']),
+    unavailable: commaList(values.unavailable),
     issueCap: parseIssueCap(values['issue-cap']),
   };
 }
@@ -422,16 +530,9 @@ async function main(argv: string[]): Promise<void> {
   const knownPath =
     cli.known ??
     fileURLToPath(new URL('../../known-failures.json', import.meta.url));
-  const { active, expired } = parseKnownFailures(
-    JSON.parse(await readFile(knownPath, 'utf8')),
-    new Date(),
-  );
-  for (const e of expired) {
-    console.warn(
-      `known failure ${e.key} expired on ${e.expires}; reporting it again`,
-    );
-  }
+  const known = await loadKnownFailures(knownPath, new Date());
   const gh = new GitHub();
+  const advisoryToken = process.env.PRERELEASE_ADVISORY_TOKEN;
   if (cli.apply && !gh.hasToken) {
     throw new Error('GITHUB_TOKEN is required with --apply');
   }
@@ -440,13 +541,17 @@ async function main(argv: string[]): Promise<void> {
     results,
     expected: cli.expected,
     apply: cli.apply,
-    known: active,
+    ...(advisoryToken
+      ? { advisories: new GitHub({ token: advisoryToken }) }
+      : {}),
+    known,
     browserstackMissing: cli.browserstackMissing,
     leftOut: cli.leftOut,
+    unavailable: cli.unavailable,
     ...(cli.issueCap === undefined ? {} : { issueCap: cli.issueCap }),
     log: (line) => console.log(line),
   });
-  if (!cli.apply) console.log(JSON.stringify(plan, null, 2));
+  if (!cli.apply) console.log(printablePlan(plan));
 }
 
 if (

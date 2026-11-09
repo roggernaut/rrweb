@@ -1,8 +1,9 @@
+import { readFile } from 'node:fs/promises';
 import { isBrowserStack } from '../node/results.ts';
 import type { TargetResult } from '../node/results.ts';
 import type { BrowserInfo } from '../node/drivers/types.ts';
 import type { CheckKind, Engine } from '../types.ts';
-import { evaluatePerf } from './compare.ts';
+import { evaluatePerf, perfId } from './compare.ts';
 
 export interface KnownFailure {
   key: string;
@@ -31,6 +32,15 @@ export interface Failure {
   engines: Engine[]; // sorted, unique
   alsoFailsOnStable: boolean;
 }
+
+/**
+ * A leak that also happens on a stable browser already reaches users, so it
+ * goes to the maintainers as a private advisory (see SECURITY.md). A leak only
+ * on upcoming builds is public, so downstream users can prepare for it.
+ */
+export const reportedPrivately = (
+  f: Pick<Failure, 'kind' | 'alsoFailsOnStable'>,
+): boolean => f.kind === 'privacy' && f.alsoFailsOnStable;
 
 export interface RunSummary {
   failures: Failure[];
@@ -141,6 +151,25 @@ export function parseKnownFailures(
   return { active, expired };
 }
 
+/**
+ * The entries of a known-failures file still in force, warning about the rest
+ * so an expired entry is reported again.
+ */
+export async function loadKnownFailures(
+  path: string,
+  now: Date,
+  warn: (line: string) => void = console.warn,
+): Promise<KnownFailure[]> {
+  const { active, expired } = parseKnownFailures(
+    JSON.parse(await readFile(path, 'utf8')),
+    now,
+  );
+  for (const e of expired) {
+    warn(`known failure ${e.key} expired on ${e.expires}; reporting it again`);
+  }
+  return active;
+}
+
 /** run-target knows only the GitHub-runner targets; BrowserStack ids go through run-browserstack. */
 const reproduceCommand = (r: TargetResult, checkId: string) =>
   isBrowserStack(r)
@@ -169,7 +198,8 @@ function buildFailure(
  * A target whose launch failed runs no checks, so it contributes only a
  * launch failure. An incomplete target contributes the checks that did run:
  * a failure on it counts, a check that never ran does not. A performance
- * pass that `evaluatePerf` flags is a performance failure.
+ * pass that `evaluatePerf` flags is a performance failure; one with a limit it
+ * could not measure is not in `passedOn`, so it closes no issue.
  */
 export function collectFailures(
   results: TargetResult[],
@@ -197,8 +227,9 @@ export function collectFailures(
   };
 
   const perfMessages = new Map<string, string[]>();
-  for (const f of evaluatePerf(results, notes)) {
-    const id = `${f.targetId}\0${f.checkId}`;
+  const unmeasured = new Set<string>();
+  for (const f of evaluatePerf(results, notes, unmeasured)) {
+    const id = perfId(f.targetId, f.checkId);
     perfMessages.set(id, [...(perfMessages.get(id) ?? []), f.message]);
   }
 
@@ -220,13 +251,20 @@ export function collectFailures(
       const messages: string[] = [];
       if (c.status === 'fail') messages.push(c.message ?? 'check failed');
       if (c.kind === 'performance') {
-        messages.push(...(perfMessages.get(`${r.targetId}\0${checkId}`) ?? []));
+        messages.push(...(perfMessages.get(perfId(r.targetId, checkId)) ?? []));
       }
 
       if (messages.length === 0) {
         if (c.status === 'flaky') {
           summary.flaky.push({ key, targetId: r.targetId });
-        } else {
+        } else if (c.status !== 'pass') {
+          notes.push(
+            `${checkId}: ${r.targetId} has the unknown status ${String(
+              c.status,
+            )}, which is not counted as a pass`,
+          );
+        } else if (!unmeasured.has(perfId(r.targetId, checkId))) {
+          // A limit nobody could measure is no evidence of recovery.
           (summary.passedOn[key] ??= []).push(r.targetId);
           // A privacy check whose public control went missing was filed
           // under functional; this pass clears that failure too.

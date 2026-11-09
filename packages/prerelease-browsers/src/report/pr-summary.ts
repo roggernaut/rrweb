@@ -1,11 +1,11 @@
-import { appendFile, readFile } from 'node:fs/promises';
+import { appendFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import type { TargetResult } from '../node/results.ts';
 import { readResults } from '../node/results.ts';
 import type { KnownFailure } from './failures.ts';
 import { evaluatePerf } from './compare.ts';
-import { collectFailures, parseKnownFailures } from './failures.ts';
+import { collectFailures, loadKnownFailures } from './failures.ts';
 import {
   capBody,
   cell,
@@ -83,7 +83,7 @@ function findingParts(results: TargetResult[]): Map<string, Part[]> {
   for (const f of evaluatePerf(results)) {
     if (!counted(f.targetId, f.checkId)) continue;
     add(f.targetId, f.checkId, {
-      kind: f.message.startsWith('longest block ') ? 'ceiling' : 'ratio',
+      kind: f.limit,
       message: f.message,
     });
   }
@@ -98,10 +98,10 @@ function findingParts(results: TargetResult[]): Map<string, Part[]> {
  * A finding with the pull request's rrweb is a failure unless base has a
  * finding of the same kind on the same check and target: a check failure on
  * both, or a ceiling breach on both, is only a warning. A slowdown against
- * base is never excused. Findings only on base, and a browser that did not
- * launch with the base rrweb, are warnings. A missing or stopped-early
- * result, or a browser that did not launch with the pull request's rrweb,
- * makes the run incomplete.
+ * base is never excused. Findings only on base are warnings. A missing or
+ * stopped-early result, a browser that did not launch with either build, or a
+ * performance limit that could not be measured makes the run incomplete: a
+ * pull request with nothing to compare against has proved nothing.
  */
 export function summarizePr(
   results: TargetResult[],
@@ -181,12 +181,31 @@ export function summarizePr(
     const { target, role } = splitRole(id);
     if (notLaunched.has(`${target}@base`) && notLaunched.has(`${target}@pr`)) {
       reasons.set(id, 'the browser launched with neither build');
-    } else if (role === 'pr') {
+    } else {
       reasons.set(
         id,
-        "the browser didn't launch with this pull request's rrweb",
+        role === 'pr'
+          ? "the browser didn't launch with this pull request's rrweb"
+          : "the browser didn't launch with the base branch's rrweb, so nothing was compared",
       );
     }
+  }
+  const unmeasured = new Set<string>();
+  evaluatePerf(results, [], unmeasured);
+  const notCompared = new Map<string, string[]>();
+  for (const id of unmeasured) {
+    const [targetId, checkId] = id.split('\0');
+    notCompared.set(targetId, [...(notCompared.get(targetId) ?? []), checkId]);
+  }
+  for (const [id, checks] of notCompared) {
+    if (reasons.has(id)) continue;
+    reasons.set(
+      id,
+      `no performance comparison for ${checks
+        .sort()
+        .map((c) => cell(c))
+        .join(', ')}`,
+    );
   }
   const order = (id: string) => {
     const i = expectedTargets.indexOf(id);
@@ -278,19 +297,10 @@ async function main(argv: string[]): Promise<boolean> {
   const knownPath =
     values.known ??
     fileURLToPath(new URL('../../known-failures.json', import.meta.url));
-  const { active, expired } = parseKnownFailures(
-    JSON.parse(await readFile(knownPath, 'utf8')),
-    new Date(),
-  );
-  for (const e of expired) {
-    console.warn(
-      `known failure ${e.key} expired on ${e.expires}; reporting it again`,
-    );
-  }
   const verdict = summarizePr(
     await readResults(values.results),
     expected,
-    active,
+    await loadKnownFailures(knownPath, new Date()),
   );
   const summaryFile = process.env.GITHUB_STEP_SUMMARY;
   if (summaryFile) await appendFile(summaryFile, verdict.markdown);

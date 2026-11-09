@@ -1,5 +1,5 @@
 import type { AttemptResult, CheckMeta, RunOptions } from '../types.ts';
-import { createContext } from './harness.ts';
+import { createContext, withPageError } from './harness.ts';
 import { checks, findCheck } from './registry.ts';
 
 /** Largest string `read` returns, in UTF-16 code units. */
@@ -53,7 +53,7 @@ async function run(id: string, options: RunOptions): Promise<void> {
     let outcome: AttemptResult = await check.run(createContext(options));
     // Read after the check settles, so a late rejection is caught too.
     if (pageError !== undefined) {
-      outcome = { ...outcome, ok: false, message: `page error: ${pageError}` };
+      outcome = withPageError(outcome, pageError);
     }
     result = JSON.stringify(outcome);
     state = 'done';

@@ -150,9 +150,10 @@ jobs:
         run: NODE_OPTIONS='--max-old-space-size=4096' yarn turbo run prepublish --filter=rrweb
 
       # WebKit is for the single-tab driver test in playwright.browser.test.ts.
-      - name: Install Playwright's Chromium and WebKit
+      # Firefox and WebKit are for the masking-off gate in counterfeits.browser.test.ts.
+      - name: Install Playwright's browsers
         working-directory: packages/prerelease-browsers
-        run: npx playwright install --with-deps chromium webkit
+        run: npx playwright install --with-deps chromium firefox webkit
 
       - name: Run the browser tests
         run: xvfb-run --server-args="-screen 0 1920x1080x24" yarn workspace @rrweb/prerelease-browsers test:browser

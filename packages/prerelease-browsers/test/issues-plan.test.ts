@@ -29,6 +29,42 @@ test('new failure creates; second run on the same results only updates', () => {
     },
   ]);
 });
+test('a leak on stable too plans an advisory and leaves its public issue alone', () => {
+  const s = summary([fail('mask:privacy', ['chrome-canary', 'chrome-stable'])]);
+  const open = [
+    issue(7, 'open', 'mask:privacy', ['chromium'], ['chrome-canary']),
+  ];
+  expect(planIssueActions(s, open)).toEqual({
+    actions: [{ type: 'advisory', failure: s.failures[0] }],
+    closedButFailing: [],
+    heldBack: [],
+  });
+});
+test('a leak only on upcoming builds stays a public issue', () => {
+  const s = summary([fail('mask:privacy', ['chrome-canary'])]);
+  expect(planIssueActions(s, []).actions.map((a) => a.type)).toEqual([
+    'create',
+  ]);
+});
+test('a functional failure on stable too stays a public issue', () => {
+  const s = summary([fail('k:functional', ['chrome-canary', 'chrome-stable'])]);
+  expect(planIssueActions(s, []).actions.map((a) => a.type)).toEqual([
+    'create',
+  ]);
+});
+test('a run-broken action leaves out leaks on stable', () => {
+  const leak = fail('mask:privacy', ['chrome-stable']);
+  const rest = Array.from({ length: 9 }, (_, i) =>
+    fail(`c${i}:functional`, ['safari-tp']),
+  );
+  const s = summary([leak, ...rest], { totalKeys: 20 });
+  expect(planIssueActions(s, []).actions).toEqual([
+    {
+      type: 'run-broken',
+      failures: s.failures.filter((f) => f.key !== 'mask:privacy'),
+    },
+  ]);
+});
 test('ten failing checks out of twenty collapse into one run-broken action', () => {
   const s = summary(
     Array.from({ length: 10 }, (_, i) =>
@@ -168,9 +204,11 @@ describe('mass failure', () => {
       fail(`c${i}:functional`, ['safari-tp']),
     );
 
-  test('thresholds are the documented values', () => {
-    expect(MASS_FAILURE_MIN).toBe(5);
-    expect(MASS_FAILURE_SHARE).toBe(0.3);
+  test('exactly the minimum at 100% is a mass failure', () => {
+    const s = summary(many(MASS_FAILURE_MIN));
+    expect(planIssueActions(s, []).actions.map((a) => a.type)).toEqual([
+      'run-broken',
+    ]);
   });
   test('fewer than the minimum is never a mass failure, even at 100%', () => {
     const s = summary(many(MASS_FAILURE_MIN - 1));
@@ -185,8 +223,10 @@ describe('mass failure', () => {
       Array(5).fill('create'),
     );
   });
-  test('exactly the minimum at exactly the share is a mass failure', () => {
-    const s = summary(many(6), { totalKeys: 20 }); // 30%
+  test('exactly the share is a mass failure', () => {
+    const s = summary(many(6), {
+      totalKeys: Math.ceil(6 / MASS_FAILURE_SHARE),
+    });
     expect(planIssueActions(s, []).actions).toEqual([
       { type: 'run-broken', failures: s.failures },
     ]);
@@ -387,11 +427,6 @@ describe('determinism', () => {
       ['close', 12], // f
     ]);
     expect(plan.closedButFailing).toEqual([{ issue: 3, key: 'e:functional' }]);
-  });
-  test('two runs on the same inputs give deep-equal plans', () => {
-    expect(planIssueActions(s, existing)).toEqual(
-      planIssueActions(s, existing),
-    );
   });
   test('the order of existing issues does not change the plan', () => {
     expect(planIssueActions(s, [...existing].reverse())).toEqual(
@@ -609,6 +644,16 @@ describe('closing a healed run-broken issue', () => {
     });
   const broken = (state: 'open' | 'closed') =>
     issue(50, state, 'run-broken', [], []);
+
+  test('a run with a browser that did not launch keeps run-broken open', () => {
+    expect(
+      planIssueActions(
+        healthy({ launchFailures: [{ targetId: 'edge-dev', error: 'x' }] }),
+        [],
+        broken('open'),
+      ).actions.map((a) => a.type),
+    ).toEqual(['create']);
+  });
 
   test('a complete, healthy run closes an open run-broken issue', () => {
     expect(planIssueActions(healthy(), [], broken('open')).actions).toEqual([

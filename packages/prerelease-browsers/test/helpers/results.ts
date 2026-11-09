@@ -43,7 +43,7 @@ function base(
     channel:
       opts.channel ?? (targetId.endsWith('-stable') ? 'stable' : 'upcoming'),
     pairGroup: opts.pairGroup ?? prefix,
-    ...(opts.where ? { where: opts.where } : {}),
+    where: opts.where ?? (prefix === 'bs' ? 'browserstack' : 'github-linux'),
     perf: 'none',
     ceilingMs: opts.ceilingMs ?? 1000,
     launch: { ok: true },

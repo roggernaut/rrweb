@@ -4,10 +4,12 @@ import {
   GitHub,
   type IssueData,
   type IssuePatch,
+  type NewAdvisory,
   type NewIssue,
 } from '../src/report/github.ts';
 import {
   parseCli,
+  printablePlan,
   reconcile,
   runMetaFromEnv,
   type GitHubLike,
@@ -16,7 +18,14 @@ import { parseMarkers, type RunMeta } from '../src/report/render.ts';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { CheckKind } from '../src/types.ts';
-import { countLine, failing, incomplete, passing } from './helpers/results.ts';
+import {
+  countLine,
+  failing,
+  incomplete,
+  launchFailed,
+  passing,
+  perf,
+} from './helpers/results.ts';
 
 /** An in-memory GitHub with the client's method names. */
 function fakeGitHub(seed: Array<Partial<IssueData>> = []) {
@@ -106,6 +115,85 @@ const keyed = (gh: ReturnType<typeof fakeGitHub>, key = KEY) =>
 const statusIssues = (gh: ReturnType<typeof fakeGitHub>) =>
   gh.issues.filter((i) => i.body.includes('<!-- prerelease:status -->'));
 
+test('an API error part-way converges on a re-run with no duplicates', async () => {
+  const results = [
+    failing('chrome-canary', 'css-nested-rules', { channel: 'upcoming' }),
+    failing('chrome-canary', 'snapshot-basic', { channel: 'upcoming' }),
+    passing('chrome-stable', 'css-nested-rules', { channel: 'stable' }),
+  ];
+  const gh = fakeGitHub();
+  const createIssue = gh.createIssue;
+  let calls = 0;
+  gh.createIssue = async (issue) => {
+    if (++calls === 2) throw new Error('GitHub API 502');
+    return createIssue(issue);
+  };
+  await expect(
+    reconcile({ gh, results, expected, apply: true, run }),
+  ).rejects.toThrow('502');
+  expect(gh.created).toHaveLength(1);
+
+  gh.createIssue = createIssue;
+  await reconcile({ gh, results, expected, apply: true, run });
+  expect(keyed(gh, 'css-nested-rules:functional')).toHaveLength(1);
+  expect(keyed(gh, 'snapshot-basic:functional')).toHaveLength(1);
+  expect(statusIssues(gh)).toHaveLength(1);
+});
+
+test('a performance issue stays open while its comparison could not run', async () => {
+  const gh = fakeGitHub();
+  const slow = [
+    perf('chrome-canary', 'upcoming', [500, 500, 500]),
+    perf('chrome-stable', 'stable', [100, 100, 100]),
+  ];
+  await reconcile({ gh, results: slow, expected, apply: true, run: runN(1) });
+  const key = 'perf-snapshot-5k:performance';
+  expect(keyed(gh, key)).toHaveLength(1);
+
+  // The same target is fast, but the stable browser did not launch.
+  const blind = [
+    perf('chrome-canary', 'upcoming', [100, 100, 100]),
+    launchFailed('chrome-stable', 'no browser', { channel: 'stable' }),
+  ];
+  await reconcile({ gh, results: blind, expected, apply: true, run: runN(2) });
+  expect(keyed(gh, key)[0].state).toBe('open');
+
+  await reconcile({
+    gh,
+    results: [
+      perf('chrome-canary', 'upcoming', [100, 100, 100]),
+      perf('chrome-stable', 'stable', [100, 100, 100]),
+    ],
+    expected,
+    apply: true,
+    run: runN(3),
+  });
+  expect(keyed(gh, key)[0].state).toBe('closed');
+});
+
+test('the command line reads the devices no longer offered', () => {
+  expect(
+    parseCli(['--results', 'r', '--unavailable', 'a, b']).unavailable,
+  ).toEqual(['a', 'b']);
+  expect(parseCli(['--results', 'r']).unavailable).toEqual([]);
+});
+
+test('devices BrowserStack no longer offers are listed in the status notes', async () => {
+  const gh = fakeGitHub();
+  await reconcile({
+    gh,
+    results: [
+      passing('chrome-canary', 'css-nested-rules', { channel: 'upcoming' }),
+      passing('chrome-stable', 'css-nested-rules', { channel: 'stable' }),
+    ],
+    expected,
+    apply: true,
+    run,
+    unavailable: ['bs-ios-upcoming'],
+  });
+  expect(statusIssues(gh)[0].body).toContain('bs-ios-upcoming');
+});
+
 test('two reconciles of the same results create each issue once', async () => {
   const gh = fakeGitHub();
   await reconcile({ gh, results: fixtureResults, expected, apply: true });
@@ -187,6 +275,110 @@ test('a new privacy failure opens an issue labelled privacy, not prerelease:priv
   expect(gh.ensured.flat()).toContain('privacy');
   expect(gh.ensured.flat()).not.toContain('prerelease:privacy');
   expect(gh.ensured.flat()).not.toContain('severity:critical');
+});
+
+describe('a privacy failure that also fails on stable', () => {
+  const leak = () => {
+    const results = [
+      failing('chrome-canary', 'secret-mask-check'),
+      failing('chrome-stable', 'secret-mask-check'),
+    ];
+    for (const r of results) r.checks['secret-mask-check'].kind = 'privacy';
+    return results;
+  };
+  const fakeAdvisories = (seed: string[] = []) => {
+    const filed: NewAdvisory[] = [];
+    return {
+      filed,
+      async listAdvisories() {
+        return [...seed, ...filed.map((a) => a.description)].map(
+          (description) => ({ description }),
+        );
+      },
+      async createAdvisory(a: NewAdvisory) {
+        filed.push(a);
+      },
+    };
+  };
+  const everythingPublic = (
+    gh: ReturnType<typeof fakeGitHub>,
+    logged: string[],
+  ) => JSON.stringify([gh.issues, gh.updates, gh.comments, gh.ensured, logged]);
+
+  test('becomes one private advisory and is named nowhere public', async () => {
+    const gh = fakeGitHub();
+    const advisories = fakeAdvisories();
+    const logged: string[] = [];
+    const opts = {
+      gh,
+      advisories,
+      results: leak(),
+      expected,
+      apply: true,
+      run,
+      log: (l: string) => logged.push(l),
+    };
+    await reconcile(opts);
+    await reconcile(opts);
+    expect(advisories.filed).toHaveLength(1);
+    expect(advisories.filed[0].description).toContain('secret-mask-check');
+    expect(everythingPublic(gh, logged)).not.toContain('secret-mask-check');
+    expect(statusIssues(gh)[0].body).toContain(
+      'Failing checks reported privately and not listed here: 1',
+    );
+    // A Fail count would point at the stable browser the note leaves out.
+    expect(statusIssues(gh)[0].body).toMatch(
+      /chrome-stable.*\| ok \| 0 \| 0 \|/,
+    );
+  });
+
+  test('without a token it stays private, and the step fails after the status is written', async () => {
+    const gh = fakeGitHub();
+    const logged: string[] = [];
+    await expect(
+      reconcile({
+        gh,
+        results: leak(),
+        expected,
+        apply: true,
+        run,
+        log: (l) => logged.push(l),
+      }),
+    ).rejects.toThrow(/could not be filed/);
+    expect(everythingPublic(gh, logged)).not.toContain('secret-mask-check');
+    expect(statusIssues(gh)[0].body).toContain('could not be filed');
+  });
+
+  test('a failed filing still writes every public issue', async () => {
+    const gh = fakeGitHub();
+    const other = failing('chrome-canary', 'css-nested-rules');
+    await expect(
+      reconcile({
+        gh,
+        advisories: {
+          listAdvisories: async () => [],
+          createAdvisory: () => Promise.reject(new Error('403')),
+        },
+        results: [...leak(), other],
+        expected,
+        apply: true,
+        run,
+      }),
+    ).rejects.toThrow(/could not be filed/);
+    expect(keyed(gh)).toHaveLength(1);
+  });
+
+  test('a dry run does not print it', async () => {
+    const plan = await reconcile({
+      gh: fakeGitHub(),
+      results: leak(),
+      expected,
+      apply: false,
+      run,
+    });
+    expect(printablePlan(plan)).toContain('advisory');
+    expect(printablePlan(plan)).not.toContain('secret-mask-check');
+  });
 });
 
 test('recovery closes with one comment and the recovered label', async () => {

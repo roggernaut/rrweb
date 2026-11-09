@@ -11,8 +11,13 @@ type Metric = 'durationMs' | 'maxBlockMs' | 'heapDeltaBytes';
 export interface PerfFinding {
   targetId: string;
   checkId: string;
+  limit: 'ceiling' | 'ratio';
   message: string;
 }
+
+/** Identifies one check on one target in `evaluatePerf`'s `unmeasured` set. */
+export const perfId = (targetId: string, checkId: string) =>
+  `${targetId}\0${checkId}`;
 
 export function median(xs: number[]): number {
   const sorted = [...xs].sort((a, b) => a - b);
@@ -57,12 +62,15 @@ function performanceChecks(
  *   there; that is intended. GitHub-runner pairs, and pr-summary (which never
  *   uses BrowserStack), compare every metric in the list.
  *
- * A comparison that cannot be made because the stable side is missing is
- * skipped and pushed to `notes`.
+ * A limit that cannot be measured is pushed to `notes` and its check to
+ * `unmeasured`: the stable side is missing, has no samples or was cut short,
+ * a metric exists on only one side, or no longest block was reported. A metric
+ * neither side has, such as the heap outside Chromium, is simply not compared.
  */
 export function evaluatePerf(
   results: TargetResult[],
   notes: string[] = [],
+  unmeasured: Set<string> = new Set(),
 ): PerfFinding[] {
   const findings: PerfFinding[] = [];
   for (const r of results) {
@@ -70,12 +78,21 @@ export function evaluatePerf(
     const checks = performanceChecks(r);
 
     for (const [checkId, c] of checks) {
-      const block = median(values(c.samples, 'maxBlockMs'));
+      const blocks = values(c.samples, 'maxBlockMs');
+      if (blocks.length === 0) {
+        notes.push(
+          `${checkId}: ${r.targetId} reported no longest block, so its ceiling was not checked`,
+        );
+        unmeasured.add(perfId(r.targetId, checkId));
+        continue;
+      }
+      const block = median(blocks);
       const ceilingMs = Math.max(r.ceilingMs, c.ceilingMs ?? 0);
       if (block > ceilingMs) {
         findings.push({
           targetId: r.targetId,
           checkId,
+          limit: 'ceiling',
           message: `longest block ${Math.round(
             block,
           )} ms over ${ceilingMs} ms ceiling`,
@@ -95,14 +112,21 @@ export function evaluatePerf(
           );
     for (const [checkId, c] of checks) {
       const stableCheck = stable?.checks[checkId];
-      if (!stable || !stableCheck?.samples?.length) {
+      if (
+        !stable ||
+        !stableCheck?.samples?.length ||
+        stableCheck.status === 'not-run'
+      ) {
         notes.push(
-          stable
-            ? `${checkId}: ${stable.targetId} has no samples, so ${r.targetId} was not compared`
-            : `${checkId}: no stable result for pair group ${
+          !stable
+            ? `${checkId}: no stable result for pair group ${
                 r.pairGroup ?? '(none)'
-              }, so ${r.targetId} was not compared`,
+              }, so ${r.targetId} was not compared`
+            : stableCheck?.samples?.length
+            ? `${checkId}: ${stable.targetId} was cut short, so ${r.targetId} was not compared`
+            : `${checkId}: ${stable.targetId} has no samples, so ${r.targetId} was not compared`,
         );
+        unmeasured.add(perfId(r.targetId, checkId));
         continue;
       }
       const metrics = c.compare ?? (['durationMs'] as Metric[]);
@@ -111,7 +135,14 @@ export function evaluatePerf(
         : metrics) {
         const up = values(c.samples, metric);
         const st = values(stableCheck.samples, metric);
-        if (up.length === 0 || st.length === 0) continue; // e.g. no heap numbers
+        if (up.length === 0 && st.length === 0) continue; // e.g. no heap numbers
+        if (up.length === 0 || st.length === 0) {
+          notes.push(
+            `${checkId}: only one of ${r.targetId} and ${stable.targetId} reported ${metric}, so it was not compared`,
+          );
+          unmeasured.add(perfId(r.targetId, checkId));
+          continue;
+        }
         const u = median(up);
         const s = median(st);
         const minDiff =
@@ -120,6 +151,7 @@ export function evaluatePerf(
           findings.push({
             targetId: r.targetId,
             checkId,
+            limit: 'ratio',
             message: `${metric} ${Math.round(u)} vs stable ${Math.round(s)} (${(
               u / s
             ).toFixed(2)}x)`,

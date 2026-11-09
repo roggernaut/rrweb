@@ -17,6 +17,7 @@ import {
   runPool,
   sessionCaps,
   toTarget,
+  unavailableDevices,
   type BrowserStackSpec,
   type CatalogueEntry,
 } from '../src/node/browserstack.ts';
@@ -480,6 +481,12 @@ describe('sessions', () => {
       if (s.id === 'bs-android-lowend') continue;
       expect(toTarget(s, run).ceilingMs, s.id).toBeUndefined();
     }
+  });
+
+  test('lists the devices the catalogue dropped, but not a missing newer macOS', () => {
+    const ids = ['bs-a', 'bs-b', 'bs-safari-newer'];
+    expect(unavailableDevices(ids, [{ id: 'bs-a' }])).toEqual(['bs-b']);
+    expect(unavailableDevices(ids, [{ id: 'bs-a' }], ['bs-a'])).toEqual([]);
   });
 
   test('toTarget fails the launch when credentials are missing', async () => {

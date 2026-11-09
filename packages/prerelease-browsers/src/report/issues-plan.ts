@@ -1,5 +1,6 @@
 import type { Engine } from '../types.ts';
 import type { Failure, RunSummary } from './failures.ts';
+import { reportedPrivately } from './failures.ts';
 
 export interface ExistingIssue {
   number: number;
@@ -39,6 +40,8 @@ export type IssueAction =
   | { type: 'close'; issue: number; key: string }
   /** A closed issue (say by a fixing PR) whose failing targets all passed. */
   | { type: 'mark-recovered'; issue: number; key: string }
+  /** A failure to report privately; nothing public names it. */
+  | { type: 'advisory'; failure: Failure }
   | { type: 'run-broken'; issue?: number; failures: Failure[] }
   /** The open run-broken issue, after a complete run that was not broken. */
   | { type: 'close-run-broken'; issue: number };
@@ -105,7 +108,10 @@ const priority = (a: Failure, b: Failure) =>
   compareStrings(a.key, b.key);
 
 /** Open before closed, then the highest number first. */
-const preference = (a: ExistingIssue, b: ExistingIssue) =>
+export const preference = (
+  a: Pick<ExistingIssue, 'state' | 'number'>,
+  b: Pick<ExistingIssue, 'state' | 'number'>,
+) =>
   a.state !== b.state ? (a.state === 'open' ? -1 : 1) : b.number - a.number;
 
 /**
@@ -118,8 +124,12 @@ const preference = (a: ExistingIssue, b: ExistingIssue) =>
  * recorded as failing ran the check and passed (rule 3); a closed issue in that
  * state without the recovered label is marked recovered, so a later failure
  * reopens it. An open run-broken issue closes after a complete run that was
- * not broken; missing or incomplete targets keep it open. Actions come out
+ * not broken; missing, incomplete or unlaunched targets keep it open. Actions come out
  * ordered by key, then issue number, whatever the order of the inputs.
+ *
+ * A failure reported privately yields an `advisory` action and touches no
+ * issue: one already open for its key stays as it is, without the stable
+ * targets, and does not close. A run-broken action leaves it out.
  *
  * With a `cap`, at most that many issues open or reopen in one run. Every
  * issue an earlier attempt of this run opened or reopened holds a slot
@@ -151,7 +161,7 @@ export function planIssueActions(
         {
           type: 'run-broken',
           ...(runBrokenIssue ? { issue: runBrokenIssue.number } : {}),
-          failures,
+          failures: failures.filter((f) => !reportedPrivately(f)),
         },
       ],
       closedButFailing: [],
@@ -173,6 +183,14 @@ export function planIssueActions(
 
   for (const failure of failures) {
     failed.add(failure.key);
+    if (reportedPrivately(failure)) {
+      planned.push({
+        key: failure.key,
+        issue: 0,
+        action: { type: 'advisory', failure },
+      });
+      continue;
+    }
     const match = byKey.get(failure.key)?.[0];
     if (!match) {
       notifying.push({
@@ -260,7 +278,8 @@ export function planIssueActions(
   if (
     runBrokenIssue?.state === 'open' &&
     summary.missingTargets.length === 0 &&
-    summary.incompleteTargets.length === 0
+    summary.incompleteTargets.length === 0 &&
+    summary.launchFailures.length === 0
   ) {
     planned.push({
       key: runBrokenIssue.key,

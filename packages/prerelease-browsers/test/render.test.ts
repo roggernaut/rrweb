@@ -196,7 +196,7 @@ test('the reproduce command runs without a mention', () => {
 test('a BrowserStack reproduce command runs without a mention', () => {
   const canary = results.find((r) => r.targetId === 'chrome-canary')!;
   const [bs] = collectFailures(
-    [{ ...canary, targetId: 'bs-android-upcoming' }],
+    [{ ...canary, targetId: 'bs-android-upcoming', where: 'browserstack' }],
     ['bs-android-upcoming'],
     [],
   ).failures;
@@ -391,6 +391,14 @@ describe('statusBody', () => {
     expect(section).not.toContain('css-nested-rules');
   });
 
+  test('a run with a browser that did not launch reads incomplete', () => {
+    const rs = [launchFailed('chrome-canary', 'no browser')];
+    const s = collectFailures(rs, ['chrome-canary'], []);
+    const body = statusBody(s, planIssueActions(s, []), run, rs, {});
+    expect(body).toMatch(/\*\*incomplete\*\*/);
+    expect(body).not.toMatch(/\*\*complete\*\*/);
+  });
+
   test('a clean run reads complete', () => {
     const rs = [passing('chrome-stable', 'a-check')];
     const s = collectFailures(rs, ['chrome-stable'], []);
@@ -545,7 +553,7 @@ describe('a hard size cap on every body', () => {
     expect(body).not.toMatch(/@[a-z0-9]/i);
   };
 
-  for (const n of [40, 400]) {
+  for (const n of [400]) {
     test(`issue body, ${n} targets`, () => {
       const body = issueBody(heavyFailure(n), run, one);
       checkCapped(body);

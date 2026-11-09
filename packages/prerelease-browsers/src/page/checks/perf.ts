@@ -1,4 +1,4 @@
-import type { eventWithTime } from '@rrweb/types';
+import type { eventWithTime, serializedNodeWithId } from '@rrweb/types';
 import type { CheckContext, CheckDefinition } from '../harness.ts';
 import type { AttemptResult, PerfSample, Tier } from '../../types.ts';
 
@@ -47,14 +47,36 @@ function sampleOf(
   return { ok: true, sample };
 }
 
-/** Measures the `record()` call, which takes the full snapshot. */
-async function measureSnapshot(ctx: CheckContext): Promise<AttemptResult> {
+/** How many nodes the FullSnapshot serialized. */
+function snapshotNodeCount(events: eventWithTime[]): number {
+  const full = events.find((e) => e.type === 2 /* FullSnapshot */);
+  if (!full || full.type !== 2) return 0;
+  const stack: serializedNodeWithId[] = [full.data.node];
+  let count = 0;
+  for (let node = stack.pop(); node; node = stack.pop()) {
+    count++;
+    if ('childNodes' in node) stack.push(...node.childNodes);
+  }
+  return count;
+}
+
+/**
+ * Measures the `record()` call, which takes the full snapshot. `done` names
+ * what is wrong when the snapshot skipped the work: a recorder doing less
+ * would otherwise simply look faster.
+ */
+async function measureSnapshot(
+  ctx: CheckContext,
+  done: (events: eventWithTime[]) => string | undefined,
+): Promise<AttemptResult> {
   await settle(ctx);
   const measured = await ctx.measure(() => ctx.record());
   const events = await measured.value.stop();
   if (!hasFullSnapshot(events)) {
     return { ok: false, message: 'no full snapshot' };
   }
+  const message = done(events);
+  if (message !== undefined) return { ok: false, message };
   return sampleOf(measured);
 }
 
@@ -66,7 +88,8 @@ const largeStylesheet: CheckDefinition = {
   async run(ctx) {
     // About 100 bytes a rule, so 20,000 rules make about 2 MB.
     const rules: string[] = [];
-    for (let i = 0, n = scaled(ctx, 20_000); i < n; i++) {
+    const ruleCount = scaled(ctx, 20_000);
+    for (let i = 0, n = ruleCount; i < n; i++) {
       const color = (i % 4096).toString(16).padStart(3, '0');
       rules.push(
         `.r${i} > .c${i}:hover { color: #${color}; margin: 1px 2px 3px 4px; border: 1px solid #000; padding: 0 1px; }`,
@@ -76,7 +99,13 @@ const largeStylesheet: CheckDefinition = {
     style.textContent = rules.join('\n');
     document.head.appendChild(style);
     document.body.innerHTML = '<div class="r0"><span class="c0">x</span></div>';
-    return measureSnapshot(ctx);
+    return measureSnapshot(ctx, (events) => {
+      const json = JSON.stringify(events.filter((e) => e.type === 2));
+      const last = `.r${ruleCount - 1} > .c${ruleCount - 1}`;
+      return json.includes('.r0 > .c0') && json.includes(last)
+        ? undefined
+        : 'the snapshot does not hold the whole stylesheet';
+    });
   },
 };
 
@@ -93,8 +122,17 @@ function snapshotScenario(
     compare: ['durationMs'],
     ...(ceilingMs === undefined ? {} : { ceilingMs }),
     async run(ctx) {
-      fillBody(scaled(ctx, count));
-      return measureSnapshot(ctx);
+      const rows = scaled(ctx, count);
+      fillBody(rows);
+      return measureSnapshot(ctx, (events) => {
+        const nodes = snapshotNodeCount(events);
+        // Each row is a div, a span and a text node.
+        return nodes < rows * 3
+          ? `the snapshot holds ${nodes} nodes, fewer than the ${
+              rows * 3
+            } in the page`
+          : undefined;
+      });
     },
   };
 }
@@ -141,9 +179,24 @@ const mutationBurst: CheckDefinition = {
       ]);
     });
     clearTimeout(timer);
-    await recording.stop();
+    const events = await recording.stop();
     if (!measured.value) {
       return { ok: false, message: 'no Mutation event within 10000 ms' };
+    }
+    let added = 0;
+    for (const e of events) {
+      if (e.type !== 3 /* IncrementalSnapshot */ || e.data.source !== 0) {
+        continue; // not a Mutation
+      }
+      for (const { node } of e.data.adds) {
+        if (node.type === 2 && node.tagName === 'div') added++;
+      }
+    }
+    if (added !== count) {
+      return {
+        ok: false,
+        message: `Mutation events add ${added} of the ${count} elements`,
+      };
     }
     return sampleOf(measured);
   },
@@ -159,7 +212,8 @@ const sampledCanvases: CheckDefinition = {
   needsHttp: true,
   async run(ctx) {
     const canvases: HTMLCanvasElement[] = [];
-    for (let i = 0, n = scaled(ctx, 4); i < n; i++) {
+    const canvasCount = scaled(ctx, 4);
+    for (let i = 0, n = canvasCount; i < n; i++) {
       const canvas = document.createElement('canvas');
       canvas.width = 300;
       canvas.height = 150;
@@ -182,27 +236,29 @@ const sampledCanvases: CheckDefinition = {
     };
     requestAnimationFrame(draw);
     await settle(ctx);
-    let mutations = 0;
     let recording: ReturnType<CheckContext['record']> | undefined;
     const measured = await ctx.measure(async () => {
       recording = ctx.record({
         recordCanvas: true,
         sampling: { canvas: 15 },
-        emit(event) {
-          if (
-            event.type === 3 /* IncrementalSnapshot */ &&
-            event.data.source === 9 /* CanvasMutation */
-          ) {
-            mutations++;
-          }
-        },
       });
       await ctx.sleep(3000);
     });
     drawing = false;
-    await recording!.stop();
-    if (mutations === 0) {
-      return { ok: false, message: 'no CanvasMutation event in 3000 ms' };
+    const events = await recording!.stop();
+    const sampled = new Set(
+      events.flatMap((e) =>
+        e.type === 3 /* IncrementalSnapshot */ &&
+        e.data.source === 9 /* CanvasMutation */
+          ? [e.data.id]
+          : [],
+      ),
+    );
+    if (sampled.size < canvasCount) {
+      return {
+        ok: false,
+        message: `CanvasMutation events for ${sampled.size} of the ${canvasCount} canvases in 3000 ms`,
+      };
     }
     return sampleOf(measured);
   },

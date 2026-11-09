@@ -49,8 +49,10 @@ performance budgets for rrweb.
   is treated like a broken feature.
 - **Alerts are GitHub issues in rrweb-io/rrweb only.** They reach Slack
   through the existing GitHub notifications channel.
-- **Privacy failures are public issues**, not private security advisories.
-  Downstream users can watch for them and react faster than we can ship a fix.
+- **Privacy failures on upcoming builds only are public issues.** Downstream
+  users can watch for them and react before the browser ships. **A privacy
+  failure that also happens on stable is a private security advisory,** as
+  `SECURITY.md` asks, because it already affects users.
 - **Firefox on Android and Safari Technology Preview are included.** Both
   were proven to work on GitHub's free runners.
 - **The same checks also run on every pull request,** on today's main
@@ -187,7 +189,9 @@ same checks answer both.
   rrweb from the base branch, on the same runner.
 - **What fails the pull request:** a check that fails with the pull request's
   rrweb but passes with the base branch's. A check failing with both is shown
-  as a warning, not a failure, because the change didn't cause it.
+  as a warning, not a failure, because the change didn't cause it. When the
+  base branch's side gives nothing to compare, the result is Incomplete, not a
+  pass.
 - **Performance:** the pull request's rrweb against the base branch's, with
   the same limits as the scheduled run: more than 1.5 times slower, or a
   block over 1 second that the base branch doesn't also have.

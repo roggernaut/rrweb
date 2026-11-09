@@ -8,6 +8,7 @@ import configShared from '../../vitest.config.ts';
  */
 export const browserTests = [
   'test/checks.chromium.test.ts',
+  'test/counterfeits.browser.test.ts',
   'test/playwright.browser.test.ts',
   'test/protocol.test.ts',
   'test/run-target.browser.test.ts',

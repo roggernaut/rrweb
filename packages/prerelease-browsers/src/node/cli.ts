@@ -13,6 +13,7 @@ import {
   resolveBrowserStackTargets,
   runPool,
   toTarget,
+  unavailableDevices,
 } from './browserstack.ts';
 import type { TargetResult } from './results.ts';
 import { errorMessage } from './run-check.ts';
@@ -189,6 +190,12 @@ async function runBrowserStackCommand(argv: string[]): Promise<void> {
   await writeFile(
     join(resultsDir, 'bs-expected.txt'),
     selected.map((s) => `${s.id}\n`).join(''),
+  );
+  await writeFile(
+    join(resultsDir, 'bs-unavailable.txt'),
+    unavailableDevices(browserStackIds, specs, values.only)
+      .map((id) => `${id}\n`)
+      .join(''),
   );
 
   const run = {

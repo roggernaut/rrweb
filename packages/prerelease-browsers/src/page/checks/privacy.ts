@@ -4,6 +4,8 @@ import type { CheckContext, CheckDefinition } from '../harness.ts';
 // Every check plants canaries where rrweb must mask or block, and controls
 // in nearby content it must record. Each one changes the page after the
 // first snapshot, so the snapshot and the mutation paths are both covered.
+// Each also proves the protected content was recorded in its masked form or
+// as a placeholder: a recorder that dropped it would leak nothing either.
 
 type Field = HTMLInputElement | HTMLTextAreaElement;
 
@@ -22,6 +24,10 @@ function byId<T extends Element = HTMLElement>(
   return el as T;
 }
 
+/** A blocked element leaves a placeholder sized by these attributes. */
+const blockPlaceholder = (events: eventWithTime[]) =>
+  JSON.stringify(events).includes('"rr_width"');
+
 /** Appends a paragraph holding a fresh control, and returns the control. */
 function appendControl(ctx: CheckContext, parent: Node, name: string): string {
   const control = ctx.control(name);
@@ -36,33 +42,19 @@ const maskAllInputs: CheckDefinition = {
   kind: 'privacy',
   tier: 'focused',
   async run(ctx) {
-    const initial = {
-      text: ctx.canary('text'),
-      email: ctx.canary('email', 'email'),
-      tel: ctx.canary('tel', 'digits'),
-      textarea: ctx.canary('textarea'),
-    };
+    // Input element types are covered by privacy-input-types.
+    const initial = ctx.canary('textarea');
     const label = ctx.control('label');
-    document.body.innerHTML = `<form id="f"><label>${label}</label><input type="text" id="text" value="${initial.text}"><input type="email" id="email" value="${initial.email}"><input type="tel" id="tel" value="${initial.tel}"><textarea id="ta">${initial.textarea}</textarea></form>`;
+    document.body.innerHTML = `<form id="f"><label>${label}</label><textarea id="ta">${initial}</textarea></form>`;
     const recording = ctx.record({ maskAllInputs: true });
     await ctx.nextFrame();
-    const typed = {
-      text: ctx.canary('typedtext'),
-      email: ctx.canary('typedemail', 'email'),
-      tel: ctx.canary('typedtel', 'digits'),
-      textarea: ctx.canary('typedtextarea'),
-    };
-    typeInto(byId('text'), typed.text);
-    typeInto(byId('email'), typed.email);
-    typeInto(byId('tel'), typed.tel);
-    typeInto(byId('ta'), typed.textarea);
+    const typed = ctx.canary('typedtextarea');
+    typeInto(byId('ta'), typed);
     const added = appendControl(ctx, byId('f'), 'added');
     const events = await recording.stop();
-    return ctx.assertPrivate(
-      events,
-      [...Object.values(initial), ...Object.values(typed)],
-      [label, added],
-    );
+    return ctx.assertPrivate(events, [initial, typed], [label, added], {
+      maskedAs: [initial, typed],
+    });
   },
 };
 
@@ -85,6 +77,7 @@ const maskTextClass: CheckDefinition = {
       events,
       [outer, nested, replaced],
       [control, added],
+      { maskedAs: [outer, nested, replaced] },
     );
   },
 };
@@ -103,7 +96,9 @@ const maskTextSelector: CheckDefinition = {
     (byId('secret').firstChild as Text).data = changed;
     const added = appendControl(ctx, document.body, 'added');
     const events = await recording.stop();
-    return ctx.assertPrivate(events, [secret, changed], [control, added]);
+    return ctx.assertPrivate(events, [secret, changed], [control, added], {
+      maskedAs: [secret, changed],
+    });
   },
 };
 
@@ -115,19 +110,23 @@ const blockClass: CheckDefinition = {
     const text = ctx.canary('text');
     const value = ctx.canary('value');
     const control = ctx.control('sibling');
-    document.body.innerHTML = `<div class="rr-block"><p id="bt">${text}</p><input type="text" id="bi" value="${value}"></div><p id="pub">${control}</p>`;
+    document.body.innerHTML = `<div class="rr-block"><p id="bt">${text}</p><input type="text" id="bi" value="${value}"></div><p id="pub">${control}</p><input type="text" id="open">`;
     const recording = ctx.record({ blockClass: 'rr-block' });
     await ctx.nextFrame();
     const changed = ctx.canary('changed');
     const typed = ctx.canary('typed');
     byId('bt').textContent = changed;
     typeInto(byId('bi'), typed);
+    // Typed the same way outside the block, so input events are proven live.
+    const openTyped = ctx.control('typed');
+    typeInto(byId('open'), openTyped);
     const added = appendControl(ctx, document.body, 'added');
     const events = await recording.stop();
     return ctx.assertPrivate(
       events,
       [text, value, changed, typed],
-      [control, added],
+      [control, added, openTyped],
+      { evidence: { 'blocked placeholder': blockPlaceholder(events) } },
     );
   },
 };
@@ -148,7 +147,9 @@ const blockSelector: CheckDefinition = {
     byId('blocked').appendChild(p);
     const added = appendControl(ctx, document.body, 'added');
     const events = await recording.stop();
-    return ctx.assertPrivate(events, [text, appended], [control, added]);
+    return ctx.assertPrivate(events, [text, appended], [control, added], {
+      evidence: { 'blocked placeholder': blockPlaceholder(events) },
+    });
   },
 };
 
@@ -175,6 +176,7 @@ const passwordDefault: CheckDefinition = {
       events,
       [initial, typed, attribute],
       [label, name],
+      { maskedAs: [initial, typed, attribute] },
     );
   },
 };
@@ -186,7 +188,8 @@ const maskInputOptions: CheckDefinition = {
   async run(ctx) {
     const initialEmail = ctx.canary('email', 'email');
     const initialTel = ctx.canary('tel', 'digits');
-    document.body.innerHTML = `<input type="email" id="email" value="${initialEmail}"><input type="tel" id="tel" value="${initialTel}"><input type="text" id="name">`;
+    const initialName = ctx.control('initialname');
+    document.body.innerHTML = `<input type="email" id="email" value="${initialEmail}"><input type="tel" id="tel" value="${initialTel}"><input type="text" id="name" value="${initialName}">`;
     const recording = ctx.record({
       maskInputOptions: { email: true, tel: true },
     });
@@ -202,7 +205,8 @@ const maskInputOptions: CheckDefinition = {
     return ctx.assertPrivate(
       events,
       [initialEmail, initialTel, typedEmail, typedTel],
-      [name],
+      [initialName, name],
+      { maskedAs: [initialEmail, initialTel, typedEmail, typedTel] },
     );
   },
 };
@@ -246,6 +250,7 @@ const mutationAfterSnapshot: CheckDefinition = {
       events,
       [edited, replaced, appended, nested],
       [editedControl, replacedControl, added],
+      { maskedAs: [edited, replaced, appended, nested] },
     );
   },
 };
@@ -264,7 +269,7 @@ const attributeMutation: CheckDefinition = {
     const control = ctx.control('note');
     byId('note').setAttribute('data-note', control);
     const events = await recording.stop();
-    return ctx.assertPrivate(events, [value], [control]);
+    return ctx.assertPrivate(events, [value], [control], { maskedAs: [value] });
   },
 };
 
@@ -298,7 +303,9 @@ const autofill: CheckDefinition = {
     const control = ctx.control('pub');
     (byId('pub').firstChild as Text).data = control;
     const events = await recording.stop();
-    return ctx.assertPrivate(events, [name, email], [control]);
+    return ctx.assertPrivate(events, [name, email], [control], {
+      maskedAs: [name, email],
+    });
   },
 };
 
@@ -330,7 +337,9 @@ const shadowDom: CheckDefinition = {
     await ctx.nextFrame();
     const { changed, added } = changeShadowRoot(ctx, root);
     const events = await recording.stop();
-    return ctx.assertPrivate(events, [secret, changed], [control, added]);
+    return ctx.assertPrivate(events, [secret, changed], [control, added], {
+      maskedAs: [secret, changed],
+    });
   },
 };
 
@@ -348,14 +357,25 @@ const adoptedStylesheetShadow: CheckDefinition = {
     root.adoptedStyleSheets = [first];
     const recording = ctx.record({ maskTextClass: 'rr-mask' });
     await ctx.nextFrame();
+    await ctx.sleep(50); // past the event rrweb emits for the attached sheet
     const { changed, added } = changeShadowRoot(ctx, root);
-    // Replaced in the same task as the text change. Whether the replacement
-    // is recorded is covered functionally by css-adopted-stylesheets.
+    // Replaced in the same task as the text change, which is what this check
+    // adds over privacy-shadow-dom: masking must hold while it is recorded.
     const next = new CSSStyleSheet();
     next.replaceSync('#pub { color: rgb(0, 128, 0); }');
     root.adoptedStyleSheets = [next];
     const events = await recording.stop();
-    return ctx.assertPrivate(events, [secret, changed], [control, added]);
+    return ctx.assertPrivate(events, [secret, changed], [control, added], {
+      maskedAs: [secret, changed],
+      evidence: {
+        'the replaced stylesheet': events.some(
+          (e) =>
+            e.type === 3 /* IncrementalSnapshot */ &&
+            e.data.source === 15 /* AdoptedStyleSheet */ &&
+            /rgb\(0,\s*128,\s*0\)/.test(JSON.stringify(e.data)),
+        ),
+      },
+    });
   },
 };
 
@@ -381,6 +401,7 @@ const inputTypes: CheckDefinition = {
     const label = ctx.control('label');
     form.innerHTML = `<label>${label}</label>`;
     const canaries: string[] = [];
+    const values: string[] = [];
     // A URL input holds the canary as a path, so the value stays a URL.
     const asValue = (type: string, canary: string) =>
       type === 'url' ? `https://example.com/${canary}` : canary;
@@ -390,6 +411,7 @@ const inputTypes: CheckDefinition = {
       const canary = ctx.canary(`initial${type}`, format);
       input.setAttribute('value', asValue(type, canary));
       canaries.push(canary);
+      values.push(asValue(type, canary));
       form.appendChild(input);
       return input;
     });
@@ -400,10 +422,13 @@ const inputTypes: CheckDefinition = {
       const canary = ctx.canary(`typed${type}`, format);
       typeInto(input, asValue(type, canary));
       canaries.push(canary);
+      values.push(asValue(type, canary));
     });
     const added = appendControl(ctx, form, 'added');
     const events = await recording.stop();
-    return ctx.assertPrivate(events, canaries, [label, added]);
+    return ctx.assertPrivate(events, canaries, [label, added], {
+      maskedAs: values,
+    });
   },
 };
 
@@ -481,6 +506,7 @@ const canvasBlock: CheckDefinition = {
     if (targeted.has(blockedId) || 'rr_dataURL' in node.attributes) {
       return {
         ok: false,
+        kind: 'privacy',
         message: 'privacy leak: blocked canvas recorded',
         events,
       };
