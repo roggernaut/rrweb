@@ -2,20 +2,16 @@ import type { IMirror, RecordPlugin } from '@rrweb/types';
 
 export type KeydownRecordOptions = {
   /**
-   * Also record printable keys pressed without Control, Alt or Meta.
-   * Off by default: typed text already reaches the recording through input
-   * events, where rrweb's masking options apply. Recording printable keydowns
-   * would be an unmasked second copy of everything typed, passwords included.
+   * Also record keys that type a character. That text already reaches the
+   * recording through input events; here it is left out wherever the recorder
+   * masks input, and in password fields.
    */
   recordPrintable: boolean;
-  /**
-   * Keydowns whose target matches this selector, or sits inside an element
-   * that does, are not recorded.
-   */
-  ignoreSelector: string;
 };
 
 export type KeydownPayload = {
+  // -1 when the target is not in the mirror
+  id: number;
   key: string;
   code: string;
   altKey: boolean;
@@ -23,53 +19,48 @@ export type KeydownPayload = {
   metaKey: boolean;
   shiftKey: boolean;
   repeat: boolean;
-  /** rrweb node id of the event target, or null when it is not in the mirror. */
-  targetId: number | null;
 };
 
 export const PLUGIN_NAME = 'rrweb/keydown@1';
 
 const defaultOptions: KeydownRecordOptions = {
   recordPrintable: false,
-  ignoreSelector: '.rr-ignore, [data-rr-ignore]',
 };
 
-const MODIFIER_KEYS = new Set(['Control', 'Alt', 'Shift', 'Meta']);
+type KeyKind = 'modifier' | 'text' | 'command';
 
-function isPrintable(event: KeyboardEvent): boolean {
-  return event.key.length === 1;
+const MODIFIER_KEYS = ['Control', 'Alt', 'AltGraph', 'Shift', 'Meta'];
+
+function getKeyKind(event: KeyboardEvent): KeyKind {
+  if (MODIFIER_KEYS.includes(event.key)) return 'modifier';
+  if (event.key.length !== 1) return 'command';
+  // AltGr, and Option on macOS, compose characters; Alt alone is not a shortcut
+  const shortcut =
+    (event.ctrlKey || event.metaKey) && !event.getModifierState('AltGraph');
+  return shortcut ? 'command' : 'text';
 }
 
-function isSecretField(target: EventTarget | null): boolean {
+function getEventTarget(event: Event): Element | null {
+  // events from a shadow root reach the document retargeted to its host
+  const target = (event.composedPath()[0] || event.target) as Node | null;
+  // not instanceof: the target may belong to an iframe's realm
+  return target && target.nodeType === 1 ? (target as Element) : null;
+}
+
+// rrweb sets data-rr-is-password when a password input's type is changed
+function isPassword(target: Element): boolean {
   return (
-    target instanceof HTMLInputElement &&
-    target.type.toLowerCase() === 'password'
+    target.tagName === 'INPUT' &&
+    ((target as HTMLInputElement).type === 'password' ||
+      target.hasAttribute('data-rr-is-password'))
   );
 }
 
-function matchesIgnore(target: EventTarget | null, selector: string): boolean {
-  if (!selector || !(target instanceof Element)) return false;
-  try {
-    return target.closest(selector) !== null;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Records keydown events that rrweb core does not capture: Enter, Tab, Escape,
- * arrow keys, function keys and shortcuts such as Control+A. Each event carries
- * the rrweb id of the focused element so consumers can attribute the key press.
- */
 export const getRecordKeydownPlugin: (
   options?: Partial<KeydownRecordOptions>,
 ) => RecordPlugin<KeydownRecordOptions> = (options) => {
-  const _options: KeydownRecordOptions = Object.assign(
-    {},
-    defaultOptions,
-    options,
-  );
-  let mirror: IMirror<Node> | null = null;
+  const _options = Object.assign({}, defaultOptions, options);
+  let mirror: IMirror<Node> | undefined;
 
   return {
     name: PLUGIN_NAME,
@@ -77,18 +68,27 @@ export const getRecordKeydownPlugin: (
     getMirror(mirrors) {
       mirror = mirrors.nodeMirror;
     },
-    observer(cb, win, opts) {
-      const doc = win.document;
+    observer(cb, win, options, privacy) {
+      const shouldRecord = (kind: KeyKind, target: Element | null): boolean => {
+        if (target && privacy.isIgnored(target)) return false;
+        switch (kind) {
+          case 'modifier':
+            return false;
+          case 'command':
+            return true;
+          case 'text':
+            return (
+              options.recordPrintable &&
+              !(target && (isPassword(target) || privacy.isMasked(target)))
+            );
+        }
+      };
       const onKeydown = (event: KeyboardEvent) => {
         if (event.isComposing) return;
-        if (MODIFIER_KEYS.has(event.key)) return;
-        if (matchesIgnore(event.target, opts.ignoreSelector)) return;
-        const shortcut = event.ctrlKey || event.altKey || event.metaKey;
-        if (isPrintable(event) && !shortcut) {
-          // Printable keys never leave a password field, even when opted in.
-          if (!opts.recordPrintable || isSecretField(event.target)) return;
-        }
+        const target = getEventTarget(event);
+        if (!shouldRecord(getKeyKind(event), target)) return;
         const payload: KeydownPayload = {
+          id: target && mirror ? mirror.getId(target) : -1,
           key: event.key,
           code: event.code,
           altKey: event.altKey,
@@ -96,19 +96,13 @@ export const getRecordKeydownPlugin: (
           metaKey: event.metaKey,
           shiftKey: event.shiftKey,
           repeat: event.repeat,
-          targetId:
-            mirror && event.target instanceof Node
-              ? mirror.getId(event.target)
-              : null,
         };
         cb(payload);
       };
-      doc.addEventListener('keydown', onKeydown, {
-        capture: true,
-        passive: true,
-      });
+      const listenerOptions = { capture: true, passive: true };
+      win.document.addEventListener('keydown', onKeydown, listenerOptions);
       return () => {
-        doc.removeEventListener('keydown', onKeydown, { capture: true });
+        win.document.removeEventListener('keydown', onKeydown, listenerOptions);
       };
     },
   };

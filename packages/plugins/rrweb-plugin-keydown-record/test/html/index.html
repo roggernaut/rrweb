@@ -9,6 +9,11 @@
   <body>
     <input id="text" type="text" />
     <input id="password" type="password" />
+    <input id="masked" type="text" data-privacy="mask" />
     <input id="ignored" type="text" class="rr-ignore" />
+    <div class="rr-block"><input id="blocked" type="text" /></div>
+    <div data-privacy="exclude"><input id="excluded" type="text" /></div>
+    <div id="host"></div>
+    <iframe srcdoc="<input type='password' />"></iframe>
   </body>
 </html>

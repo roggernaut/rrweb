@@ -74,9 +74,9 @@ This feature aims to provide developers with more information about the bug scen
 
 [link](./console.md)
 
-## Keydown Recorder
+### Keydown Recorder
 
-Record Enter, Tab, Escape, arrow keys and keyboard shortcuts, which rrweb core does not capture, with the keydown plugin.
+A plugin to record the keys that leave no input event, such as Enter, Tab, Escape and shortcuts.
 
 [link](./keydown.md)
 

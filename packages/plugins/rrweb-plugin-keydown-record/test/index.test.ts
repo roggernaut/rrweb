@@ -1,21 +1,30 @@
 import { describe, it, beforeAll, afterAll, expect } from 'vitest';
 import { createServer, ViteDevServer } from 'vite';
 import * as puppeteer from 'puppeteer';
-import type { Browser, Page } from 'puppeteer';
+import type { Browser, JSHandle, Page } from 'puppeteer';
 import { EventType, type eventWithTime, type pluginEvent } from '@rrweb/types';
-import { PLUGIN_NAME, type KeydownPayload } from '../src/index';
+import type { recordOptions } from 'rrweb';
+import {
+  PLUGIN_NAME,
+  type KeydownPayload,
+  type KeydownRecordOptions,
+} from '../src/index';
 
-async function keydownPayloads(page: Page) {
-  const events = await page.evaluate(
-    () => (window as any).snapshots as eventWithTime[],
-  );
-  return events
-    .filter(
-      (e): e is pluginEvent<KeydownPayload> & { timestamp: number } =>
-        e.type === EventType.Plugin && e.data.plugin === PLUGIN_NAME,
-    )
-    .map((e) => e.data.payload);
-}
+const iframeInput = () =>
+  document.querySelector('iframe')!.contentDocument!.querySelector('input');
+
+const protectedFields = {
+  'a password field': () => document.querySelector('#password'),
+  'a password field in a shadow root': () =>
+    document.querySelector('#host')!.shadowRoot!.querySelector('input'),
+  'a password field in an iframe': iframeInput,
+  'a password field revealed as text': () => {
+    const password = document.querySelector<HTMLInputElement>('#password')!;
+    password.type = 'text';
+    return password;
+  },
+  'a field the recorder masks': () => document.querySelector('#masked'),
+};
 
 describe('rrweb-plugin-keydown-record', () => {
   let server: ViteDevServer;
@@ -43,52 +52,136 @@ describe('rrweb-plugin-keydown-record', () => {
     await server.close();
   });
 
-  it('records non-printable keys and shortcuts with the target id, not typed text', async () => {
+  async function startRecording(
+    options?: Partial<KeydownRecordOptions>,
+    recorderOptions?: recordOptions<eventWithTime>,
+  ) {
     await page.goto(`${serverUrl}test/html/index.html`);
-    await page.focus('#text');
-    await page.keyboard.type('abc');
+    await page.evaluate(
+      (o, r) => (window as any).startRecording(o, r),
+      options,
+      recorderOptions,
+    );
+    // the iframe's document is observed once its nodes are in the mirror
+    await page.waitForFunction(
+      (el) => (window as any).mirror.getId(el) > 0,
+      {},
+      await page.evaluateHandle(iframeInput),
+    );
+  }
+
+  async function focus(field: JSHandle<Element | null>): Promise<number> {
+    return field.evaluate((el) => {
+      (el as HTMLElement).focus();
+      return (window as any).mirror.getId(el) as number;
+    });
+  }
+
+  async function keydownPayloads() {
+    const events = await page.evaluate(
+      () => (window as any).snapshots as eventWithTime[],
+    );
+    return events
+      .filter(
+        (e): e is pluginEvent<KeydownPayload> & { timestamp: number } =>
+          e.type === EventType.Plugin && e.data.plugin === PLUGIN_NAME,
+      )
+      .map((e) => e.data.payload);
+  }
+
+  it('records command keys and shortcuts, not typed text or bare modifiers', async () => {
+    await startRecording();
+    const id = await focus(await page.$('#text'));
+    await page.keyboard.type('ab');
     await page.keyboard.press('Enter');
-    await page.keyboard.press('Tab');
     await page.keyboard.down('Control');
     await page.keyboard.press('a');
     await page.keyboard.up('Control');
     await page.keyboard.press('Escape');
+    await page.keyboard.press('Tab');
 
-    const payloads = await keydownPayloads(page);
-    const textId = await page.evaluate(() =>
-      (window as any).mirror.getId(document.querySelector('#text')),
-    );
-
-    expect(payloads.map((p) => p.key)).toEqual(['Enter', 'Tab', 'a', 'Escape']);
-    expect(payloads[2]).toMatchObject({ ctrlKey: true, code: 'KeyA' });
-    // Enter was pressed while #text was focused; Tab moved focus on, so Control+A targets the next field.
-    expect(payloads[0].targetId).toBe(textId);
-    expect(payloads[2].targetId).not.toBe(textId);
-    expect(
-      payloads.every((p) => typeof p.targetId === 'number' && p.targetId > 0),
-    ).toBe(true);
+    expect(await keydownPayloads()).toMatchObject([
+      { id, key: 'Enter' },
+      { id, key: 'a', code: 'KeyA', ctrlKey: true },
+      { id, key: 'Escape' },
+      { id, key: 'Tab' },
+    ]);
   });
 
-  it('never records printable keys in a password field, even when opted in', async () => {
-    await page.goto(`${serverUrl}test/html/index.html?recordPrintable=true`);
-    await page.focus('#password');
-    await page.keyboard.type('hunter2');
-    await page.keyboard.press('Enter');
-    await page.focus('#text');
-    await page.keyboard.type('x');
+  it('treats characters composed with Alt or AltGr as typed text', async () => {
+    await startRecording();
+    const id = await focus(await page.$('#text'));
+    await page.keyboard.down('Alt');
+    await page.keyboard.press('a');
+    await page.keyboard.up('Alt');
+    await page.$eval('#text', (el) => {
+      const init = { ctrlKey: true, altKey: true, bubbles: true };
+      el.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          ...init,
+          key: '@',
+          modifierAltGraph: true,
+        }),
+      );
+      el.dispatchEvent(new KeyboardEvent('keydown', { ...init, key: 'a' }));
+    });
 
-    const payloads = await keydownPayloads(page);
-    expect(payloads.map((p) => p.key)).toEqual(['Enter', 'x']);
+    expect(await keydownPayloads()).toMatchObject([
+      { id, key: 'a', ctrlKey: true, altKey: true },
+    ]);
   });
 
-  it('skips targets matching the ignore selector', async () => {
-    await page.goto(`${serverUrl}test/html/index.html`);
-    await page.focus('#ignored');
-    await page.keyboard.press('Enter');
-    await page.focus('#text');
-    await page.keyboard.press('Enter');
+  it.each(Object.entries(protectedFields))(
+    'recordPrintable records typed text, except in %s',
+    async (_, find) => {
+      // the recorder is told to leave passwords unmasked: the plugin still skips them
+      await startRecording({ recordPrintable: true }, { maskInputOptions: {} });
+      const protectedId = await focus(await page.evaluateHandle(find));
+      await page.keyboard.type('hunter2');
+      await page.keyboard.press('Enter');
+      const textId = await focus(await page.$('#text'));
+      await page.keyboard.type('x');
 
-    const payloads = await keydownPayloads(page);
-    expect(payloads).toHaveLength(1);
+      expect(await keydownPayloads()).toMatchObject([
+        { id: protectedId, key: 'Enter' },
+        { id: textId, key: 'x' },
+      ]);
+    },
+  );
+
+  it.each(['#ignored', '#blocked', '#excluded'])(
+    'skips keys where the recorder ignores input: %s',
+    async (selector) => {
+      await startRecording();
+      await focus(await page.$(selector));
+      await page.keyboard.press('Enter');
+      const id = await focus(await page.$('#text'));
+      await page.keyboard.press('Enter');
+
+      expect(await keydownPayloads()).toMatchObject([{ id, key: 'Enter' }]);
+    },
+  );
+
+  it('skips keydowns that belong to an IME composition', async () => {
+    await startRecording();
+    await page.$eval('#text', (el) => {
+      const init = { key: 'Enter', bubbles: true };
+      el.dispatchEvent(
+        new KeyboardEvent('keydown', { ...init, isComposing: true }),
+      );
+      el.dispatchEvent(new KeyboardEvent('keydown', { ...init, key: 'Tab' }));
+    });
+
+    expect(await keydownPayloads()).toMatchObject([{ key: 'Tab' }]);
+  });
+
+  it('stops recording when the recorder stops', async () => {
+    await startRecording();
+    await focus(await page.$('#text'));
+    await page.keyboard.press('Enter');
+    await page.evaluate(() => (window as any).stopRecording());
+    await page.keyboard.press('Escape');
+
+    expect(await keydownPayloads()).toMatchObject([{ key: 'Enter' }]);
   });
 });
