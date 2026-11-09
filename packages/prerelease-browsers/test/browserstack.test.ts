@@ -469,7 +469,7 @@ describe('sessions', () => {
       where: 'browserstack',
       checks: 'focused',
       perf: 'compare',
-      timeScale: 5,
+      timeScale: 3,
       perfSamples: 3,
     });
     expect(JSON.stringify(t)).not.toContain('accessKey');

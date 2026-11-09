@@ -1,5 +1,7 @@
 import {
+  errorMessage,
   isProtocolFailure,
+  isSessionClosed,
   runAttempt,
   runScenario,
   runWithRetry,
@@ -92,6 +94,7 @@ describe('runScenario', () => {
       attempts: 3,
       samples: [sample(1), sample(2), sample(3)],
       compare: ['durationMs'],
+      attemptMs: [expect.any(Number), expect.any(Number), expect.any(Number)],
     });
   });
 
@@ -105,7 +108,7 @@ describe('runScenario', () => {
     expect(r.compare).toEqual(['durationMs', 'maxBlockMs']);
   });
 
-  test('one error still passes with the other samples', async () => {
+  test('one error of several is flaky, keeping the other samples', async () => {
     const r = await runScenario(
       scriptedDriver((n) =>
         n === 2 ? { ok: false, message: 'boom' } : okSample(n),
@@ -115,7 +118,7 @@ describe('runScenario', () => {
       { samples: 3, timeoutMs: 1000 },
     );
     expect(r).toMatchObject({
-      status: 'pass',
+      status: 'flaky',
       attempts: 3,
       samples: [sample(1), sample(3)],
       message: 'boom',
@@ -197,6 +200,7 @@ describe('runScenario', () => {
       attempts: 2,
       samples: [sample(1), sample(2)],
       compare: ['durationMs'],
+      attemptMs: [expect.any(Number), expect.any(Number)],
     });
   });
 });
@@ -230,6 +234,30 @@ test.each([
     message: 'malformed poll result from driver',
   });
   expect(Date.now() - started).toBeLessThan(5_000);
+});
+
+test.each([
+  'page.goto: Target page, context or browser has been closed',
+  'invalid session id',
+  'Session not started or terminated',
+])('%s is a lost session, and so a protocol failure', (message) => {
+  const result = { ok: false, message };
+  expect(isSessionClosed(result)).toBe(true);
+  expect(isProtocolFailure(result)).toBe(true);
+});
+
+test('a check failure is not a lost session', () => {
+  expect(isSessionClosed({ ok: false, message: 'boom' })).toBe(false);
+  expect(isSessionClosed({ ok: true })).toBe(false);
+});
+
+test('errorMessage collapses a prefix repeated by retries, and only that', () => {
+  const closed = 'Target page, context or browser has been closed';
+  expect(
+    errorMessage(new Error(`page.goto: page.goto: page.goto: ${closed}`)),
+  ).toBe(`page.goto: ${closed}`);
+  expect(errorMessage(new Error('page.goto: boom'))).toBe('page.goto: boom');
+  expect(errorMessage('a: b: c')).toBe('a: b: c');
 });
 
 test('timeouts and garbled polls are protocol failures; check failures are not', () => {

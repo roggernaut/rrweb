@@ -39,3 +39,15 @@ export function scriptedDriver(
   };
   return driver;
 }
+
+/** Check outcomes without their attempt times, which differ on every run. */
+export function untimed<T extends { attemptMs?: number[] }>(
+  checks: Record<string, T>,
+): Record<string, Omit<T, 'attemptMs'>> {
+  return Object.fromEntries(
+    Object.entries(checks).map(([id, { attemptMs: _attemptMs, ...check }]) => [
+      id,
+      check,
+    ]),
+  );
+}

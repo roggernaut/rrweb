@@ -241,14 +241,29 @@ describe('performance', () => {
     expect(s.totalKeys).toBe(1);
   });
 
-  test('a pass carrying a message is not a failure', () => {
+  test('a scenario with one errored sample is flaky: listed, and no recovery', () => {
     const rs = [perf('chrome-stable', 'stable', [100, 100, 100])];
+    rs[0].checks['perf-snapshot-5k'].status = 'flaky';
     rs[0].checks['perf-snapshot-5k'].message = 'one sample errored';
     const s = collectFailures(rs, ids(rs), []);
     expect(s.failures).toEqual([]);
-    expect(s.passedOn['perf-snapshot-5k:performance']).toEqual([
-      'chrome-stable',
+    expect(s.flaky).toEqual([
+      { key: 'perf-snapshot-5k:performance', targetId: 'chrome-stable' },
     ]);
+    expect(s.passedOn).toEqual({});
+  });
+
+  test('a flaky scenario over a limit is still a performance failure', () => {
+    const rs = [
+      perf('chrome-canary', 'upcoming', [160, 170, 165]),
+      perf('chrome-stable', 'stable', [100, 105, 102]),
+    ];
+    rs[0].checks['perf-snapshot-5k'].status = 'flaky';
+    const s = collectFailures(rs, ids(rs), []);
+    expect(s.failures.map((f) => f.key)).toEqual([
+      'perf-snapshot-5k:performance',
+    ]);
+    expect(s.flaky).toEqual([]);
   });
 
   test('status fail is a performance failure with its message', () => {

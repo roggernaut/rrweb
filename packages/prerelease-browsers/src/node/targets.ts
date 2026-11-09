@@ -19,7 +19,7 @@ export interface TargetDefinition {
   checks: 'all' | 'focused' | 'functional-privacy';
   perf: 'compare' | 'ceiling-only' | 'none';
   perfSamples: number; // 5 on GitHub, 3 on BrowserStack
-  timeScale: number; // multiplies every timeout: 1 GitHub, 5 BrowserStack
+  timeScale: number; // multiplies every timeout: 1 GitHub, 3 BrowserStack, 4 Android emulator
   ceilingMs?: number;
   /**
    * How each check's page reaches the browser. 'html' (the default) writes
@@ -265,9 +265,10 @@ export const githubTargets: TargetDefinition[] = [
     perf: 'none',
     // Fenix hangs on a large page written into a blank one, but loads the
     // same page from the fixture server, which adb reverse maps into the
-    // emulator. The emulator is slow, so its timeouts are doubled.
+    // emulator. The emulator is slow and has no per-attempt timings yet, so
+    // it keeps a 120 s limit per check.
     loadVia: 'http',
-    timeScale: 2,
+    timeScale: 4,
     connect: () =>
       connectDriver({
         cmd: installed('GECKODRIVER'),

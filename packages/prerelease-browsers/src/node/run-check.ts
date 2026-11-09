@@ -66,15 +66,25 @@ const checkHttpLoad = `(() => {
 })()`;
 
 const timedOut = /^timed out after \d+ ms$/;
+/** How Playwright and WebDriver say the browser session has gone away. */
+const closedSession =
+  /Target page, context or browser has been closed|invalid session id|Session not started or terminated/i;
+
+/** True for a failed attempt that lost its browser session. */
+export function isSessionClosed(result: AttemptResult): boolean {
+  return !result.ok && closedSession.test(result.message ?? '');
+}
 
 /**
- * True for a failed attempt that says nothing about rrweb: it timed out, or
- * the driver mangled the page protocol.
+ * True for a failed attempt that says nothing about rrweb: it timed out, the
+ * driver mangled the page protocol, or the browser session went away.
  */
 export function isProtocolFailure(result: AttemptResult): boolean {
   return (
     !result.ok &&
-    (result.message === malformedPoll || timedOut.test(result.message ?? ''))
+    (result.message === malformedPoll ||
+      timedOut.test(result.message ?? '') ||
+      isSessionClosed(result))
   );
 }
 
@@ -176,7 +186,9 @@ export async function runAttempt(
 }
 
 export function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+  const message = err instanceof Error ? err.message : String(err);
+  // Playwright prefixes the same closed-page error again on every call.
+  return message.replace(/^([\w.]+: )\1+/, '$1');
 }
 
 const pastDeadline = (deadline?: Date) =>
@@ -214,10 +226,11 @@ export async function runWithRetry(
 
 /**
  * Takes `samples` samples of one performance scenario, each on a fresh page.
- * There is no retry rule: the scenario fails only when two samples error (or
- * its single sample does), and otherwise passes with every sample, leaving
- * the limits to the report. No sample starts once `deadline` has passed; a
- * scenario stopped that way is `not-run`, keeping the samples it took.
+ * There is no retry rule: the scenario fails when two samples error (or its
+ * single sample does), is flaky when one of several does, and otherwise
+ * passes, leaving the limits to the report. No sample starts once `deadline`
+ * has passed; a scenario stopped that way is `not-run`, keeping the samples
+ * it took.
  */
 export async function runScenario(
   driver: PageDriver,
@@ -237,6 +250,7 @@ export async function runScenario(
     attempts: 0,
     samples: [],
     compare: meta.compare ?? ['durationMs'],
+    attemptMs: [],
   };
   const samples = outcome.samples!;
   const errorLimit = Math.min(2, opts.samples);
@@ -246,6 +260,7 @@ export async function runScenario(
       outcome.status = 'not-run';
       break;
     }
+    const startedAt = Date.now();
     const result = await runAttempt(driver, meta, src, {
       timeoutMs: opts.timeoutMs,
       scale: opts.scale,
@@ -254,6 +269,7 @@ export async function runScenario(
       if (err instanceof RealmReuseError) throw err;
       return { ok: false, message: errorMessage(err) };
     });
+    outcome.attemptMs!.push(Date.now() - startedAt);
     outcome.attempts++;
     opts.onAttempt?.(result);
     if (result.skipped !== undefined && outcome.attempts === 1) {
@@ -271,5 +287,6 @@ export async function runScenario(
       break;
     }
   }
+  if (errors > 0 && outcome.status === 'pass') outcome.status = 'flaky';
   return outcome;
 }

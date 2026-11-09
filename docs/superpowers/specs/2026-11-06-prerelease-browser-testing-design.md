@@ -171,6 +171,16 @@ points at rrweb or the test rather than the browser.
    at least two times out of three.
 4. Collect every job's results and update GitHub issues in one final step.
 
+Each attempt has a time limit: 30 seconds for a check and 60 for a performance
+scenario, tripled on BrowserStack. In timed runs on 2026-11-09 the slowest
+attempt off BrowserStack took 3.8 seconds, and the slowest on BrowserStack took
+31 seconds, a one-off stall on an iPhone that usually takes 5. The Android
+emulator keeps 120 seconds per check until it has per-attempt timings.
+
+A performance scenario with one errored sample is flaky: it is listed in the
+status issue and closes nothing. Two errored samples fail it. A browser session
+that closes and stays gone leaves that target incomplete and blames no check.
+
 A run heading past two hours stops starting new work and reports itself as
 incomplete. A partial run never looks like a pass.
 

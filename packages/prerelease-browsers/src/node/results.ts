@@ -11,6 +11,8 @@ export interface CheckOutcome {
   status: CheckStatus;
   message?: string; // from the last failing attempt
   attempts: number;
+  /** How long each attempt or sample took, in run order. */
+  attemptMs?: number[];
   samples?: PerfSample[]; // performance only
   compare?: Array<'durationMs' | 'maxBlockMs' | 'heapDeltaBytes'>; // performance only
   ceilingMs?: number; // performance only: the scenario's own ceiling, when it has one, at least the target's
@@ -48,7 +50,7 @@ export interface TargetResult {
   finishedAt: string;
   incomplete: boolean; // true when something stopped work early
   incompleteReason?: IncompleteReason;
-  trippedBy?: string[]; // the checks in a row that timed out or garbled the protocol, when that stopped the target
+  trippedBy?: string[]; // the checks in a row that timed out, garbled the protocol or lost the session, when that stopped the target
   sessionUrl?: string;
   checks: Record<string, CheckOutcome>;
 }

@@ -769,7 +769,8 @@ export function toTarget(
     perf: spec.perf,
     ...(spec.ceilingMs === undefined ? {} : { ceilingMs: spec.ceilingMs }),
     perfSamples: 3,
-    timeScale: 5,
+    // An iPhone takes about 5 s an attempt and once stalled for 31 s.
+    timeScale: 3,
     async connect() {
       const creds = credentialsFromEnv();
       const { timeoutMs, capped } = connectTimeoutFor(run.deadline);

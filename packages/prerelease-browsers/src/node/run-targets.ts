@@ -18,6 +18,7 @@ import {
   DeadlineReached,
   errorMessage,
   isProtocolFailure,
+  isSessionClosed,
   runAttempt,
   runScenario,
   runWithRetry,
@@ -31,8 +32,11 @@ import type { TargetDefinition } from './targets.ts';
  */
 const brokenChecksLimit = 2;
 
-const functionalTimeoutMs = 60_000;
-const performanceTimeoutMs = 180_000;
+// From timed runs on 2026-11-09: off BrowserStack the slowest attempt took
+// 1.9 s for a check and 3.8 s for a scenario. A scenario gets more room so
+// that one ten times slower still reports a number, not a timeout.
+const functionalTimeoutMs = 30_000;
+const performanceTimeoutMs = 60_000;
 /** For the driver probe, which settles at once on a working driver. */
 const probeTimeoutMs = 30_000;
 
@@ -207,7 +211,7 @@ export async function runTarget(
         stopHere('fresh window unavailable');
         break;
       }
-      const { outcome, broken } = checked;
+      const { outcome, broken, sessionClosed } = checked;
       result.checks[meta.id] = outcome;
       await checkpoint();
       // runCheck leaves a check not-run only at the deadline.
@@ -218,11 +222,14 @@ export async function runTarget(
       // A skip never touched the browser, so it says nothing either way.
       if (outcome.status === 'skipped') continue;
       brokenInARow = broken ? [...brokenInARow, [meta.id, outcome]] : [];
-      if (brokenInARow.length >= brokenChecksLimit) {
-        result.trippedBy = brokenInARow.map(([id]) => id);
+      const breakerTripped = brokenInARow.length >= brokenChecksLimit;
+      // A lost session need not wait for a second check: it may be the last.
+      if (breakerTripped || sessionClosed) {
+        const trippedBy = brokenInARow.map(([id]) => id);
         // Past the deadline no probe starts, and without it nothing tells a
         // broken driver from a hang: blame neither check.
         if (Date.now() >= opts.deadline.getTime()) {
+          result.trippedBy = trippedBy;
           for (const [, tripped] of brokenInARow) tripped.status = 'not-run';
           stopHere('deadline');
           break;
@@ -230,6 +237,10 @@ export async function runTarget(
         // A page that loads and waits for frames, recording nothing, settles
         // on a working driver.
         const probe = await probeDriver(src);
+        // Only the page went away, and the browser is still there: rrweb may
+        // have crashed it, so the check stays failed and the run goes on.
+        if (probe === 'works' && !breakerTripped) continue;
+        result.trippedBy = trippedBy;
         if (probe === 'works') {
           // Then rrweb hangs: the tripping checks failed, and alert. Every
           // further check would likely hang too and only burn its timeouts.
@@ -281,16 +292,24 @@ export async function runTarget(
   async function runCheck(
     meta: CheckMeta,
     src: PageSource,
-  ): Promise<{ outcome: CheckOutcome; broken: boolean }> {
+  ): Promise<{
+    outcome: CheckOutcome;
+    broken: boolean;
+    sessionClosed: boolean;
+  }> {
     const timeoutMs = attemptTimeoutMs(meta.kind) * t.timeScale;
-    /** A failed check whose failures all came from the driver, not rrweb. */
-    const brokenBy = (outcome: CheckOutcome, attempts: AttemptResult[]) => {
+    /** Pairs `outcome` with whether its failures all came from the driver. */
+    const judged = (outcome: CheckOutcome, attempts: AttemptResult[]) => {
       const failed = attempts.filter((a) => !a.ok);
-      return (
+      const broken =
         outcome.status === 'fail' &&
         failed.length > 0 &&
-        failed.every(isProtocolFailure)
-      );
+        failed.every(isProtocolFailure);
+      return {
+        outcome,
+        broken,
+        sessionClosed: broken && failed.some(isSessionClosed),
+      };
     };
     if (meta.kind === 'performance') {
       const samples: AttemptResult[] = [];
@@ -303,24 +322,27 @@ export async function runTarget(
       if (meta.ceilingMs !== undefined) {
         outcome.ceilingMs = Math.max(result.ceilingMs, meta.ceilingMs);
       }
-      return { outcome, broken: brokenBy(outcome, samples) };
+      return judged(outcome, samples);
     }
-    const { status, attempts } = await runWithRetry(
-      () =>
-        runAttempt(driver, meta, src, { timeoutMs }).catch(
-          (err): AttemptResult => {
-            if (err instanceof RealmReuseError) throw err;
-            return { ok: false, message: errorMessage(err) };
-          },
-        ),
-      opts.deadline,
-    );
+    const attemptMs: number[] = [];
+    const { status, attempts } = await runWithRetry(async () => {
+      const startedAt = Date.now();
+      const attempt = await runAttempt(driver, meta, src, { timeoutMs }).catch(
+        (err): AttemptResult => {
+          if (err instanceof RealmReuseError) throw err;
+          return { ok: false, message: errorMessage(err) };
+        },
+      );
+      attemptMs.push(Date.now() - startedAt);
+      return attempt;
+    }, opts.deadline);
     const failed = attempts.filter((a) => !a.ok);
     const lastFailure = failed.at(-1);
     const outcome: CheckOutcome = {
       kind: failedAs(meta.kind, status, failed),
       status,
       attempts: attempts.length,
+      attemptMs,
     };
     if (lastFailure?.message !== undefined)
       outcome.message = lastFailure.message;
@@ -331,7 +353,7 @@ export async function runTarget(
       await mkdir(dirname(file), { recursive: true });
       await writeFile(file, JSON.stringify(lastFailure.events));
     }
-    return { outcome, broken: brokenBy(outcome, attempts) };
+    return judged(outcome, attempts);
   }
 }
 

@@ -23,7 +23,7 @@ import {
 } from '../src/node/targets.ts';
 import { findFenixNightlyApk } from '../src/node/install.ts';
 import type { AttemptResult } from '../src/types.ts';
-import { scriptedDriver } from './fake-driver.ts';
+import { scriptedDriver, untimed } from './fake-driver.ts';
 
 /** The results written so far, read synchronously from inside a page load. */
 function readdirResults(dir: string): TargetResult[] {
@@ -84,7 +84,7 @@ test('a connect cut off by the deadline is incomplete, not a launch failure', as
   expect(r.launch).toEqual({ ok: true });
   expect(r.incomplete).toBe(true);
   expect(r.incompleteReason).toBe('deadline');
-  expect(r.checks).toEqual({
+  expect(untimed(r.checks)).toEqual({
     'snapshot-basic': { kind: 'functional', status: 'not-run', attempts: 0 },
     'shadow-dom-open': { kind: 'functional', status: 'not-run', attempts: 0 },
   });
@@ -121,7 +121,7 @@ test('two checks in a row with a broken protocol stop the target and blame neith
   expect(driver.loads).toBe(5);
   // The checks that tripped the breaker keep what they took, for the status
   // issue, but are not failures: the driver broke, not rrweb.
-  expect(r.checks).toEqual({
+  expect(untimed(r.checks)).toEqual({
     'snapshot-basic': {
       kind: 'functional',
       status: 'not-run',
@@ -160,8 +160,8 @@ test('two checks in a row that time out, and a probe that hangs too, stop the ta
   const r = await runTarget(
     {
       ...findTarget('local-chromium'),
-      // 60 ms attempts instead of 60 s.
-      timeScale: 0.001,
+      // 60 ms attempts instead of 30 s.
+      timeScale: 0.002,
       connect: async () => driver,
     },
     {
@@ -171,7 +171,7 @@ test('two checks in a row that time out, and a probe that hangs too, stop the ta
       only: ['snapshot-basic', 'shadow-dom-open', 'iframe-same-origin'],
     },
   );
-  expect(Object.values(r.checks)).toEqual([
+  expect(Object.values(untimed(r.checks))).toEqual([
     {
       kind: 'functional',
       status: 'not-run',
@@ -193,6 +193,158 @@ test('two checks in a row that time out, and a probe that hangs too, stop the ta
   expect(r.trippedBy).toEqual(['snapshot-basic', 'shadow-dom-open']);
   expect(collectFailures([r], [r.targetId], []).failures).toEqual([]);
   expect(await readResults(tmp)).toEqual([r]);
+});
+
+test('each attempt records how long it took, and a timed-out one its limit', async () => {
+  const driver = scriptedDriver(() => ({ ok: true }));
+  const inner = driver.evaluate;
+  driver.evaluate = async <T>(expression: string): Promise<T> =>
+    expression === '__prerelease.poll()'
+      ? ({ state: 'running' } as T)
+      : inner<T>(expression);
+  const r = await runTarget(
+    {
+      ...findTarget('local-chromium'),
+      timeScale: 0.002,
+      connect: async () => driver,
+    },
+    {
+      resultsDir: tmp,
+      deadline: future,
+      rrwebCommit: 'abc',
+      only: ['snapshot-basic'],
+    },
+  );
+  const attemptMs = r.checks['snapshot-basic'].attemptMs!;
+  expect(attemptMs).toHaveLength(2);
+  for (const ms of attemptMs) expect(ms).toBeGreaterThanOrEqual(58);
+});
+
+test('a performance scenario gets twice the time of a check', async () => {
+  const driver = scriptedDriver(() => ({ ok: true }));
+  const inner = driver.evaluate;
+  driver.evaluate = async <T>(expression: string): Promise<T> =>
+    expression === '__prerelease.poll()'
+      ? ({ state: 'running' } as T)
+      : inner<T>(expression);
+  const r = await runTarget(
+    {
+      ...findTarget('local-chromium'),
+      timeScale: 0.002,
+      connect: async () => driver,
+    },
+    {
+      resultsDir: tmp,
+      deadline: future,
+      rrwebCommit: 'abc',
+      only: ['perf-snapshot-5k'],
+    },
+  );
+  expect(r.checks['perf-snapshot-5k']).toMatchObject({
+    status: 'fail',
+    attempts: 2,
+    message: 'timed out after 120 ms',
+  });
+});
+
+describe('a closed browser session', () => {
+  const closed = 'page.goto: Target page, context or browser has been closed';
+  const only = ['snapshot-basic', 'shadow-dom-open', 'iframe-same-origin'];
+  /** A driver whose nth page load rejects when `lost(n)`; the probe counts. */
+  function closingDriver(lost: (load: number) => boolean) {
+    const driver = scriptedDriver(() => ({ ok: true }));
+    const inner = driver.loadHtml;
+    let loads = 0;
+    driver.loadHtml = async (html) => {
+      if (lost(++loads)) throw new Error(closed);
+      return inner(html);
+    };
+    return driver;
+  }
+
+  test('is not a failure: the check is not-run and the target incomplete', async () => {
+    const r = await runTarget(
+      {
+        ...findTarget('local-chromium'),
+        connect: async () => closingDriver((n) => n >= 2),
+      },
+      { resultsDir: tmp, deadline: future, rrwebCommit: 'abc', only },
+    );
+    expect(Object.values(r.checks).map((c) => c.status)).toEqual([
+      'pass',
+      'not-run',
+      'not-run',
+    ]);
+    expect(r.checks['shadow-dom-open'].message).toBe(closed);
+    expect(r.incomplete).toBe(true);
+    expect(r.incompleteReason).toBe('protocol broken');
+    expect(r.trippedBy).toEqual(['shadow-dom-open']);
+    expect(collectFailures([r], [r.targetId], []).failures).toEqual([]);
+  });
+
+  test('on the last check still blames nothing', async () => {
+    const r = await runTarget(
+      {
+        ...findTarget('local-chromium'),
+        connect: async () => closingDriver((n) => n >= 3),
+      },
+      { resultsDir: tmp, deadline: future, rrwebCommit: 'abc', only },
+    );
+    expect(Object.values(r.checks).map((c) => c.status)).toEqual([
+      'pass',
+      'pass',
+      'not-run',
+    ]);
+    expect(r.incompleteReason).toBe('protocol broken');
+  });
+
+  test('among other failures stays a failure and starts no probe', async () => {
+    // A check that also failed on its own says something about rrweb. Loads
+    // 2 and 3 lose the page: a probe would be load 3 and stop the target.
+    const driver = closingDriver((n) => n === 2 || n === 3);
+    const inner = driver.evaluate;
+    let polls = 0;
+    driver.evaluate = async <T>(expression: string): Promise<T> =>
+      expression === '__prerelease.poll()' && ++polls === 1
+        ? ({ state: 'error', error: 'boom' } as T)
+        : inner<T>(expression);
+    const r = await runTarget(
+      { ...findTarget('local-chromium'), connect: async () => driver },
+      {
+        resultsDir: tmp,
+        deadline: future,
+        rrwebCommit: 'abc',
+        only: only.slice(0, 2),
+      },
+    );
+    expect(Object.values(r.checks).map((c) => c.status)).toEqual([
+      'fail',
+      'flaky',
+    ]);
+    expect(r.incomplete).toBe(false);
+  });
+
+  test('with the browser still there stays a failure and the run goes on', async () => {
+    // Both attempts of the first check lose the page; the probe's load works.
+    const r = await runTarget(
+      {
+        ...findTarget('local-chromium'),
+        connect: async () => closingDriver((n) => n <= 2),
+      },
+      {
+        resultsDir: tmp,
+        deadline: future,
+        rrwebCommit: 'abc',
+        only: only.slice(0, 2),
+      },
+    );
+    expect(Object.values(r.checks).map((c) => c.status)).toEqual([
+      'fail',
+      'pass',
+    ]);
+    expect(r.incomplete).toBe(false);
+    expect(r.trippedBy).toBeUndefined();
+  });
 });
 
 /**
@@ -242,7 +394,7 @@ describe('a consistent rrweb hang on a working driver', () => {
         r = await runTarget(
           {
             ...findTarget('local-chromium'),
-            timeScale: 0.001,
+            timeScale: 0.002,
             loadVia,
             connect: async () => driver,
           },
@@ -261,7 +413,7 @@ describe('a consistent rrweb hang on a working driver', () => {
         'shadow-dom-open',
         driverProbe.id,
       ]);
-      expect(r.checks).toEqual({
+      expect(untimed(r.checks)).toEqual({
         'snapshot-basic': timedOut,
         'shadow-dom-open': timedOut,
         'iframe-same-origin': {
@@ -291,7 +443,7 @@ describe('a consistent rrweb hang on a working driver', () => {
     const r = await runTarget(
       {
         ...findTarget('local-chromium'),
-        timeScale: 0.001,
+        timeScale: 0.002,
         connect: async () => driver,
       },
       { resultsDir: tmp, deadline, rrwebCommit: 'abc', only },
@@ -300,7 +452,7 @@ describe('a consistent rrweb hang on a working driver', () => {
     expect(driver.loads).toBe(4);
     // Without the probe nothing tells a broken driver from a hang, so
     // neither check is blamed.
-    expect(r.checks).toEqual({
+    expect(untimed(r.checks)).toEqual({
       'snapshot-basic': { ...timedOut, status: 'not-run' },
       'shadow-dom-open': { ...timedOut, status: 'not-run' },
       'iframe-same-origin': {
@@ -329,12 +481,12 @@ describe('a consistent rrweb hang on a working driver', () => {
     const r = await runTarget(
       {
         ...findTarget('local-chromium'),
-        timeScale: 0.001,
+        timeScale: 0.002,
         connect: async () => driver,
       },
       { resultsDir: tmp, deadline: future, rrwebCommit: 'abc', only },
     );
-    expect(r.checks).toEqual({
+    expect(untimed(r.checks)).toEqual({
       'snapshot-basic': { ...timedOut, status: 'not-run' },
       'shadow-dom-open': { ...timedOut, status: 'not-run' },
       'iframe-same-origin': {
@@ -384,7 +536,7 @@ describe('a driver that cannot give a page a fresh Window', () => {
       },
     );
     expect(driver.loads).toBe(2);
-    expect(r.checks).toEqual({
+    expect(untimed(r.checks)).toEqual({
       'snapshot-basic': { kind: 'functional', status: 'pass', attempts: 1 },
       'shadow-dom-open': { kind: 'functional', status: 'not-run', attempts: 0 },
       'iframe-same-origin': {
@@ -459,7 +611,7 @@ test('a launch failure is recorded, not thrown', async () => {
     ok: false,
     error: expect.stringContaining('no binary'),
   });
-  expect(r.checks).toEqual({});
+  expect(untimed(r.checks)).toEqual({});
   expect(await readResults(tmp)).toHaveLength(1);
 });
 
@@ -687,7 +839,7 @@ test('an http load that keeps the previous Window stops the target cleanly', asy
         only: ['snapshot-basic', 'shadow-dom-open'],
       },
     );
-    expect(r.checks).toEqual({
+    expect(untimed(r.checks)).toEqual({
       'snapshot-basic': { kind: 'functional', status: 'pass', attempts: 1 },
       'shadow-dom-open': { kind: 'functional', status: 'not-run', attempts: 0 },
     });
@@ -723,7 +875,7 @@ test('an http target whose driver cannot reach this machine fails at launch', as
     ok: false,
     error: expect.stringMatching(/loads checks over http.*cannot reach/),
   });
-  expect(r.checks).toEqual({});
+  expect(untimed(r.checks)).toEqual({});
   expect(closed).toBe(true);
   expect(await readResults(tmp)).toEqual([r]);
 });
@@ -755,7 +907,7 @@ test('a deadline passing during an attempt stops its retries and the run', async
     },
   );
   expect(driver.loads).toBe(1);
-  expect(r.checks['snapshot-basic']).toEqual({
+  expect(untimed(r.checks)['snapshot-basic']).toEqual({
     kind: 'functional',
     status: 'not-run',
     attempts: 1,
@@ -881,7 +1033,7 @@ describe('a privacy check whose public control went missing', () => {
 
   test('fails as a functional check', async () => {
     const r = await run(() => missing);
-    expect(r.checks['privacy-mask-all-inputs']).toEqual({
+    expect(untimed(r.checks)['privacy-mask-all-inputs']).toEqual({
       kind: 'functional',
       status: 'fail',
       attempts: 2,
@@ -956,7 +1108,7 @@ describe('GitHub-runner targets', () => {
     for (const t of githubTargets) {
       expect([t.id, t.timeScale, t.perfSamples, t.loadVia]).toEqual([
         t.id,
-        android(t.id) ? 2 : 1,
+        android(t.id) ? 4 : 1,
         5,
         android(t.id) ? 'http' : undefined,
       ]);

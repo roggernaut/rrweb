@@ -11,6 +11,7 @@ import { readResults } from '../src/node/results.ts';
 import { collectFailures } from '../src/report/failures.ts';
 import { runTarget } from '../src/node/run-targets.ts';
 import { findTarget } from '../src/node/targets.ts';
+import { untimed } from './fake-driver.ts';
 
 let tmp: string;
 const future = new Date(Date.now() + 60 * 60 * 1000);
@@ -163,8 +164,8 @@ test('a browser that renders no frames is a broken driver, not an rrweb hang', a
   const r = await runTarget(
     {
       ...findTarget('local-chromium'),
-      // 3 s checks and a 1.5 s probe.
-      timeScale: 0.05,
+      // 3 s checks and a 3 s probe.
+      timeScale: 0.1,
       connect: async () => driver,
     },
     {
@@ -180,7 +181,7 @@ test('a browser that renders no frames is a broken driver, not an rrweb hang', a
     attempts: 2,
     message: 'timed out after 3000 ms',
   };
-  expect(r.checks).toEqual({
+  expect(untimed(r.checks)).toEqual({
     'snapshot-basic': timedOut,
     'shadow-dom-open': timedOut,
     'iframe-same-origin': {
@@ -190,5 +191,37 @@ test('a browser that renders no frames is a broken driver, not an rrweb hang', a
     },
   });
   expect(r.incompleteReason).toBe('protocol broken');
+  expect(collectFailures([r], [r.targetId], []).failures).toEqual([]);
+}, 60_000);
+
+test('a browser that goes away mid-run blames no check', async () => {
+  const driver = await launchPlaywright({ engine: 'chromium' });
+  const inner = driver.loadHtml.bind(driver);
+  let loads = 0;
+  const r = await runTarget(
+    {
+      ...findTarget('local-chromium'),
+      connect: async () => ({
+        ...driver,
+        loadHtml: async (html) => {
+          if (++loads === 2) await driver.close();
+          return inner(html);
+        },
+      }),
+    },
+    {
+      resultsDir: tmp,
+      deadline: new Date(Date.now() + 60_000),
+      rrwebCommit: 'abc',
+      only: ['snapshot-basic', 'shadow-dom-open', 'iframe-same-origin'],
+    },
+  );
+  expect(Object.values(r.checks).map((c) => c.status)).toEqual([
+    'pass',
+    'not-run',
+    'not-run',
+  ]);
+  expect(r.incompleteReason).toBe('protocol broken');
+  expect(r.checks['shadow-dom-open'].message).toMatch(/has been closed/);
   expect(collectFailures([r], [r.targetId], []).failures).toEqual([]);
 }, 60_000);
