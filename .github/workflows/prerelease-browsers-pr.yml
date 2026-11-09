@@ -1,0 +1,370 @@
+# Runs the focused pre-release checks on stable browsers for every pull
+# request that touches recording code. Each target runs twice on one runner,
+# once with the pull request's rrweb and once with the base branch's, and the
+# pull request fails only for checks that fail with its rrweb alone. Adding
+# the `safari` label also runs Safari on macOS. It opens no issues and uses
+# no secrets. packages/prerelease-browsers/README.md ("Per-PR runs") explains
+# how to read and reproduce what it finds.
+name: Pre-release browsers (pull request)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+    paths:
+      - 'packages/rrweb/**'
+      - 'packages/rrweb-snapshot/**'
+      - 'packages/rrdom/**'
+      - 'packages/types/**'
+      - 'packages/utils/**'
+      - 'packages/prerelease-browsers/**'
+      - '.github/workflows/prerelease-browsers-pr.yml'
+
+concurrency:
+  group: prerelease-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build rrweb from the pull request
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: 'yarn'
+
+      # A registry hiccup (a 503) should not cost the job: retry with a
+      # short back-off. Every job's install step does the same.
+      - name: Install Dependencies
+        id: install
+        run: |
+          for attempt in 1 2 3; do
+            if yarn install --frozen-lockfile; then exit 0; fi
+            echo "::warning::yarn install failed (attempt $attempt of 3)"
+            if [ "$attempt" -lt 3 ]; then sleep $((attempt * 20)); fi
+          done
+          exit 1
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: true
+
+      - name: Build rrweb
+        run: NODE_OPTIONS='--max-old-space-size=4096' yarn turbo run prepublish --filter=rrweb
+
+      - name: Upload the rrweb build
+        uses: actions/upload-artifact@v7
+        with:
+          name: rrweb-dist-pr
+          path: packages/rrweb/dist
+          if-no-files-found: error
+          overwrite: true
+
+  # The base build is the first parent of the merge commit that `build`
+  # checks out, so the two differ by exactly the pull request's changes.
+  build-base:
+    name: Build rrweb from the base branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      sha: ${{ steps.base.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Check out the merge commit's first parent
+        id: base
+        run: |
+          set -euo pipefail
+          git checkout HEAD^1
+          echo "sha=$(git rev-parse HEAD)" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: 'yarn'
+
+      - name: Install Dependencies
+        id: install
+        run: |
+          for attempt in 1 2 3; do
+            if yarn install --frozen-lockfile; then exit 0; fi
+            echo "::warning::yarn install failed (attempt $attempt of 3)"
+            if [ "$attempt" -lt 3 ]; then sleep $((attempt * 20)); fi
+          done
+          exit 1
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: true
+
+      - name: Build rrweb
+        run: NODE_OPTIONS='--max-old-space-size=4096' yarn turbo run prepublish --filter=rrweb
+
+      - name: Upload the rrweb build
+        uses: actions/upload-artifact@v7
+        with:
+          name: rrweb-dist-base
+          path: packages/rrweb/dist
+          if-no-files-found: error
+          overwrite: true
+
+  # The package's own browser tests, which the main CI job leaves out. The
+  # summary job does not wait for this one: its result is its own status.
+  package-tests:
+    name: Pre-release browsers package tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: 'yarn'
+
+      - name: Install Dependencies
+        id: install
+        run: |
+          for attempt in 1 2 3; do
+            if yarn install --frozen-lockfile; then exit 0; fi
+            echo "::warning::yarn install failed (attempt $attempt of 3)"
+            if [ "$attempt" -lt 3 ]; then sleep $((attempt * 20)); fi
+          done
+          exit 1
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: true
+
+      - name: Build rrweb
+        run: NODE_OPTIONS='--max-old-space-size=4096' yarn turbo run prepublish --filter=rrweb
+
+      # WebKit is for the single-tab driver test in playwright.browser.test.ts.
+      # Firefox and WebKit are for the masking-off gate in counterfeits.browser.test.ts.
+      - name: Install Playwright's browsers
+        working-directory: packages/prerelease-browsers
+        run: npx playwright install --with-deps chromium firefox webkit
+
+      - name: Run the browser tests
+        run: xvfb-run --server-args="-screen 0 1920x1080x24" yarn workspace @rrweb/prerelease-browsers test:browser
+
+  linux:
+    name: Linux ${{ matrix.target }}
+    needs: [build, build-base]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # The summary job lists these targets again in its expected ids.
+        target: [chrome-stable, edge-stable, firefox-stable, local-webkit]
+    env:
+      T: ${{ matrix.target }}
+      BASE_SHA: ${{ needs.build-base.outputs.sha }}
+    steps:
+      # Measured from the start of the job, so both roles finish inside its
+      # 30 minutes with time left to upload the results.
+      - name: Set the deadline
+        run: echo "PRERELEASE_DEADLINE=$(date -u -d '+25 minutes' +%FT%TZ)" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: 'yarn'
+
+      - name: Install Dependencies
+        id: install
+        run: |
+          for attempt in 1 2 3; do
+            if yarn install --frozen-lockfile; then exit 0; fi
+            echo "::warning::yarn install failed (attempt $attempt of 3)"
+            if [ "$attempt" -lt 3 ]; then sleep $((attempt * 20)); fi
+          done
+          exit 1
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: true
+
+      # Each role needs the install and its own rrweb build; the browser
+      # needs only the install. So each setup step is gated on what it
+      # needs, not on every step before it, and one role's failed setup
+      # cannot skip the other role.
+      - name: Download the pull request's rrweb build
+        id: dist
+        if: '!cancelled()'
+        uses: actions/download-artifact@v8
+        with:
+          name: rrweb-dist-pr
+          path: packages/rrweb/dist
+
+      - name: Download the base branch's rrweb build
+        id: base-dist
+        if: '!cancelled()'
+        uses: actions/download-artifact@v8
+        with:
+          name: rrweb-dist-base
+          path: ${{ runner.temp }}/base-dist
+
+      - name: Install ${{ matrix.target }}
+        id: browser
+        if: "!cancelled() && steps.install.outcome == 'success'"
+        working-directory: packages/prerelease-browsers
+        run: |
+          set -euo pipefail
+          if [ "$T" = local-webkit ]; then
+            npx playwright install --with-deps webkit
+          else
+            node src/node/install.ts "$T" "$RUNNER_TEMP/browsers" >> "$GITHUB_ENV"
+          fi
+
+      # Each role runs once its own setup is good, whatever the other role
+      # did. A role that never ran shows as a missing target.
+      - name: Run ${{ matrix.target }} with the pull request's rrweb
+        if: "!cancelled() && steps.install.outcome == 'success' && steps.dist.outcome == 'success' && steps.browser.outcome == 'success'"
+        run: xvfb-run --server-args="-screen 0 1920x1080x24" yarn workspace @rrweb/prerelease-browsers run-target --target "$T" --pr-role pr --deadline "$PRERELEASE_DEADLINE"
+
+      - name: Run ${{ matrix.target }} with the base branch's rrweb
+        if: "!cancelled() && steps.install.outcome == 'success' && steps.base-dist.outcome == 'success' && steps.browser.outcome == 'success'"
+        run: xvfb-run --server-args="-screen 0 1920x1080x24" yarn workspace @rrweb/prerelease-browsers run-target --target "$T" --pr-role base --rrweb-dist "$RUNNER_TEMP/base-dist" --rrweb-commit "$BASE_SHA" --deadline "$PRERELEASE_DEADLINE"
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pr-results-${{ matrix.target }}
+          path: packages/prerelease-browsers/results
+          overwrite: true
+
+  safari:
+    name: macOS safari-stable
+    needs: [build, build-base]
+    if: contains(github.event.pull_request.labels.*.name, 'safari')
+    runs-on: macos-26
+    timeout-minutes: 30
+    env:
+      BASE_SHA: ${{ needs.build-base.outputs.sha }}
+    steps:
+      - name: Set the deadline
+        run: echo "PRERELEASE_DEADLINE=$(date -u -v+25M +%FT%TZ)" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: 'yarn'
+
+      - name: Install Dependencies
+        id: install
+        run: |
+          for attempt in 1 2 3; do
+            if yarn install --frozen-lockfile; then exit 0; fi
+            echo "::warning::yarn install failed (attempt $attempt of 3)"
+            if [ "$attempt" -lt 3 ]; then sleep $((attempt * 20)); fi
+          done
+          exit 1
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: true
+
+      # Each role needs the install and its own rrweb build; the browser
+      # needs only the install. So each setup step is gated on what it
+      # needs, not on every step before it, and one role's failed setup
+      # cannot skip the other role.
+      - name: Download the pull request's rrweb build
+        id: dist
+        if: '!cancelled()'
+        uses: actions/download-artifact@v8
+        with:
+          name: rrweb-dist-pr
+          path: packages/rrweb/dist
+
+      - name: Download the base branch's rrweb build
+        id: base-dist
+        if: '!cancelled()'
+        uses: actions/download-artifact@v8
+        with:
+          name: rrweb-dist-base
+          path: ${{ runner.temp }}/base-dist
+
+      - name: Enable Safari's driver
+        if: "!cancelled() && steps.install.outcome == 'success'"
+        run: sudo safaridriver --enable
+
+      # Each role runs once its own setup is good, whatever the other role
+      # did. A role that never ran shows as a missing target.
+      - name: Run safari-stable with the pull request's rrweb
+        if: "!cancelled() && steps.install.outcome == 'success' && steps.dist.outcome == 'success'"
+        run: yarn workspace @rrweb/prerelease-browsers run-target --target safari-stable --pr-role pr --deadline "$PRERELEASE_DEADLINE"
+
+      - name: Run safari-stable with the base branch's rrweb
+        if: "!cancelled() && steps.install.outcome == 'success' && steps.base-dist.outcome == 'success'"
+        run: yarn workspace @rrweb/prerelease-browsers run-target --target safari-stable --pr-role base --rrweb-dist "$RUNNER_TEMP/base-dist" --rrweb-commit "$BASE_SHA" --deadline "$PRERELEASE_DEADLINE"
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pr-results-safari-stable
+          path: packages/prerelease-browsers/results
+          overwrite: true
+
+  # The job a branch rule can require; see "Per-PR runs" in the README
+  # before making it required.
+  summary:
+    name: Pre-release browsers summary
+    needs: [linux, safari]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      # A job that never uploaded shows up as missing targets, so a failed
+      # download must not stop the summary.
+      - name: Download results
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          pattern: pr-results-*
+          merge-multiple: true
+          path: packages/prerelease-browsers/results
+
+      # pr-summary.ts needs only Node's built-in modules, so no install.
+      - name: Summarize
+        working-directory: packages/prerelease-browsers
+        env:
+          SAFARI: ${{ contains(github.event.pull_request.labels.*.name, 'safari') }}
+        run: |
+          set -euo pipefail
+          expected=()
+          for id in chrome-stable edge-stable firefox-stable local-webkit; do
+            expected+=("$id@pr" "$id@base")
+          done
+          if [ "$SAFARI" = true ]; then
+            expected+=(safari-stable@pr safari-stable@base)
+          fi
+          node src/report/pr-summary.ts --results results --expected "$(IFS=,; echo "${expected[*]}")"

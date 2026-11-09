@@ -1,0 +1,501 @@
+# Runs rrweb's recorder from main against upcoming browser builds every two
+# weeks, and reports what broke as GitHub issues in this repository.
+# packages/prerelease-browsers/README.md explains how to read and act on it.
+name: Pre-release browsers
+
+on:
+  schedule:
+    # Mondays at 05:17 UTC; the gate job keeps every other week.
+    - cron: '17 5 * * 1'
+  workflow_dispatch:
+    inputs:
+      browserstack:
+        description: Also run the BrowserStack targets
+        type: boolean
+        default: false
+      targets:
+        description: Comma list of GitHub target ids to run (empty runs them all)
+        type: string
+        default: ''
+
+concurrency:
+  group: prerelease-browsers
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: Plan the run
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.plan.outputs.run }}
+      browserstack: ${{ steps.plan.outputs.browserstack }}
+      deadline: ${{ steps.plan.outputs.deadline }}
+      linux_targets: ${{ steps.plan.outputs.linux_targets }}
+      run_macos: ${{ steps.plan.outputs.run_macos }}
+      run_android: ${{ steps.plan.outputs.run_android }}
+      expected: ${{ steps.plan.outputs.expected }}
+      left_out: ${{ steps.plan.outputs.left_out }}
+    steps:
+      - name: Decide what runs
+        id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          REPOSITORY: ${{ github.repository }}
+          INPUT_BROWSERSTACK: ${{ inputs.browserstack }}
+          INPUT_TARGETS: ${{ inputs.targets }}
+        run: |
+          set -euo pipefail
+          linux_ids=(chrome-canary chrome-dev chrome-stable edge-dev edge-stable firefox-nightly firefox-stable webkit-next)
+          macos_ids=(safari-stable safari-tp)
+          android_ids=(firefox-android-nightly)
+          all_ids=("${linux_ids[@]}" "${macos_ids[@]}" "${android_ids[@]}")
+
+          if [ "$EVENT" = schedule ]; then
+            run=false
+            # Weeks since the epoch, so the rhythm holds across 53-week years.
+            if [ "$REPOSITORY" = rrweb-io/rrweb ] && [ $(( $(date -u +%s) / 604800 % 2 )) -eq 0 ]; then
+              run=true
+            fi
+            browserstack=true
+          else
+            run=true
+            browserstack=$INPUT_BROWSERSTACK
+          fi
+
+          wanted=()
+          if [ -n "${INPUT_TARGETS//[[:space:],]/}" ]; then
+            IFS=',' read -ra raw <<< "$INPUT_TARGETS"
+            for id in "${raw[@]}"; do
+              id=${id//[[:space:]]/}
+              [ -z "$id" ] && continue
+              if [[ " ${all_ids[*]} " != *" $id "* ]]; then
+                echo "::error::unknown target '$id'; GitHub targets are: ${all_ids[*]}"
+                exit 1
+              fi
+              wanted+=("$id")
+            done
+          fi
+
+          # Keeps the ids the targets input names, or every id when it is empty.
+          pick() {
+            for id in "$@"; do
+              if [ ${#wanted[@]} -eq 0 ] || [[ " ${wanted[*]} " == *" $id "* ]]; then
+                echo "$id"
+              fi
+            done
+          }
+          mapfile -t linux < <(pick "${linux_ids[@]}")
+          mapfile -t macos < <(pick "${macos_ids[@]}")
+          mapfile -t android < <(pick "${android_ids[@]}")
+          expected=("${linux[@]}" "${macos[@]}" "${android[@]}")
+
+          # What a hand-started run chose not to cover, so the status issue
+          # can say the run was partial.
+          left_out=()
+          for id in "${all_ids[@]}"; do
+            [[ " ${expected[*]} " == *" $id "* ]] || left_out+=("$id")
+          done
+          if [ "$EVENT" != schedule ] && [ "$browserstack" != true ]; then
+            left_out+=(browserstack)
+          fi
+
+          {
+            echo "run=$run"
+            echo "browserstack=$browserstack"
+            echo "deadline=$(date -u -d '+105 minutes' +%FT%TZ)"
+            echo "linux_targets=$(jq -cn '$ARGS.positional' --args "${linux[@]}")"
+            echo "run_macos=$([ ${#macos[@]} -gt 0 ] && echo true || echo false)"
+            echo "run_android=$([ ${#android[@]} -gt 0 ] && echo true || echo false)"
+            echo "expected=$(IFS=,; echo "${expected[*]}")"
+            echo "left_out=$(IFS=,; echo "${left_out[*]}")"
+          } | tee -a "$GITHUB_OUTPUT"
+
+  build:
+    name: Build rrweb
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: 'yarn'
+
+      # A registry hiccup (a 503) should not cost the job: retry with a
+      # short back-off. Every job's install step does the same.
+      - name: Install Dependencies
+        id: install
+        run: |
+          for attempt in 1 2 3; do
+            if yarn install --frozen-lockfile; then exit 0; fi
+            echo "::warning::yarn install failed (attempt $attempt of 3)"
+            if [ "$attempt" -lt 3 ]; then sleep $((attempt * 20)); fi
+          done
+          exit 1
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: true
+
+      - name: Build rrweb
+        run: NODE_OPTIONS='--max-old-space-size=4096' yarn turbo run prepublish --filter=rrweb
+
+      - name: Upload the rrweb build
+        uses: actions/upload-artifact@v7
+        with:
+          name: rrweb-dist
+          path: packages/rrweb/dist
+          if-no-files-found: error
+          overwrite: true
+
+  linux:
+    name: Linux ${{ matrix.target }}
+    needs: [gate, build]
+    if: needs.gate.outputs.run == 'true' && needs.gate.outputs.linux_targets != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.gate.outputs.linux_targets) }}
+    env:
+      PRERELEASE_DEADLINE: ${{ needs.gate.outputs.deadline }}
+      T: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: 'yarn'
+
+      - name: Install Dependencies
+        id: install
+        run: |
+          for attempt in 1 2 3; do
+            if yarn install --frozen-lockfile; then exit 0; fi
+            echo "::warning::yarn install failed (attempt $attempt of 3)"
+            if [ "$attempt" -lt 3 ]; then sleep $((attempt * 20)); fi
+          done
+          exit 1
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: true
+
+      - name: Download the rrweb build
+        id: dist
+        uses: actions/download-artifact@v8
+        with:
+          name: rrweb-dist
+          path: packages/rrweb/dist
+
+      - name: Install ${{ matrix.target }}
+        id: browser
+        working-directory: packages/prerelease-browsers
+        run: node src/node/install.ts "$T" "$RUNNER_TEMP/browsers" >> "$GITHUB_ENV"
+
+      # Only after a good setup: without it the run would crash, not report.
+      # A target that never ran leaves no results file and shows as missing.
+      - name: Run ${{ matrix.target }}
+        if: "!cancelled() && steps.install.outcome == 'success' && steps.dist.outcome == 'success' && steps.browser.outcome == 'success'"
+        run: xvfb-run --server-args="-screen 0 1920x1080x24" yarn workspace @rrweb/prerelease-browsers run-target --target "$T" --deadline "$PRERELEASE_DEADLINE"
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: results-${{ matrix.target }}
+          path: packages/prerelease-browsers/results
+          overwrite: true
+
+  macos:
+    name: macOS Safari
+    needs: [gate, build]
+    if: needs.gate.outputs.run == 'true' && needs.gate.outputs.run_macos == 'true'
+    runs-on: macos-26
+    timeout-minutes: 100
+    env:
+      PRERELEASE_DEADLINE: ${{ needs.gate.outputs.deadline }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: 'yarn'
+
+      - name: Install Dependencies
+        id: install
+        run: |
+          for attempt in 1 2 3; do
+            if yarn install --frozen-lockfile; then exit 0; fi
+            echo "::warning::yarn install failed (attempt $attempt of 3)"
+            if [ "$attempt" -lt 3 ]; then sleep $((attempt * 20)); fi
+          done
+          exit 1
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: true
+
+      # Each setup step below is gated on what it needs, not on every step
+      # before it, so one Safari's failed setup cannot skip the other's.
+      - name: Download the rrweb build
+        id: dist
+        if: '!cancelled()'
+        uses: actions/download-artifact@v8
+        with:
+          name: rrweb-dist
+          path: packages/rrweb/dist
+
+      - name: Enable Safari's driver
+        if: "!cancelled() && steps.install.outcome == 'success' && contains(format(',{0},', needs.gate.outputs.expected), ',safari-stable,')"
+        run: sudo safaridriver --enable
+
+      - name: Install Safari Technology Preview
+        if: "!cancelled() && steps.install.outcome == 'success' && contains(format(',{0},', needs.gate.outputs.expected), ',safari-tp,')"
+        run: |
+          brew install --cask safari-technology-preview
+          sudo "/Applications/Safari Technology Preview.app/Contents/MacOS/safaridriver" --enable
+
+      # One after the other, without --port-offset: each driver has its own
+      # fixed port (4446 stable, 4445 Technology Preview). Each runs only
+      # after a good install and rrweb download, but whatever the other did.
+      - name: Run safari-stable
+        if: "!cancelled() && steps.install.outcome == 'success' && steps.dist.outcome == 'success' && contains(format(',{0},', needs.gate.outputs.expected), ',safari-stable,')"
+        run: yarn workspace @rrweb/prerelease-browsers run-target --target safari-stable --deadline "$PRERELEASE_DEADLINE"
+
+      - name: Run safari-tp
+        if: "!cancelled() && steps.install.outcome == 'success' && steps.dist.outcome == 'success' && contains(format(',{0},', needs.gate.outputs.expected), ',safari-tp,')"
+        run: yarn workspace @rrweb/prerelease-browsers run-target --target safari-tp --deadline "$PRERELEASE_DEADLINE"
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: results-macos
+          path: packages/prerelease-browsers/results
+          overwrite: true
+
+  android:
+    name: Android Firefox Nightly
+    needs: [gate, build]
+    if: needs.gate.outputs.run == 'true' && needs.gate.outputs.run_android == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    env:
+      PRERELEASE_DEADLINE: ${{ needs.gate.outputs.deadline }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: 'yarn'
+
+      - name: Install Dependencies
+        id: install
+        run: |
+          for attempt in 1 2 3; do
+            if yarn install --frozen-lockfile; then exit 0; fi
+            echo "::warning::yarn install failed (attempt $attempt of 3)"
+            if [ "$attempt" -lt 3 ]; then sleep $((attempt * 20)); fi
+          done
+          exit 1
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: true
+
+      - name: Download the rrweb build
+        id: dist
+        uses: actions/download-artifact@v8
+        with:
+          name: rrweb-dist
+          path: packages/rrweb/dist
+
+      - name: Enable KVM
+        id: kvm
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+
+      - name: Install firefox-android-nightly
+        id: browser
+        working-directory: packages/prerelease-browsers
+        run: node src/node/install.ts firefox-android-nightly "$RUNNER_TEMP/browsers" >> "$GITHUB_ENV"
+
+      # The emulator stops when this step ends, so the log is saved inside the
+      # script. The runner runs each script line on its own: keep it one line.
+      - name: Run firefox-android-nightly
+        if: "!cancelled() && steps.install.outcome == 'success' && steps.dist.outcome == 'success' && steps.kvm.outcome == 'success' && steps.browser.outcome == 'success'"
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          script: adb install -r "$FENIX_APK" && adb reverse tcp:8123 tcp:8123 && adb reverse tcp:8124 tcp:8124 && yarn workspace @rrweb/prerelease-browsers run-target --target firefox-android-nightly --deadline "$PRERELEASE_DEADLINE"; status=$?; adb logcat -d > "$RUNNER_TEMP/logcat.txt"; exit $status
+
+      - name: Upload the emulator log
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-logcat
+          path: ${{ runner.temp }}/logcat.txt
+          if-no-files-found: ignore
+          overwrite: true
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: results-android
+          path: packages/prerelease-browsers/results
+          overwrite: true
+
+  browserstack:
+    name: BrowserStack
+    needs: [gate, build]
+    if: needs.gate.outputs.run == 'true' && needs.gate.outputs.browserstack == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    env:
+      PRERELEASE_DEADLINE: ${{ needs.gate.outputs.deadline }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: 'yarn'
+
+      - name: Install Dependencies
+        id: install
+        run: |
+          for attempt in 1 2 3; do
+            if yarn install --frozen-lockfile; then exit 0; fi
+            echo "::warning::yarn install failed (attempt $attempt of 3)"
+            if [ "$attempt" -lt 3 ]; then sleep $((attempt * 20)); fi
+          done
+          exit 1
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: true
+
+      - name: Download the rrweb build
+        id: dist
+        uses: actions/download-artifact@v8
+        with:
+          name: rrweb-dist
+          path: packages/rrweb/dist
+
+      - name: Run BrowserStack targets
+        if: "!cancelled() && steps.install.outcome == 'success' && steps.dist.outcome == 'success'"
+        env:
+          BROWSERSTACK_USERNAME: ${{ secrets.BROWSERSTACK_USERNAME }}
+          BROWSERSTACK_ACCESS_KEY: ${{ secrets.BROWSERSTACK_ACCESS_KEY }}
+        run: yarn workspace @rrweb/prerelease-browsers run-browserstack --deadline "$PRERELEASE_DEADLINE"
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: results-browserstack
+          path: packages/prerelease-browsers/results
+          overwrite: true
+
+  report:
+    name: Report
+    needs: [gate, linux, macos, android, browserstack]
+    if: always() && needs.gate.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: 'yarn'
+
+      - name: Install Dependencies
+        id: install
+        run: |
+          for attempt in 1 2 3; do
+            if yarn install --frozen-lockfile; then exit 0; fi
+            echo "::warning::yarn install failed (attempt $attempt of 3)"
+            if [ "$attempt" -lt 3 ]; then sleep $((attempt * 20)); fi
+          done
+          exit 1
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: true
+
+      # After a failed build no target uploads anything. The download must
+      # not stop the report then: reconcile lists every expected target as
+      # missing, which keeps every issue open and shows in the status issue.
+      - name: Download results
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          pattern: results-*
+          merge-multiple: true
+          path: packages/prerelease-browsers/results
+
+      - name: Open, update and close issues
+        working-directory: packages/prerelease-browsers
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # GITHUB_TOKEN cannot create security advisories.
+          PRERELEASE_ADVISORY_TOKEN: ${{ secrets.PRERELEASE_ADVISORY_TOKEN }}
+          EXPECTED: ${{ needs.gate.outputs.expected }}
+          BROWSERSTACK_DUE: ${{ needs.gate.outputs.browserstack }}
+          LEFT_OUT: ${{ needs.gate.outputs.left_out }}
+          # At most this many issues open or reopen per run. Unset while the
+          # maintainers test the workflow; 5 once it is live.
+          ISSUE_CAP: ${{ vars.PRERELEASE_ISSUE_CAP }}
+        run: |
+          set -euo pipefail
+          mkdir -p results
+          flags=()
+          if [ "$BROWSERSTACK_DUE" = true ]; then
+            if [ -f results/bs-expected.txt ]; then
+              bs=$(grep -v '^[[:space:]]*$' results/bs-expected.txt | paste -sd, - || true)
+              EXPECTED="${EXPECTED:+$EXPECTED${bs:+,}}$bs"
+              if [ -f results/bs-unavailable.txt ]; then
+                flags+=("--unavailable=$(grep -v '^[[:space:]]*$' results/bs-unavailable.txt | paste -sd, - || true)")
+              fi
+            else
+              flags+=(--browserstack-missing)
+            fi
+          fi
+          echo "expected targets: $EXPECTED"
+          echo "left out: ${LEFT_OUT:-nothing}"
+          # One argument with '=', so a value starting with '-' still
+          # reaches reconcile's own error message.
+          if [ -n "${ISSUE_CAP//[[:space:]]/}" ]; then
+            flags+=("--issue-cap=$ISSUE_CAP")
+            echo "issue cap: $ISSUE_CAP"
+          else
+            echo "issue cap: none"
+          fi
+          node src/report/reconcile.ts --results results --expected "$EXPECTED" --left-out "$LEFT_OUT" --apply "${flags[@]}"

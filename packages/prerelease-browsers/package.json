@@ -1,0 +1,31 @@
+{
+  "name": "@rrweb/prerelease-browsers",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Runs rrweb's recorder against upcoming browser builds",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:browser": "vitest run --config vitest.config.browser.ts",
+    "check-types": "tsc -noEmit",
+    "run-target": "node src/node/cli.ts run-target",
+    "run-browserstack": "node src/node/cli.ts run-browserstack",
+    "report": "node src/report/reconcile.ts"
+  },
+  "devDependencies": {
+    "@puppeteer/browsers": "^3",
+    "@rrweb/types": "^2.2.0",
+    "@types/node": "^18.15.11",
+    "@types/selenium-webdriver": "^4.35.7",
+    "esbuild": "0.28.2",
+    "playwright": "1.61.1",
+    "rrweb": "^2.2.0",
+    "selenium-webdriver": "^4",
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.1"
+  }
+}

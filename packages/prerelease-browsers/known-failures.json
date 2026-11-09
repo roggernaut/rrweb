@@ -1,0 +1,14 @@
+[
+  {
+    "key": "privacy-canvas-block:privacy",
+    "upstream": "https://github.com/rrweb-io/rrweb/issues/2007",
+    "expires": "2027-02-07",
+    "note": "rrweb records 2D canvas property sets (fillStyle, font, ...) on blocked canvases: the hookSetter path in observers/canvas/2d.ts has no isBlocked test."
+  },
+  {
+    "key": "tainted-input-getters:functional",
+    "upstream": "https://github.com/rrweb-io/rrweb/pull/1950",
+    "expires": "2027-02-07",
+    "note": "Where defineProperty does not merge descriptors, as on the Xray wrappers of a Firefox content script, rrweb's hookSetter drops the input value getter and recorded input events lose their text."
+  }
+]

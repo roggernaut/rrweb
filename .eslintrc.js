@@ -27,4 +27,29 @@ module.exports = {
       allow: ['rr_.*', 'legacy_.*', 'UNSAFE_.*', '__rrweb_.*'],
     }],
   },
+  overrides: [
+    {
+      // Node scripts plus an in-page harness aimed at upcoming engines, so
+      // the browserslist targets behind compat/compat do not apply.
+      files: ['packages/prerelease-browsers/**'],
+      rules: {
+        'compat/compat': 'off',
+        'camelcase': ['error', {
+          allow: [
+            'rr_.*',
+            'legacy_.*',
+            'UNSAFE_.*',
+            '__rrweb_.*',
+            '^__prerelease_',
+            // BrowserStack's API fields.
+            '^os_version$',
+            '^browser_version$',
+            '^real_mobile$',
+            '^public_url$',
+            '^auth_token$',
+          ],
+        }],
+      },
+    },
+  ],
 };
