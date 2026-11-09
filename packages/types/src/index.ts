@@ -323,12 +323,19 @@ export interface ICrossOriginIframeMirror {
   reset(iframe?: HTMLIFrameElement): void;
 }
 
+// what the recorder's input observer does with input on an element
+export type RecordPluginPrivacy = {
+  isIgnored: (el: Element) => boolean;
+  isMasked: (el: Element) => boolean;
+};
+
 export type RecordPlugin<TOptions = unknown> = {
   name: string;
   observer?: (
     cb: (...args: Array<unknown>) => void,
     win: IWindow,
     options: TOptions,
+    privacy: RecordPluginPrivacy,
   ) => listenerHandler;
   eventProcessor?: <TExtend>(event: eventWithTime) => eventWithTime & TExtend;
   /**

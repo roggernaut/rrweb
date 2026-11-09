@@ -51,6 +51,7 @@ import type {
   SelectionRange,
   selectionCallback,
   customElementCallback,
+  RecordPluginPrivacy,
 } from '@rrweb/types';
 import MutationBuffer from './mutation';
 import { callbackWrapper } from './error-handler';
@@ -380,6 +381,36 @@ function initViewportResizeObserver(
 }
 
 export const INPUT_TAGS = ['INPUT', 'TEXTAREA', 'SELECT'];
+
+function isInputIgnored(
+  target: HTMLElement,
+  {
+    blockClass,
+    blockSelector,
+    ignoreClass,
+    ignoreSelector,
+  }: Pick<
+    observerParam,
+    'blockClass' | 'blockSelector' | 'ignoreClass' | 'ignoreSelector'
+  >,
+): boolean {
+  return (
+    isBlocked(target, blockClass, blockSelector, true) ||
+    target.classList.contains(ignoreClass) ||
+    Boolean(ignoreSelector && target.matches(ignoreSelector))
+  );
+}
+
+function hasLegacyInputMask(
+  target: HTMLElement,
+  maskInputOptions: MaskInputOptions,
+): boolean {
+  return Boolean(
+    maskInputOptions[target.tagName.toLowerCase() as keyof MaskInputOptions] ||
+      maskInputOptions[(getInputType(target) || '') as keyof MaskInputOptions],
+  );
+}
+
 const lastInputValueMap: WeakMap<EventTarget, inputValue> = new WeakMap();
 function initInputObserver({
   inputCb,
@@ -411,14 +442,12 @@ function initInputObserver({
       !target ||
       !tagName ||
       INPUT_TAGS.indexOf(tagName) < 0 ||
-      isBlocked(target as Node, blockClass, blockSelector, true)
-    ) {
-      return;
-    }
-
-    if (
-      target.classList.contains(ignoreClass) ||
-      (ignoreSelector && target.matches(ignoreSelector))
+      isInputIgnored(target, {
+        blockClass,
+        blockSelector,
+        ignoreClass,
+        ignoreSelector,
+      })
     ) {
       return;
     }
@@ -429,10 +458,7 @@ function initInputObserver({
     if (type === 'radio' || type === 'checkbox') {
       isChecked = (target as HTMLInputElement).checked;
     } else {
-      const legacyMask = Boolean(
-        maskInputOptions[tagName.toLowerCase() as keyof MaskInputOptions] ||
-          maskInputOptions[type as keyof MaskInputOptions],
-      );
+      const legacyMask = hasLegacyInputMask(target, maskInputOptions);
       if (shouldMaskInputWithPrivacy(target, privacy, legacyMask)) {
         text = maskInputWithPrivacy(
           text,
@@ -1380,10 +1406,24 @@ export function initObservers(
   const customElementObserver = initCustomElementObserver(o);
 
   // plugins
+  const pluginPrivacy: RecordPluginPrivacy = {
+    isIgnored: (el) => isInputIgnored(el as HTMLElement, o),
+    isMasked: (el) =>
+      shouldMaskInputWithPrivacy(
+        el as HTMLElement,
+        o.privacy,
+        hasLegacyInputMask(el as HTMLElement, o.maskInputOptions),
+      ),
+  };
   const pluginHandlers: listenerHandler[] = [];
   for (const plugin of o.plugins) {
     pluginHandlers.push(
-      plugin.observer(plugin.callback, currentWindow, plugin.options),
+      plugin.observer(
+        plugin.callback,
+        currentWindow,
+        plugin.options,
+        pluginPrivacy,
+      ),
     );
   }
 

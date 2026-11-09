@@ -34,6 +34,7 @@ import type {
   mousemoveCallBack,
   mutationCallBack,
   RecordPlugin,
+  RecordPluginPrivacy,
   SamplingStrategy,
   scrollCallback,
   selectionCallback,
@@ -152,6 +153,7 @@ export type observerParam = {
       cb: (...arg: Array<unknown>) => void,
       win: IWindow,
       options: unknown,
+      privacy: RecordPluginPrivacy,
     ) => listenerHandler;
     callback: (...arg: Array<unknown>) => void;
     options: unknown;

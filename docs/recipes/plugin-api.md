@@ -12,6 +12,7 @@ The plugin API is designed to enable extending the functionality of rrweb withou
 - [@rrweb/rrweb-plugin-canvas-webrtc-replay](packages/plugins/rrweb-plugin-canvas-webrtc-replay): A plugin for playing streamed `<canvas>` via WebRTC.
 - [@rrweb/rrweb-plugin-network-record](packages/plugins/rrweb-plugin-network-record): A plugin for recording network requests (xhr/fetch).
 - [@rrweb/rrweb-plugin-network-replay](packages/plugins/rrweb-plugin-network-replay): A plugin for replaying network requests (xhr/fetch).
+- [@rrweb/rrweb-plugin-keydown-record](packages/plugins/rrweb-plugin-keydown-record): A plugin for recording key presses that leave no input event.
 - [@rrweb/rrweb-plugin-privacy-detectors](packages/plugins/rrweb-plugin-privacy-detectors): Opt-in heuristic PII matching (email, phone, card, SSN, IPv4).
 
 ## Interface
@@ -21,7 +22,12 @@ Consistent with other functionality in rrweb, a plugin can implement record or r
 ```ts
 export type RecordPlugin<TOptions = unknown> = {
   name: string;
-  observer: (cb: Function, options: TOptions) => listenerHandler;
+  observer: (
+    cb: Function,
+    win: IWindow,
+    options: TOptions,
+    privacy: RecordPluginPrivacy,
+  ) => listenerHandler;
   options: TOptions;
 };
 
@@ -36,6 +42,8 @@ export type ReplayPlugin = {
 
 Both record and replay plugins have a type interface.
 
+`privacy.isIgnored(el)` and `privacy.isMasked(el)` tell a record plugin whether the recorder ignores or masks input on an element, so that the plugin can do the same.
+
 ### Example
 
 #### Record Plugin
@@ -45,7 +53,7 @@ import { record } from '@rrweb/record';
 
 const exampleRecordPlugin: RecordPlugin<{ foo: string }> = {
   name: 'my-scope/example@1',
-  observer(cb, options) {
+  observer(cb, win, options) {
     const timer = setInterval(() => {
       cb({
         foo: options.foo,
