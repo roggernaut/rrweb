@@ -12,13 +12,22 @@
   export let speedOption: number[];
   export let annotations: boolean;
   export let skipInactive: boolean;
+  export let zoom = 1;
+  export let followCursor = true;
+  let zoomControl: ControlPopover;
   export let hasAnnotations: boolean;
   const dispatch = createEventDispatcher();
-  let panel: 'speed' | 'settings' | null = null;
+  let panel: 'speed' | 'zoom' | 'settings' | null = null;
   $: minSpeed = Math.min(0.25, ...speedOption);
   $: maxSpeed = Math.max(8, ...speedOption);
   function changeSpeed(value: number) {
     dispatch('speed', Math.max(minSpeed, Math.min(maxSpeed, value)));
+  }
+  export function fit() {
+    followCursor = false;
+    zoom = 1;
+    panel = null;
+    zoomControl?.focus();
   }
 </script>
 
@@ -106,6 +115,44 @@
         </div>
       {/each}
     </div>
+  </ControlPopover>
+  <ControlPopover
+    label="Zoom"
+    icon="zoom"
+    {container}
+    bind:this={zoomControl}
+    bind:active={panel}
+  >
+    <p class="rr-control-value">
+      {zoom === 1 ? 'Fit' : `${Math.round(zoom * 100)}%`}
+    </p>
+    <div class="rr-control-range">
+      <button
+        type="button"
+        aria-label="Fit replay to window"
+        on:click={() => { followCursor = false; zoom = 1; }}>Fit</button
+      >
+      <input
+        type="range"
+        min="100"
+        max="400"
+        step="10"
+        value={Math.round(zoom * 100)}
+        aria-label="Replay zoom"
+        aria-valuetext={zoom === 1
+          ? 'Fit to window'
+          : `${Math.round(zoom * 100)}% of fitted size`}
+        on:input={(event) => (zoom = Number(event.currentTarget.value) / 100)}
+      />
+      <span>{Math.round(zoom * 100)}%</span>
+    </div>
+    <label class="rr-setting">
+      <span>Follow cursor</span>
+      <input type="checkbox" bind:checked={followCursor} />
+    </label>
+    <p class="rr-control-hint">
+      Drag the replay to reposition. Escape returns to Fit.
+    </p>
   </ControlPopover>
   <ControlPopover
     label="Replay settings"

@@ -20,6 +20,10 @@
   const dispatch = createEventDispatcher();
 
   export let replayer: Replayer;
+  export let zoom = 1;
+  export let followCursor = true;
+  let toolbar: PlayerToolbar;
+  export function fit() { toolbar?.fit(); }
   export let container: HTMLElement;
   let pointerSeek = false;
   export let showCaptions = true;
@@ -464,6 +468,9 @@
       </div>
     </div>
     <PlayerToolbar
+      bind:this={toolbar}
+      bind:zoom
+      bind:followCursor
       {container}
       {currentTime}
       totalTime={meta.totalTime}

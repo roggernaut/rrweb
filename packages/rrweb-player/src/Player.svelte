@@ -11,6 +11,7 @@
     onFullscreenChange,
     typeOf,
   } from './utils';
+  import ZoomPan from './components/ZoomPan.svelte';
   import Controller from './Controller.svelte';
   import type { RRwebPlayerOptions, RRwebPlayerExpose } from './types';
     
@@ -37,19 +38,15 @@
   const controllerHeight = 80;
   let player: HTMLElement;
   let frame: HTMLElement;
-  let press: { x: number; y: number; id: number } | undefined;
-  let dragged = false;
-
-  function startPress(event: PointerEvent) {
-    if (event.button !== 0 || !event.isPrimary) return;
-    press = { x: event.clientX, y: event.clientY, id: event.pointerId };
-    dragged = false;
+  let zoom = 1;
+  let followCursor = true;
+  function fit() { controller?.fit(); }
+  function escape(event: KeyboardEvent) {
+    if (event.key === 'Escape' && zoom !== 1 && player?.contains(event.target as Node)) {
+      event.preventDefault();
+      fit();
+    }
   }
-  function trackPress(event: PointerEvent) {
-    if (press?.id === event.pointerId &&
-        Math.hypot(event.clientX - press.x, event.clientY - press.y) > 4) dragged = true;
-  }
-
   let fullscreenListener: undefined | (() => void);
   let embeddedSize: {width: number; height: number} | null = null;
   let fullscreenObserver: ResizeObserver | undefined;
@@ -233,17 +230,6 @@
     position: relative;
   }
 
-  .rr-player__surface {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    padding: 0;
-    background: transparent;
-    border: 0;
-    cursor: pointer;
-  }
-
   .rr-player__caption {
     bottom: 24px;
     position: absolute;
@@ -282,6 +268,7 @@
   }
 </style>
 
+<svelte:window on:keydown|capture={escape} />
 <div
   class="rr-player"
   bind:this={player}
@@ -291,12 +278,9 @@
 >
   <div class="rr-player__viewport" {style}>
     <div class="rr-player__frame" bind:this={frame} {style} />
-    {#if showController}
-      <button type="button" class="rr-player__surface" aria-label="Play or pause replay"
-        on:pointerdown={startPress} on:pointermove={trackPress}
-        on:pointerup={(event) => { trackPress(event); press = undefined; }}
-        on:pointercancel={() => { press = undefined; dragged = true; }}
-        on:click={(event) => { if (!event.detail || !dragged) toggle(); }} />
+    {#if showController && replayer}
+      <ZoomPan {frame} replay={replayer.wrapper} {replayer} {zoom} bind:followCursor
+        on:fit={fit} on:toggle={toggle} />
     {/if}
     <div role="status" aria-live="polite" aria-atomic="true">
       {#if captionText !== undefined}
@@ -308,6 +292,7 @@
     <Controller
       bind:this={controller}
       {replayer}
+      bind:zoom bind:followCursor
       container={player}
       {speed}
       bind:captionText

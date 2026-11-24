@@ -78,6 +78,25 @@ afterEach(() => {
 });
 
 describe('player transport', () => {
+  it('returns zoom to Fit with Escape after using transport controls', async () => {
+    await mount();
+    click('[aria-label="Zoom"]');
+    await tick();
+    const slider = target.querySelector<HTMLInputElement>('[aria-label="Replay zoom"]')!;
+    slider.value = '200';
+    slider.dispatchEvent(new Event('input', { bubbles: true }));
+    await tick();
+    const replay = target.querySelector<HTMLElement>('.replayer-wrapper')!;
+    expect(replay.style.scale).toBe('2');
+    const transport = target.querySelector<HTMLButtonElement>('[aria-label="Skip back 10 seconds"]')!;
+    transport.click(); transport.focus();
+    transport.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await tick();
+    expect(replay.style.scale).toBe('1');
+    expect(replay.style.translate).toBe('0px 0px');
+    expect(target.querySelector('[role="dialog"][aria-label="Zoom"]')).toBeNull();
+  });
+
   it('jumps without player focus and leaves inputs and the timeline in control', async () => {
     const player = await mount();
     const controls = target.querySelector<HTMLElement>('.rr-controller')!;
