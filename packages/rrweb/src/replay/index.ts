@@ -28,6 +28,7 @@ import type {
   Mirror as RRDOMMirror,
 } from 'rrdom';
 import * as mittProxy from 'mitt';
+import { inactiveSkipSpeed } from './inactivity';
 import { Timer, replayTimestamp } from './timer';
 import {
   createPlayerService,
@@ -90,8 +91,6 @@ import canvasMutation from './canvas';
 import { deserializeArg } from './canvas/deserialize-args';
 import { MediaManager } from './media';
 import { applyDialogToTopLevel, removeDialogFromTopLevel } from './dialog';
-
-const SKIP_TIME_INTERVAL = 5 * 1000;
 
 // https://github.com/rollup/rollup/issues/1267#issuecomment-296395734
 const mitt = mittProxy.default || mittProxy;
@@ -190,7 +189,7 @@ export class Replayer {
     }
     const defaultConfig: playerConfig = {
       speed: 1,
-      maxSpeed: 360,
+      maxSpeed: 1000,
       root: document.body,
       loadTimeout: 0,
       skipInactive: false,
@@ -2290,12 +2289,10 @@ export class Replayer {
       ? replayTimestamp(this.interactionBoundaries[lo - 1])
       : events[0].timestamp;
     if (end - start <= this.config.inactivePeriodThreshold) return;
-    const speed = Math.min(
+    const speed = inactiveSkipSpeed(
+      end - now,
+      this.config.speed,
       this.config.maxSpeed,
-      Math.max(
-        this.config.speed * 2,
-        Math.round((end - now) / SKIP_TIME_INTERVAL),
-      ),
     );
     if (speed <= this.timer.speed) return;
     this.nextUserInteractionEvent = target;

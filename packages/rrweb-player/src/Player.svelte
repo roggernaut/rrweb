@@ -30,6 +30,9 @@
   export let inactiveColor: NonNullable<RRwebPlayerOptions['props']['inactiveColor']> = '#D4D4D4';
 
   let replayer: Replayer;
+  let skipping = false;
+  const showSkip = () => { skipping = true; };
+  const hideSkip = () => { skipping = false; };
   let captionText: string | undefined;
 
   export const getMirror = () => replayer.getMirror();
@@ -161,6 +164,8 @@
       ...$$props,
     });
 
+    replayer.on('skip-start', showSkip);
+    replayer.on('skip-end', hideSkip);
     replayer.on('resize', (dimension) => {
       updateScale(
         replayer.wrapper,
@@ -193,6 +198,8 @@
   });
 
   onDestroy(() => {
+    replayer?.off('skip-start', showSkip);
+    replayer?.off('skip-end', hideSkip);
     fullscreenListener && fullscreenListener();
   });
 </script>
@@ -210,6 +217,17 @@
 
   .rr-player__viewport {
     position: relative;
+  }
+
+  .rr-player__skip-indicator {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background: rgb(0 0 0 / 15%);
+    color: white;
+    font: 32px/1 system-ui, sans-serif;
+    pointer-events: none;
   }
 
   .rr-player__caption {
@@ -259,6 +277,9 @@
 >
   <div class="rr-player__viewport" {style}>
     <div class="rr-player__frame" bind:this={frame} {style} />
+    {#if showController && skipping}
+      <div class="rr-player__skip-indicator" aria-hidden="true">⏩︎</div>
+    {/if}
     <div role="status" aria-live="polite" aria-atomic="true">
       {#if captionText !== undefined}
         <div class="rr-player__caption">{captionText}</div>
