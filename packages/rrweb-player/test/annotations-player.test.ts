@@ -92,9 +92,9 @@ describe('player transport', () => {
     expect(player.getReplayer().getCurrentTime()).toBe(10000);
     arrow(target.querySelector('[role="slider"]')!, 'ArrowLeft');
     expect(player.getReplayer().getCurrentTime()).toBe(5000);
-    click('[aria-label="Back 10 seconds"]');
+    click('[aria-label="Skip back 10 seconds"]');
     expect(player.getReplayer().getCurrentTime()).toBe(0);
-    click('[aria-label="Forward 10 seconds"]');
+    click('[aria-label="Skip forward 10 seconds"]');
     expect(player.getReplayer().getCurrentTime()).toBe(10000);
   });
 });
@@ -177,19 +177,104 @@ describe('player annotations', () => {
       'Click Save',
     );
     expect(target.querySelector('[title="ordinary"]')).not.toBeNull();
-    const captionsToggle = target.querySelector<HTMLButtonElement>(
-      'button[aria-label="CC captions"]',
-    );
-    expect(captionsToggle?.getAttribute('aria-pressed')).toBe('false');
-    captionsToggle?.click();
+    player.$set({ showCaptions: true });
     await tick();
-    expect(captionsToggle?.getAttribute('aria-pressed')).toBe('true');
     expect(target.querySelector('.rr-player__caption')).not.toBeNull();
-    captionsToggle?.click();
+    player.$set({ showCaptions: false });
     await tick();
-    expect(captionsToggle?.getAttribute('aria-pressed')).toBe('false');
     expect(target.querySelector('.rr-player__caption')).toBeNull();
+    expect(target.querySelector('[role="dialog"]')?.textContent).toContain(
+      'Click Save',
+    );
   });
+
+  it.each([true, false])(
+    'toggles all annotations from settings with showCaptions initially %s',
+    async (showCaptions) => {
+      const player = await mount({ showCaptions });
+      player.goto(2500, false);
+      await tick();
+      expect(!!target.querySelector('.rr-player__caption')).toBe(showCaptions);
+      expect(target.querySelector('.rr-custom-event')).not.toBeNull();
+      click('[aria-label="Replay settings"]');
+      await tick();
+      const toggle = target.querySelector<HTMLInputElement>(
+        '[role="switch"][aria-label="Annotations"]',
+      )!;
+      expect(toggle.checked).toBe(true);
+      toggle.click();
+      await tick();
+      expect(target.querySelector('.rr-player__caption')).toBeNull();
+      expect(target.querySelector('.rr-custom-event')).toBeNull();
+      expect(target.querySelector('[title="ordinary"]')).not.toBeNull();
+      toggle.click();
+      await tick();
+      expect(target.querySelector('.rr-player__caption')).not.toBeNull();
+      expect(target.querySelector('.rr-custom-event')).not.toBeNull();
+    },
+  );
+
+  it('bounds ten-second skips and preserves playback state', async () => {
+    const player = await mount();
+    const position = () => target.querySelector('[aria-label="Playback position"]')?.getAttribute('aria-valuenow');
+    click('[aria-label="Skip back 10 seconds"]');
+    await tick();
+    expect(position()).toBe('0');
+    click('[aria-label="Skip forward 10 seconds"]');
+    await tick();
+    expect(position()).toBe('10000');
+    expect(target.querySelector('[aria-label="Play"]')).not.toBeNull();
+    click('[aria-label="Skip forward 10 seconds"]');
+    await tick();
+    expect(position()).toBe('10000');
+    player.goto(1000, true);
+    click('[aria-label="Skip back 10 seconds"]');
+    await tick();
+    expect(position()).toBe('0');
+    expect(target.querySelector('[aria-label="Pause"]')).not.toBeNull();
+  });
+
+  it('disables ten-second skips during live playback', async () => {
+    const player = await mount();
+    const forward = target.querySelector<HTMLButtonElement>(
+      '[aria-label="Skip forward 10 seconds"]',
+    )!;
+    const back = target.querySelector<HTMLButtonElement>(
+      '[aria-label="Skip back 10 seconds"]',
+    )!;
+    expect(forward.disabled).toBe(false);
+    expect(back.disabled).toBe(false);
+    player.getReplayer().startLive();
+    await tick();
+    expect(forward.disabled).toBe(true);
+    expect(back.disabled).toBe(true);
+  });
+
+  it('pins a hover-open popup on click and supports custom speed presets', async () => {
+    const player = await mount({ speedOption: [1, 1.25, 3, 10] });
+    const trigger = target.querySelector<HTMLButtonElement>('[aria-label="Playback speed"]')!;
+    trigger.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse' }));
+    await tick();
+    const popup = target.querySelector<HTMLElement>('[role="dialog"][aria-label="Playback speed"]')!;
+    expect(popup).not.toBeNull();
+    trigger.click();
+    await tick();
+    expect(document.activeElement).toBe(popup);
+    const fractionalPreset = popup.querySelector<HTMLButtonElement>(
+      '[aria-label="1.25× speed"]',
+    )!;
+    expect(fractionalPreset.textContent?.trim()).toBe('1.25');
+    fractionalPreset.click();
+    await tick();
+    expect(player.getReplayer().config.speed).toBe(1.25);
+    click('[aria-label="10× speed"]');
+    await tick();
+    expect(player.getReplayer().config.speed).toBe(10);
+    trigger.click();
+    await tick();
+    expect(target.querySelector('[role="dialog"][aria-label="Playback speed"]')).toBeNull();
+  });
+
 
   it('supports accessible keyboard seeking on the timeline slider', async () => {
     const player = await mount();

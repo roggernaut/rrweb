@@ -51,8 +51,8 @@
   }
 
   let fullscreenListener: undefined | (() => void);
-  let _width: number = width;
-  let _height: number = height;
+  let embeddedSize: {width: number; height: number} | null = null;
+  let fullscreenObserver: ResizeObserver | undefined;
   let controller: {
     toggle: () => void;
     setSpeed: (speed: number) => void;
@@ -182,30 +182,31 @@
     });
 
     fullscreenListener = onFullscreenChange(() => {
-      if (isFullscreen()) {
-        setTimeout(() => {
-          _width = width;
-          _height = height;
-          width = player.offsetWidth;
-          height =
-            player.offsetHeight - (showController ? controllerHeight : 0);
-          updateScale(replayer.wrapper, {
-            width: replayer.iframe.offsetWidth,
-            height: replayer.iframe.offsetHeight,
-          });
-        }, 0);
-      } else {
-        width = _width;
-        height = _height;
-        updateScale(replayer.wrapper, {
-          width: replayer.iframe.offsetWidth,
-          height: replayer.iframe.offsetHeight,
-        });
+      const owner = document.fullscreenElement ?? (document as Document & {webkitFullscreenElement?: Element}).webkitFullscreenElement;
+      if (owner === player) {
+        embeddedSize ??= {width, height};
+        const resize = () => {
+          width = player.clientWidth;
+          height = Math.max(1, player.clientHeight - (showController ? controllerHeight : 0));
+          triggerResize();
+        };
+        resize();
+        if (typeof ResizeObserver !== 'undefined') {
+          fullscreenObserver?.disconnect();
+          fullscreenObserver = new ResizeObserver(resize);
+          fullscreenObserver.observe(player);
+        }
+      } else if (embeddedSize) {
+        fullscreenObserver?.disconnect();
+        ({width, height} = embeddedSize);
+        embeddedSize = null;
+        triggerResize();
       }
     });
   });
 
   onDestroy(() => {
+    fullscreenObserver?.disconnect();
     fullscreenListener && fullscreenListener();
   });
 </script>
@@ -221,6 +222,13 @@
     box-shadow: 0 24px 48px rgba(17, 16, 62, 0.12);
   }
 
+  .rr-player:fullscreen {
+    width: 100vw !important;
+    height: 100vh !important;
+    border-radius: 0;
+    background: #0a1325;
+  }
+  .rr-player { container-type: inline-size; }
   .rr-player__viewport {
     position: relative;
   }
@@ -300,6 +308,8 @@
     <Controller
       bind:this={controller}
       {replayer}
+      container={player}
+      {speed}
       bind:captionText
       bind:showCaptions
       {showController}

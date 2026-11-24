@@ -12,7 +12,7 @@
     afterUpdate,
   } from 'svelte';
   import { formatTime } from './utils';
-  import Switch from './components/Switch.svelte';
+  import PlayerToolbar from './components/PlayerToolbar.svelte';
   import CustomEventMarker from './components/CustomEventMarker.svelte';
   import { parseAnnotationEvent, getActiveCaption } from './annotations';
   import { createTimelineIndex } from './timeline-index';
@@ -20,7 +20,10 @@
   const dispatch = createEventDispatcher();
 
   export let replayer: Replayer;
+  export let container: HTMLElement;
+  let pointerSeek = false;
   export let showCaptions = true;
+  let showTimelineNotes = true;
   const updateTimeline = createTimelineIndex();
   $: timeline = updateTimeline(replayer.service.state.context.events, replayer.config.inactivePeriodThreshold);
   export let captionText: string | undefined = undefined;
@@ -275,6 +278,7 @@
     if (speedState === 'skipping') {
       return;
     }
+    pointerSeek = true;
     progressSlider.focus();
     const progressRect = progress.getBoundingClientRect();
     const x = event.clientX - progressRect.left;
@@ -288,7 +292,8 @@
     goto(timeOffset);
   };
 
-  const handleProgressKeydown = (event: KeyboardEvent) => { 
+  const handleProgressKeydown = (event: KeyboardEvent) => {
+    pointerSeek = false;
     // Ignore marker keys and the slider event bubbling to the progress wrapper.
     if (event.target !== event.currentTarget) return;
     if (speedState === 'skipping') {
@@ -395,115 +400,12 @@
 
 <svelte:window on:keydown={handlePageKeydown} />
 
-<style>
-  .rr-controller {
-    width: 100%;
-    height: 80px;
-    background: #fff;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-around;
-    align-items: center;
-    border-radius: 0 0 5px 5px;
-  }
-
-  .rr-timeline {
-    width: 80%;
-    display: flex;
-    align-items: center;
-  }
-
-  .rr-timeline__time {
-    display: inline-block;
-    width: 100px;
-    text-align: center;
-    color: #11103e;
-  }
-
-  .rr-progress {
-    flex: 1;
-    height: 12px;
-    background: #eee;
-    position: relative;
-    border-radius: 3px;
-    cursor: pointer;
-    box-sizing: border-box;
-    border-top: solid 4px #fff;
-    border-bottom: solid 4px #fff;
-  }
-
-  .rr-progress__slider {
-    position: absolute;
-    inset: -4px 0;
-    pointer-events: none;
-    border-radius: 3px;
-  }
-  .rr-progress__slider:focus-visible {
-    outline: 2px solid rgb(73, 80, 246);
-    outline-offset: 2px;
-  }
-  .rr-progress.disabled {
-    cursor: not-allowed;
-  }
-
-  .rr-progress__step {
-    height: 100%;
-    position: absolute;
-    left: 0;
-    top: 0;
-    background: #e0e1fe;
-  }
-
-  .rr-progress__handler {
-    width: 20px;
-    height: 20px;
-    border-radius: 10px;
-    position: absolute;
-    top: 2px;
-    transform: translate(-50%, -50%);
-    background: rgb(73, 80, 246);
-  }
-
-  .rr-controller__btns {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 13px;
-  }
-
-  .rr-controller__btns button {
-    width: 32px;
-    height: 32px;
-    display: flex;
-    padding: 0;
-    align-items: center;
-    justify-content: center;
-    background: none;
-    border: none;
-    border-radius: 50%;
-    cursor: pointer;
-  }
-
-  .rr-controller__btns button:active {
-    background: #e0e1fe;
-  }
-
-  .rr-controller__btns button.active {
-    color: #fff;
-    background: rgb(73, 80, 246);
-  }
-
-  .rr-controller__btns button:disabled {
-    cursor: not-allowed;
-  }
-</style>
-
 {#if showController}
-  <div class="rr-controller" bind:this={controls}>
+  <div class="rr-controller" bind:this={controls} data-native-replay-controls>
     <div class="rr-timeline">
-      <span class="rr-timeline__time">{formatTime(currentTime)}</span>
       <div
         class="rr-progress"
+        class:pointer-seek={pointerSeek}
         class:disabled={speedState === 'skipping'}
         bind:this={progress}
         on:click={handleProgressClick}
@@ -521,6 +423,7 @@
           aria-valuetext={`${formatTime(accessibleTime)} of ${formatTime(meta.totalTime)}`}
           aria-disabled={speedState === 'skipping'}
           on:keydown={handleProgressKeydown}
+          on:blur={() => (pointerSeek = false)}
         />
         <div
           class="rr-progress__step"
@@ -535,16 +438,18 @@
         {/each}
         {#each customEvents as event}
           {#if event.timelineMarkerText}
-            <CustomEventMarker
-              dismissalVersion={timelineMarkerDismissalVersion}
-              name={event.name}
-              text={event.timelineMarkerText}
-              background={event.background}
-              position={event.position}
-              disabled={speedState === 'skipping'}
-              on:seek={() => goto(event.timeOffset)}
-              on:focus-timeline={() => progressSlider.focus()}
-            />
+            {#if showTimelineNotes}
+              <CustomEventMarker
+                dismissalVersion={timelineMarkerDismissalVersion}
+                name={event.name}
+                text={event.timelineMarkerText}
+                background={event.background}
+                position={event.position}
+                disabled={speedState === 'skipping'}
+                on:seek={() => goto(event.timeOffset)}
+                on:focus-timeline={() => progressSlider.focus()}
+              />
+            {/if}
           {:else}
             <div
               title={event.name}
@@ -557,108 +462,93 @@
 
         <div class="rr-progress__handler" style="left: {percentage}" />
       </div>
-      <span class="rr-timeline__time">{formatTime(meta.totalTime)}</span>
     </div>
-    <div class="rr-controller__btns">
-      <button on:click={toggle}>
-        {#if playerState === 'playing'}
-          <svg
-            class="icon"
-            viewBox="0 0 1024 1024"
-            version="1.1"
-            xmlns="http://www.w3.org/2000/svg"
-            xmlns:xlink="http://www.w3.org/1999/xlink"
-            width="16"
-            height="16"
-          >
-            <path
-              d="M682.65984 128q53.00224 0 90.50112 37.49888t37.49888 90.50112l0
-              512q0 53.00224-37.49888 90.50112t-90.50112
-              37.49888-90.50112-37.49888-37.49888-90.50112l0-512q0-53.00224
-              37.49888-90.50112t90.50112-37.49888zM341.34016 128q53.00224 0
-              90.50112 37.49888t37.49888 90.50112l0 512q0 53.00224-37.49888
-              90.50112t-90.50112
-              37.49888-90.50112-37.49888-37.49888-90.50112l0-512q0-53.00224
-              37.49888-90.50112t90.50112-37.49888zM341.34016 213.34016q-17.67424
-              0-30.16704 12.4928t-12.4928 30.16704l0 512q0 17.67424 12.4928
-              30.16704t30.16704 12.4928 30.16704-12.4928
-              12.4928-30.16704l0-512q0-17.67424-12.4928-30.16704t-30.16704-12.4928zM682.65984
-              213.34016q-17.67424 0-30.16704 12.4928t-12.4928 30.16704l0 512q0
-              17.67424 12.4928 30.16704t30.16704 12.4928 30.16704-12.4928
-              12.4928-30.16704l0-512q0-17.67424-12.4928-30.16704t-30.16704-12.4928z"
-            />
-          </svg>
-        {:else}
-          <svg
-            class="icon"
-            viewBox="0 0 1024 1024"
-            version="1.1"
-            xmlns="http://www.w3.org/2000/svg"
-            xmlns:xlink="http://www.w3.org/1999/xlink"
-            width="16"
-            height="16"
-          >
-            <path
-              d="M170.65984 896l0-768 640 384zM644.66944
-              512l-388.66944-233.32864 0 466.65728z"
-            />
-          </svg>
-        {/if}
-      </button>
-      <button type="button" aria-label="Back 10 seconds" on:click={() => jump(-1)}>−10s</button>
-      <button type="button" aria-label="Forward 10 seconds" on:click={() => jump(1)}>+10s</button>
-      {#each speedOption as s}
-        <button
-          class:active={s === speed && speedState !== 'skipping'}
-          on:click={() => setSpeed(s)}
-          disabled={speedState === 'skipping'}
-        >
-          {s}x
-        </button>
-      {/each}
-      {#if timeline.hasCaptions}
-        <button
-          type="button"
-          class:active={showCaptions}
-          aria-label="CC captions"
-          aria-pressed={showCaptions}
-          title={showCaptions ? 'Hide captions' : 'Show captions'}
-          on:click={() => (showCaptions = !showCaptions)}
-        >
-          CC
-        </button>
-      {/if}
-      <Switch
-        id="skip"
-        bind:checked={skipInactive}
-        disabled={speedState === 'skipping'}
-        label="skip inactive"
-      />
-      <button on:click={() => dispatch('fullscreen')}>
-        <svg
-          class="icon"
-          viewBox="0 0 1024 1024"
-          version="1.1"
-          xmlns="http://www.w3.org/2000/svg"
-          xmlns:xlink="http://www.w3.org/1999/xlink"
-          width="16"
-          height="16"
-        >
-          <defs>
-            <style type="text/css">
-            </style>
-          </defs>
-          <path
-            d="M916 380c-26.4 0-48-21.6-48-48L868 223.2 613.6 477.6c-18.4
-            18.4-48.8 18.4-68 0-18.4-18.4-18.4-48.8 0-68L800 156 692 156c-26.4
-            0-48-21.6-48-48 0-26.4 21.6-48 48-48l224 0c26.4 0 48 21.6 48 48l0
-            224C964 358.4 942.4 380 916 380zM231.2 860l108.8 0c26.4 0 48 21.6 48
-            48s-21.6 48-48 48l-224 0c-26.4 0-48-21.6-48-48l0-224c0-26.4 21.6-48
-            48-48 26.4 0 48 21.6 48 48L164 792l253.6-253.6c18.4-18.4 48.8-18.4
-            68 0 18.4 18.4 18.4 48.8 0 68L231.2 860z"
-          />
-        </svg>
-      </button>
-    </div>
+    <PlayerToolbar
+      {container}
+      {currentTime}
+      totalTime={meta.totalTime}
+      playing={playerState === 'playing'}
+      canSkip={playerState === 'playing' || playerState === 'paused'}
+      hasAnnotations={timeline.hasCaptions || timeline.markers.some(marker => marker.text)}
+      {speed}
+      {speedOption}
+      annotations={showCaptions || showTimelineNotes}
+      bind:skipInactive
+      on:toggle={toggle}
+      on:fullscreen={() => dispatch('fullscreen')}
+      on:speed={(event) => setSpeed(event.detail)}
+      on:annotations={(event) => {
+        showCaptions = event.detail;
+        showTimelineNotes = event.detail;
+      }}
+      on:skip={(event) => jump(event.detail < 0 ? -1 : 1)}
+    />
   </div>
 {/if}
+
+<style>
+  .rr-controller {
+    width: 100%;
+    height: 80px;
+    background: #0a1325;
+    color: #edf1ff;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-around;
+    align-items: center;
+    border-radius: 0 0 5px 5px;
+  }
+
+  .rr-timeline {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0 12px;
+    display: flex;
+    align-items: center;
+  }
+
+  .rr-progress {
+    flex: 1;
+    height: 12px;
+    background: #dbe2fd24;
+    background-clip: padding-box;
+    position: relative;
+    border-radius: 3px;
+    cursor: pointer;
+    box-sizing: border-box;
+    border-top: solid 4px transparent;
+    border-bottom: solid 4px transparent;
+  }
+
+  .rr-progress__slider {
+    position: absolute;
+    inset: -4px 0;
+    pointer-events: none;
+    border-radius: 3px;
+  }
+  .rr-progress:not(.pointer-seek) .rr-progress__slider:focus-visible {
+    outline: 2px solid #ffe373;
+    outline-offset: 2px;
+  }
+  .rr-progress.disabled {
+    cursor: not-allowed;
+  }
+
+  .rr-progress__step {
+    height: 100%;
+    position: absolute;
+    left: 0;
+    top: 0;
+    background: #eec20266;
+  }
+
+  .rr-progress__handler {
+    width: 20px;
+    height: 20px;
+    border-radius: 10px;
+    position: absolute;
+    top: 2px;
+    transform: translate(-50%, -50%);
+    background: #eec202;
+  }
+</style>
