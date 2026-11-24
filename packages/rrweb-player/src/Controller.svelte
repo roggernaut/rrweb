@@ -15,6 +15,7 @@
   import PlayerToolbar from './components/PlayerToolbar.svelte';
   import CustomEventMarker from './components/CustomEventMarker.svelte';
   import { parseAnnotationEvent, getActiveCaption } from './annotations';
+  import { createReplayTimelineScale } from './timeline-scale';
   import { createTimelineIndex } from './timeline-index';
 
   const dispatch = createEventDispatcher();
@@ -93,10 +94,15 @@
   let meta: playerMetaData;
   $: meta = replayer.getMetaData();
   $: accessibleTime = Math.max(0, Math.min(meta.totalTime, Math.floor(currentTime / 1000) * 1000));
+  $: scale = createReplayTimelineScale(timeline.end - timeline.start, [
+    ...timeline.periods.map(([a,b]): [number, number] => [a-timeline.start,b-timeline.start]),
+    ...(timeline.end - timeline.lastActive > replayer.config.inactivePeriodThreshold
+      ? [[timeline.lastActive - timeline.start, timeline.end - timeline.start] as const] : []),
+  ]);
   let percentage: string;
   $: {
-    const percent = Math.min(1, currentTime / meta.totalTime);
-    percentage = `${100 * percent}%`;
+    const percent = meta.totalTime > 0 ? Math.min(1, currentTime / meta.totalTime) : 0;
+    percentage = `${100 * scale.timeToPosition(currentTime)}%`;
     dispatch('ui-update-progress', { payload: percent });
   }
   type CustomEvent = {
@@ -107,43 +113,12 @@
     timelineMarkerText: string | undefined;
   };
 
-  /**
-   * Calculate the tag position (percent) to be displayed on the progress bar.
-   * @param startTime - The start time of the session.
-   * @param endTime - The end time of the session.
-   * @param tagTime - The time of the tag.
-   * @returns The position of the tag. unit: percentage
-   */
-  function position(startTime: number, endTime: number, tagTime: number) {
-    const sessionDuration = endTime - startTime;
-    if (sessionDuration <= 0) return '0.00';
-    const eventDuration = endTime - tagTime;
-    const eventPosition = 100 - (eventDuration / sessionDuration) * 100;
-    return eventPosition.toFixed(2);
-  }
-
   $: customEvents = timeline.markers.map((marker): CustomEvent => ({
     name: marker.tag ?? 'Timeline marker',
     timeOffset: marker.timestamp - timeline.start,
     timelineMarkerText: marker.text,
     background: marker.tag === undefined ? timelineMarkerColor : tags[marker.tag] || 'rgb(73, 80, 246)',
-    position: `${position(timeline.start, timeline.end, marker.timestamp)}%`,
-  }));
-
-  let inactivePeriods: {
-    name: string;
-    background: string;
-    position: string;
-    width: string;
-  }[];
-  $: inactivePeriods = timeline.periods.map(([start, end]) => ({
-    name: 'inactive period',
-    background: inactiveColor,
-    position: `${position(timeline.start, timeline.end, start)}%`,
-    width:
-      timeline.end > timeline.start
-        ? `${(((end - start) / (timeline.end - timeline.start)) * 100).toFixed(2)}%`
-        : '0.00%',
+    position: `${scale.timeToPosition(marker.timestamp - timeline.start) * 100}%`,
   }));
 
   const loopTimer = () => {
@@ -288,7 +263,7 @@
     } else if (percent > 1) {
       percent = 1;
     }
-    const timeOffset = meta.totalTime * percent;
+    const timeOffset = scale.positionToTime(percent);
     goto(timeOffset);
   };
 
@@ -336,8 +311,12 @@
     skipInactive = !skipInactive;
   };
 
+  let refresh: Promise<void> | undefined;
+  let eventCount = replayer.service.state.context.events.length;
   export const triggerUpdateMeta = () => {
-    return Promise.resolve().then(() => {
+    return refresh ??= Promise.resolve().then(() => {
+      refresh = undefined;
+      eventCount = replayer.service.state.context.events.length;
       meta = replayer.getMetaData();
       timeline = updateTimeline(replayer.service.state.context.events, replayer.config.inactivePeriodThreshold);
     });
@@ -351,6 +330,7 @@
     replayer.on(
       'state-change',
       (states) => {
+        if (eventCount !== replayer.service.state.context.events.length) void triggerUpdateMeta();
         const { player, speed } = states as { player?: PlayerMachineState; speed?: SpeedMachineState };
         if (player?.value && playerState !== player.value) {
           playerState = player.value;
@@ -429,12 +409,10 @@
           class="rr-progress__step"
           style="width: {percentage}"
         />
-        {#each inactivePeriods as period}
-          <div
-            title={period.name}
-            style="width: {period.width};height: 4px;position: absolute;background: {period.background};left:
-            {period.position};"
-          />
+        {#each scale.spans.filter(span => span.idle) as span}
+          <div title="inactive period" class="rr-inactive-period"
+            style:left={`${span.left * 100}%`} style:width={`${(span.right-span.left) * 100}%`}
+            style:color={inactiveColor} />
         {/each}
         {#each customEvents as event}
           {#if event.timelineMarkerText}
@@ -499,6 +477,13 @@
     border-radius: 0 0 5px 5px;
   }
 
+  .rr-inactive-period {
+    position: absolute;
+    height: 50%;
+    top: 25%;
+    pointer-events: none;
+    background: repeating-linear-gradient(135deg, currentColor 0 2px, transparent 2px 5px);
+  }
   .rr-timeline {
     width: 100%;
     box-sizing: border-box;

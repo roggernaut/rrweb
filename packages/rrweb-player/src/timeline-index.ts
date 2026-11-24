@@ -1,4 +1,4 @@
-import { EventType } from '@rrweb/types';
+import { EventType, IncrementalSource } from '@rrweb/types';
 import type { eventWithTime } from '@rrweb/types';
 import { parseAnnotation } from './annotations';
 import type { Caption } from './annotations';
@@ -19,6 +19,7 @@ export function createTimelineIndex() {
     markers: { timestamp: number; tag?: string; text?: string }[];
     periods: [number, number][];
     hasCaptions: boolean;
+    lastActive: number;
   } {
     return {
       start: 0,
@@ -27,6 +28,7 @@ export function createTimelineIndex() {
       markers: [],
       periods: [],
       hasCaptions: false,
+      lastActive: 0,
     };
   }
 
@@ -66,14 +68,17 @@ export function createTimelineIndex() {
         state.markers.push({ timestamp: event.timestamp, tag: event.data.tag });
       }
       if (isUserInteraction(event)) {
-        if (event.timestamp - lastActiveTime > inactiveThreshold) {
-          state.periods.push([lastActiveTime, event.timestamp]);
+        const time = event.timestamp + (event.type === EventType.IncrementalSnapshot &&
+          event.data.source === IncrementalSource.MouseMove ? event.data.positions[0]?.timeOffset ?? 0 : 0);
+        if (time - lastActiveTime > inactiveThreshold) {
+          state.periods.push([lastActiveTime, time]);
         }
-        lastActiveTime = event.timestamp;
+        lastActiveTime = Math.max(lastActiveTime, time);
       }
     }
     lastEvent = events[count - 1];
     state.end = lastEvent?.timestamp ?? state.start;
+    state.lastActive = lastActiveTime;
     return state;
   };
 }
