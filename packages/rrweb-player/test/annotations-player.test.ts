@@ -77,6 +77,28 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+describe('player transport', () => {
+  it('jumps without player focus and leaves inputs and the timeline in control', async () => {
+    const player = await mount();
+    const controls = target.querySelector<HTMLElement>('.rr-controller')!;
+    vi.spyOn(controls, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 400, 80));
+    const arrow = (el: Element, key: string) => el.dispatchEvent(new KeyboardEvent('keydown', {key, bubbles: true, cancelable: true}));
+    arrow(document.body, 'ArrowRight');
+    expect(player.getReplayer().getCurrentTime()).toBe(10000);
+    expect(player.getReplayer().service.state.value).toBe('paused');
+    const input = document.createElement('input');
+    target.append(input);
+    arrow(input, 'ArrowLeft');
+    expect(player.getReplayer().getCurrentTime()).toBe(10000);
+    arrow(target.querySelector('[role="slider"]')!, 'ArrowLeft');
+    expect(player.getReplayer().getCurrentTime()).toBe(5000);
+    click('[aria-label="Back 10 seconds"]');
+    expect(player.getReplayer().getCurrentTime()).toBe(0);
+    click('[aria-label="Forward 10 seconds"]');
+    expect(player.getReplayer().getCurrentTime()).toBe(10000);
+  });
+});
+
 describe('player annotations', () => {
   it('keeps scrollable timeline marker panels outside the seek button and prevents timeline marker panel clicks from seeking', async () => {
     const player = await mount();

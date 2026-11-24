@@ -37,6 +37,19 @@
   const controllerHeight = 80;
   let player: HTMLElement;
   let frame: HTMLElement;
+  let press: { x: number; y: number; id: number } | undefined;
+  let dragged = false;
+
+  function startPress(event: PointerEvent) {
+    if (event.button !== 0 || !event.isPrimary) return;
+    press = { x: event.clientX, y: event.clientY, id: event.pointerId };
+    dragged = false;
+  }
+  function trackPress(event: PointerEvent) {
+    if (press?.id === event.pointerId &&
+        Math.hypot(event.clientX - press.x, event.clientY - press.y) > 4) dragged = true;
+  }
+
   let fullscreenListener: undefined | (() => void);
   let _width: number = width;
   let _height: number = height;
@@ -212,6 +225,17 @@
     position: relative;
   }
 
+  .rr-player__surface {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+  }
+
   .rr-player__caption {
     bottom: 24px;
     position: absolute;
@@ -259,6 +283,13 @@
 >
   <div class="rr-player__viewport" {style}>
     <div class="rr-player__frame" bind:this={frame} {style} />
+    {#if showController}
+      <button type="button" class="rr-player__surface" aria-label="Play or pause replay"
+        on:pointerdown={startPress} on:pointermove={trackPress}
+        on:pointerup={(event) => { trackPress(event); press = undefined; }}
+        on:pointercancel={() => { press = undefined; dragged = true; }}
+        on:click={(event) => { if (!event.detail || !dragged) toggle(); }} />
+    {/if}
     <div role="status" aria-live="polite" aria-atomic="true">
       {#if captionText !== undefined}
         <div class="rr-player__caption">{captionText}</div>

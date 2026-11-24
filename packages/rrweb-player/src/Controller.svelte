@@ -242,6 +242,35 @@
     replayer.play(timeOffset);
   };
 
+  let controls: HTMLElement;
+
+  function jump(direction: -1 | 1) {
+    const now = Math.max(0, replayer.getCurrentTime());
+    goto(Math.max(0, Math.min(meta.totalTime, now + direction * 10000)));
+  }
+
+  function handlePageKeydown(event: KeyboardEvent) {
+    dismissTimelineMarkersOnEscape(event);
+    if (!showController || !controls || event.defaultPrevented || event.isComposing ||
+        event.altKey || event.ctrlKey || event.metaKey || event.shiftKey ||
+        (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')) return;
+    const doc = controls.ownerDocument;
+    const target = event.composedPath()[0];
+    const surface = controls.closest('.rr-player')?.querySelector('.rr-player__surface');
+    if (target !== surface) {
+      if (target !== doc.body && target !== doc.documentElement) return;
+      if (doc.querySelector('dialog[open], [role="dialog"][aria-modal="true"]')) return;
+      const visible = Array.from(doc.querySelectorAll('.rr-player .rr-controller')).filter(el => {
+        const rect = el.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0 && rect.bottom > 0 &&
+          rect.top < window.innerHeight && rect.right > 0 && rect.left < window.innerWidth;
+      });
+      if (visible.length !== 1 || visible[0] !== controls) return;
+    }
+    event.preventDefault();
+    jump(event.key === 'ArrowLeft' ? -1 : 1);
+  }
+
   const handleProgressClick = (event: MouseEvent) => {
     if (speedState === 'skipping') {
       return;
@@ -364,7 +393,7 @@
   });
 </script>
 
-<svelte:window on:keydown={dismissTimelineMarkersOnEscape} />
+<svelte:window on:keydown={handlePageKeydown} />
 
 <style>
   .rr-controller {
@@ -470,7 +499,7 @@
 </style>
 
 {#if showController}
-  <div class="rr-controller">
+  <div class="rr-controller" bind:this={controls}>
     <div class="rr-timeline">
       <span class="rr-timeline__time">{formatTime(currentTime)}</span>
       <div
@@ -576,6 +605,8 @@
           </svg>
         {/if}
       </button>
+      <button type="button" aria-label="Back 10 seconds" on:click={() => jump(-1)}>−10s</button>
+      <button type="button" aria-label="Forward 10 seconds" on:click={() => jump(1)}>+10s</button>
       {#each speedOption as s}
         <button
           class:active={s === speed && speedState !== 'skipping'}
