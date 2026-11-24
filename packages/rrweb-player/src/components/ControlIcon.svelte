@@ -7,6 +7,7 @@
     | 'speed'
     | 'zoom'
     | 'settings'
+    | 'activity'
     | 'fullscreen';
 </script>
 
@@ -42,6 +43,8 @@
     >
   {:else if name === 'speed'}
     <circle cx="12" cy="14" r="8" /><path d="M9 2h6M12 6V2m6 5 2-2m-8 9 3-4" />
+  {:else if name === 'activity'}
+    <path d="M3 19h18M3 15l4-5 4 3 5-9 5 5" />
   {:else if name === 'zoom'}
     <circle cx="10.5" cy="10.5" r="7" /><path
       d="m16 16 5 5M7.5 10.5h6m-3-3v6"

@@ -3,8 +3,8 @@
   import ControlIcon from './ControlIcon.svelte';
 
   export let label: string;
-  export let icon: 'speed' | 'zoom' | 'settings';
-  export let active: 'speed' | 'zoom' | 'settings' | null = null;
+  export let icon: 'speed' | 'zoom' | 'settings' | 'activity';
+  export let active: 'speed' | 'zoom' | 'settings' | 'activity' | null = null;
   $: open = active === icon;
   function setOpen(value: boolean) {
     if (value) active = icon;

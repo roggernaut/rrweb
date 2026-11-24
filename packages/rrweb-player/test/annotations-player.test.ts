@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { pack } from '@rrweb/packer';
 import { tick } from 'svelte';
-import { EventType, IncrementalSource } from '@rrweb/types';
+import { EventType, IncrementalSource, MouseInteractions } from '@rrweb/types';
 import type { eventWithTime } from '@rrweb/types';
 import Player from '../src/Player.svelte';
 import * as annotations from '../src/annotations';
@@ -96,6 +96,31 @@ describe('player transport', () => {
     expect(player.getReplayer().getCurrentTime()).toBe(0);
     click('[aria-label="Skip forward 10 seconds"]');
     expect(player.getReplayer().getCurrentTime()).toBe(10000);
+  });
+});
+
+describe('timeline activity', () => {
+  it('shows a late click while paused and lets the viewer choose a seek time', async () => {
+    const player = await mount();
+    player.goto(0, false);
+    await tick();
+    expect(target.querySelector('.rr-activity')).toBeNull();
+    player.addEvent({
+      type: EventType.IncrementalSnapshot,
+      timestamp: start + 4000,
+      data: { source: IncrementalSource.MouseInteraction, type: MouseInteractions.Click, id: 1, x: 20, y: 20 },
+    });
+    await Promise.resolve();
+    await tick();
+    await tick();
+    const graph = target.querySelector<HTMLButtonElement>('.rr-activity')!;
+    expect(graph?.querySelector('line')).toBeTruthy();
+    graph.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    expect(player.getReplayer().getCurrentTime()).toBe(0);
+    graph.click();
+    await tick();
+    expect(player.getReplayer().getCurrentTime()).toBe(1000);
+    expect(player.getReplayer().service.state.value).toBe('paused');
   });
 });
 

@@ -12,6 +12,8 @@
     afterUpdate,
   } from 'svelte';
   import { formatTime } from './utils';
+  import {activitySamples, bucketReplayActivity, clickMarks, replayClickTimes} from './timeline-activity';
+  import TimelineActivity from './components/TimelineActivity.svelte';
   import PlayerToolbar from './components/PlayerToolbar.svelte';
   import CustomEventMarker from './components/CustomEventMarker.svelte';
   import { parseAnnotationEvent, getActiveCaption } from './annotations';
@@ -70,6 +72,13 @@
   export let timelineMarkerColor = 'rgb(73, 80, 246)';
   export let inactiveColor: string;
 
+  let activityVisible = true;
+  let layers = {inputs:true,scroll:true,mouse:true,clicks:true};
+  let bottomHovered = false;
+  $: buckets = bucketReplayActivity(replayer.service.state.context.events, scale.total);
+  $: marks = clickMarks(replayClickTimes(replayer.service.state.context.events), scale);
+  $: samples = activitySamples(buckets, scale);
+  $: hasActivity = marks.length > 0 || Array.from(buckets.values()).some(({ inputs, scroll, mouse }) => inputs > 0 || scroll > 0 || mouse > 0);
   let currentTime = 0;
   $: {
     dispatch('ui-update-current-time', { payload: currentTime });
@@ -323,6 +332,13 @@
   };
 
   onMount(() => {
+    function trackHover(event: PointerEvent) {
+      const bounds = container.getBoundingClientRect();
+      bottomHovered = event.pointerType !== 'touch' && event.clientY >= bounds.top + 0.75 * bounds.height;
+    }
+    const leave = () => { bottomHovered = false; };
+    container.addEventListener('pointermove', trackHover);
+    container.addEventListener('pointerleave', leave);
     replayer.on('annotation', handleAnnotation);
     replayer.on('start', restoreCaptionOnSeek);
     playerState = replayer.service.state.value;
@@ -358,9 +374,11 @@
       }
     });
 
-    if (autoPlay) {
-      replayer.play();
-    }
+    if (autoPlay) replayer.play();
+    return () => {
+      container.removeEventListener('pointermove', trackHover);
+      container.removeEventListener('pointerleave', leave);
+    };
   });
 
   afterUpdate(() => {
@@ -414,6 +432,9 @@
             style:left={`${span.left * 100}%`} style:width={`${(span.right-span.left) * 100}%`}
             style:color={inactiveColor} />
         {/each}
+        {#if hasActivity && activityVisible && Object.values(layers).some(Boolean)}
+          <TimelineActivity {scale} {samples} {marks} {layers} {currentTime} {bottomHovered} on:seek={e => goto(e.detail)} />
+        {/if}
         {#each customEvents as event}
           {#if event.timelineMarkerText}
             {#if showTimelineNotes}
@@ -447,6 +468,7 @@
       totalTime={meta.totalTime}
       playing={playerState === 'playing'}
       canSkip={playerState === 'playing' || playerState === 'paused'}
+      {hasActivity} bind:activityVisible bind:layers
       hasAnnotations={timeline.hasCaptions || timeline.markers.some(marker => marker.text)}
       {speed}
       {speedOption}

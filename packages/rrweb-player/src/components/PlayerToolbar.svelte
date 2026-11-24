@@ -12,9 +12,16 @@
   export let speedOption: number[];
   export let annotations: boolean;
   export let skipInactive: boolean;
+  export let hasActivity = false;
+  export let activityVisible = true;
+  export let layers = {inputs:true, scroll:true, mouse:true, clicks:true};
+  const legend = [
+    ['inputs','Input events',0.65], ['scroll','Scroll',0.36],
+    ['mouse','Mouse movement',0.17], ['clicks','Clicks',1],
+  ] as const;
   export let hasAnnotations: boolean;
   const dispatch = createEventDispatcher();
-  let panel: 'speed' | 'settings' | null = null;
+  let panel: 'speed' | 'settings' | 'activity' | null = null;
   $: minSpeed = Math.min(0.25, ...speedOption);
   $: maxSpeed = Math.max(8, ...speedOption);
   function changeSpeed(value: number) {
@@ -107,6 +114,15 @@
       {/each}
     </div>
   </ControlPopover>
+  {#if hasActivity}
+    <ControlPopover label="Timeline layers" icon="activity" {container} bind:active={panel}>
+      <label class="rr-setting"><span>Activity</span><input type="checkbox" role="switch" bind:checked={activityVisible} /></label>
+      {#each legend as [key, label, opacity]}
+        <label class="rr-setting"><span><i style:opacity />{label}</span>
+          <input type="checkbox" role="switch" bind:checked={layers[key]} disabled={!activityVisible} /></label>
+      {/each}
+    </ControlPopover>
+  {/if}
   <ControlPopover
     label="Replay settings"
     icon="settings"
@@ -145,6 +161,7 @@
 </div>
 
 <style>
+  .rr-setting i { display:inline-block; width:10px; height:6px; border-radius:3px; background:white; margin-right:6px; }
   .rr-controller__btns {
     display: flex;
     align-items: center;
