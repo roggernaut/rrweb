@@ -78,6 +78,25 @@ afterEach(() => {
 });
 
 describe('player transport', () => {
+  it('returns zoom to Fit with Escape after using transport controls', async () => {
+    await mount();
+    click('[aria-label="Zoom"]');
+    await tick();
+    const slider = target.querySelector<HTMLInputElement>('[aria-label="Replay zoom"]')!;
+    slider.value = '200';
+    slider.dispatchEvent(new Event('input', { bubbles: true }));
+    await tick();
+    const replay = target.querySelector<HTMLElement>('.replayer-wrapper')!;
+    expect(replay.style.scale).toBe('2');
+    const transport = target.querySelector<HTMLButtonElement>('[aria-label="Skip back 10 seconds"]')!;
+    transport.click(); transport.focus();
+    transport.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await tick();
+    expect(replay.style.scale).toBe('1');
+    expect(replay.style.translate).toBe('0px 0px');
+    expect(target.querySelector('[role="dialog"][aria-label="Zoom"]')).toBeNull();
+  });
+
   it('jumps without player focus and leaves inputs and the timeline in control', async () => {
     const player = await mount();
     const controls = target.querySelector<HTMLElement>('.rr-controller')!;
@@ -653,13 +672,12 @@ describe('player annotations', () => {
     expect(target.querySelector('[role="dialog"]')).toBeNull();
   });
 
-  it('returns focus to the timeline when Escape dismisses a panel during skipping', async () => {
+  it('keeps the marker interactive and returns focus to it when Escape dismisses a panel during skipping', async () => {
     const player = await mount();
     player.goto(2000, false);
     await tick();
     const marker = target.querySelector<HTMLButtonElement>('.rr-custom-event');
     const panel = target.querySelector<HTMLDivElement>('[role="dialog"]');
-    const timeline = target.querySelector<HTMLElement>('[role="slider"]');
 
     panel?.focus();
     expect(document.activeElement).toBe(panel);
@@ -669,7 +687,7 @@ describe('player annotations', () => {
     });
     await tick();
     expect(player.getReplayer().speedService.state.value).toBe('skipping');
-    expect(marker?.disabled).toBe(true);
+    expect(marker?.disabled).toBe(false);
 
     panel?.dispatchEvent(
       new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
@@ -677,7 +695,7 @@ describe('player annotations', () => {
     await tick();
 
     expect(target.querySelector('[role="dialog"]')).toBeNull();
-    expect(document.activeElement).toBe(timeline);
+    expect(document.activeElement).toBe(marker);
     expect(player.getReplayer().getCurrentTime()).toBe(2000);
   });
 

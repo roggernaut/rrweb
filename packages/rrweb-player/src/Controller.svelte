@@ -23,6 +23,10 @@
   const dispatch = createEventDispatcher();
 
   export let replayer: Replayer;
+  export let zoom = 1;
+  export let followCursor = true;
+  let toolbar: PlayerToolbar;
+  export function fit() { toolbar?.fit(); }
   export let container: HTMLElement;
   let pointerSeek = false;
   export let showCaptions = true;
@@ -259,9 +263,6 @@
   }
 
   const handleProgressClick = (event: MouseEvent) => {
-    if (speedState === 'skipping') {
-      return;
-    }
     pointerSeek = true;
     progressSlider.focus();
     const progressRect = progress.getBoundingClientRect();
@@ -280,9 +281,6 @@
     pointerSeek = false;
     // Ignore marker keys and the slider event bubbling to the progress wrapper.
     if (event.target !== event.currentTarget) return;
-    if (speedState === 'skipping') {
-      return;
-    }
     let timeOffset: number;
     switch (event.key) {
       case 'ArrowLeft':
@@ -404,7 +402,6 @@
       <div
         class="rr-progress"
         class:pointer-seek={pointerSeek}
-        class:disabled={speedState === 'skipping'}
         bind:this={progress}
         on:click={handleProgressClick}
         on:keydown={handleProgressKeydown}
@@ -419,7 +416,6 @@
           aria-valuemax={Math.floor(meta.totalTime / 1000) * 1000}
           aria-valuenow={accessibleTime}
           aria-valuetext={`${formatTime(accessibleTime)} of ${formatTime(meta.totalTime)}`}
-          aria-disabled={speedState === 'skipping'}
           on:keydown={handleProgressKeydown}
           on:blur={() => (pointerSeek = false)}
         />
@@ -444,7 +440,6 @@
                 text={event.timelineMarkerText}
                 background={event.background}
                 position={event.position}
-                disabled={speedState === 'skipping'}
                 on:seek={() => goto(event.timeOffset)}
                 on:focus-timeline={() => progressSlider.focus()}
               />
@@ -463,6 +458,9 @@
       </div>
     </div>
     <PlayerToolbar
+      bind:this={toolbar}
+      bind:zoom
+      bind:followCursor
       {container}
       {currentTime}
       totalTime={meta.totalTime}
