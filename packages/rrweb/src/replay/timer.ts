@@ -8,6 +8,8 @@ import {
 export class Timer {
   public timeOffset = 0;
   public speed: number;
+  /** Stop the accelerated frame at the action which restores normal speed. */
+  public skipEnd: number | null = null;
 
   private actions: actionWithDelay[];
   private raf: number | true | null = null;
@@ -59,7 +61,11 @@ export class Timer {
 
   private rafCheck() {
     const time = performance.now();
-    this.timeOffset += (time - this.lastTimestamp) * this.speed;
+    const next = this.timeOffset + (time - this.lastTimestamp) * this.speed;
+    this.timeOffset =
+      this.skipEnd !== null && this.skipEnd > this.timeOffset
+        ? Math.min(next, this.skipEnd)
+        : next;
     this.lastTimestamp = time;
     while (this.actions.length) {
       const action = this.actions[0];
@@ -115,23 +121,18 @@ export class Timer {
   }
 }
 
-// TODO: add speed to mouse move timestamp calculation
-export function addDelay(event: eventWithTime, baselineTime: number): number {
-  // Mouse move events was recorded in a throttle function,
-  // so we need to find the real timestamp by traverse the time offsets.
+export function replayTimestamp(event: eventWithTime): number {
   if (
     event.type === EventType.IncrementalSnapshot &&
     event.data.source === IncrementalSource.MouseMove &&
-    event.data.positions &&
-    event.data.positions.length
+    event.data.positions?.length
   ) {
-    const firstOffset = event.data.positions[0].timeOffset;
-    // timeOffset is a negative offset to event.timestamp
-    const firstTimestamp = event.timestamp + firstOffset;
-    event.delay = firstTimestamp - baselineTime;
-    return firstTimestamp - baselineTime;
+    return event.timestamp + event.data.positions[0].timeOffset;
   }
+  return event.timestamp;
+}
 
-  event.delay = event.timestamp - baselineTime;
+export function addDelay(event: eventWithTime, baselineTime: number): number {
+  event.delay = replayTimestamp(event) - baselineTime;
   return event.delay;
 }

@@ -28,7 +28,7 @@ import type {
   Mirror as RRDOMMirror,
 } from 'rrdom';
 import * as mittProxy from 'mitt';
-import { Timer } from './timer';
+import { Timer, replayTimestamp } from './timer';
 import {
   createPlayerService,
   createSpeedService,
@@ -137,6 +137,9 @@ export class Replayer {
 
   private emitter: Emitter = mitt();
 
+  private skipRefreshPending = false;
+  private interactionCount = -1;
+  private interactionBoundaries: eventWithTime[] = [];
   private nextUserInteractionEvent: eventWithTime | null;
 
   private legacy_missingNodeRetryMap: missingNodeMap = {};
@@ -443,7 +446,7 @@ export class Replayer {
         key as keyof playerConfig
       ] = config[key as keyof playerConfig];
     });
-    if (!this.config.skipInactive) {
+    if (!this.config.skipInactive || config.speed !== undefined) {
       this.backToNormal();
     }
     if (typeof config.speed !== 'undefined') {
@@ -453,6 +456,14 @@ export class Replayer {
           speed: config.speed,
         },
       });
+    }
+    if (
+      config.speed !== undefined ||
+      config.skipInactive !== undefined ||
+      config.inactivePeriodThreshold !== undefined
+    ) {
+      this.backToNormal();
+      this.skipAtPlayhead();
     }
     if (typeof config.mouseTail !== 'undefined') {
       if (config.mouseTail === false) {
@@ -527,6 +538,7 @@ export class Replayer {
     this.iframe.contentDocument
       ?.getElementsByTagName('html')[0]
       ?.classList.remove('rrweb-paused');
+    this.skipAtPlayhead();
     this.emitter.emit(ReplayerEvents.Start);
   }
 
@@ -541,6 +553,7 @@ export class Replayer {
     this.iframe.contentDocument
       ?.getElementsByTagName('html')[0]
       ?.classList.add('rrweb-paused');
+    this.backToNormal();
     this.emitter.emit(ReplayerEvents.Pause);
   }
 
@@ -576,9 +589,22 @@ export class Replayer {
     if (indicatesTouchDevice(event)) {
       this.mouse.classList.add('touch-device');
     }
-    void Promise.resolve().then(() =>
-      this.service.send({ type: 'ADD_EVENT', payload: { event } }),
-    );
+    void Promise.resolve().then(() => {
+      this.service.send({ type: 'ADD_EVENT', payload: { event } });
+      if (
+        this.config.skipInactive &&
+        !this.config.liveMode &&
+        this.service.state.matches('playing') &&
+        !this.skipRefreshPending
+      ) {
+        this.skipRefreshPending = true;
+        void Promise.resolve().then(() => {
+          this.skipRefreshPending = false;
+          this.backToNormal();
+          this.skipAtPlayhead();
+        });
+      }
+    });
   }
 
   public enableInteract() {
@@ -711,54 +737,18 @@ export class Replayer {
       case EventType.IncrementalSnapshot:
         castFn = () => {
           this.applyIncremental(event, isSync);
-          if (isSync) {
-            // do not check skip in sync
-            return;
-          }
-          if (event === this.nextUserInteractionEvent) {
-            this.nextUserInteractionEvent = null;
-            this.backToNormal();
-          }
-          if (this.config.skipInactive && !this.nextUserInteractionEvent) {
-            for (const _event of this.service.state.context.events) {
-              if (_event.timestamp <= event.timestamp) {
-                continue;
-              }
-              if (this.isUserInteraction(_event)) {
-                if (
-                  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-                  _event.delay! - event.delay! >
-                  this.config.inactivePeriodThreshold *
-                    this.speedService.state.context.timer.speed
-                ) {
-                  this.nextUserInteractionEvent = _event;
-                }
-                break;
-              }
-            }
-            if (this.nextUserInteractionEvent) {
-              const skipTime =
-                // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-                this.nextUserInteractionEvent.delay! - event.delay!;
-              const payload = {
-                speed: Math.min(
-                  Math.round(skipTime / SKIP_TIME_INTERVAL),
-                  this.config.maxSpeed,
-                ),
-              };
-              this.speedService.send({ type: 'FAST_FORWARD', payload });
-              this.emitter.emit(ReplayerEvents.SkipStart, payload);
-            }
-          }
         };
         break;
       default:
     }
     const wrappedCastFn = () => {
+      if (!isSync && event === this.nextUserInteractionEvent)
+        this.backToNormal();
       if (castFn) {
         castFn();
       }
 
+      if (!isSync && this.isUserInteraction(event)) this.skipAtPlayhead();
       for (const plugin of this.config.plugins || []) {
         if (plugin.handler) plugin.handler(event, isSync, { replayer: this });
       }
@@ -2269,7 +2259,53 @@ export class Replayer {
     );
   }
 
+  private skipAtPlayhead() {
+    if (
+      !this.config.skipInactive ||
+      this.config.liveMode ||
+      !this.service.state.matches('playing') ||
+      this.nextUserInteractionEvent
+    )
+      return;
+    const { events, baselineTime } = this.service.state.context;
+    if (this.interactionCount !== events.length) {
+      this.interactionCount = events.length;
+      const last = events[events.length - 1];
+      this.interactionBoundaries = events
+        .filter((event) => this.isUserInteraction(event) || event === last)
+        .sort((a, b) => replayTimestamp(a) - replayTimestamp(b));
+    }
+    const now = baselineTime + this.timer.timeOffset;
+    let lo = 0,
+      hi = this.interactionBoundaries.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (replayTimestamp(this.interactionBoundaries[mid]) <= now) lo = mid + 1;
+      else hi = mid;
+    }
+    const target = this.interactionBoundaries[lo];
+    if (!target) return;
+    const end = replayTimestamp(target);
+    const start = lo
+      ? replayTimestamp(this.interactionBoundaries[lo - 1])
+      : events[0].timestamp;
+    if (end - start <= this.config.inactivePeriodThreshold) return;
+    const speed = Math.min(
+      this.config.maxSpeed,
+      Math.max(
+        this.config.speed * 2,
+        Math.round((end - now) / SKIP_TIME_INTERVAL),
+      ),
+    );
+    if (speed <= this.timer.speed) return;
+    this.nextUserInteractionEvent = target;
+    this.timer.skipEnd = end - baselineTime;
+    this.speedService.send({ type: 'FAST_FORWARD', payload: { speed } });
+    this.emitter.emit(ReplayerEvents.SkipStart, { speed });
+  }
+
   private backToNormal() {
+    this.timer.skipEnd = null;
     this.nextUserInteractionEvent = null;
     if (this.speedService.state.matches('normal')) {
       return;
