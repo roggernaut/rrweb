@@ -52,3 +52,37 @@ it('applies a changed cap to the skip at the current playhead', () => {
     player.destroy();
   }
 });
+
+it('uses the classic rate when adaptive skipping is disabled', () => {
+  expect(inactiveSkipSpeed(60000, 1, 1000, false)).toBe(12);
+  expect(inactiveSkipSpeed(10000, 4, 1000, false)).toBe(8);
+  expect(inactiveSkipSpeed(60000, 1, 5, false)).toBe(5);
+});
+
+it('changes the active skip rate when adaptive skipping is toggled', () => {
+  const events: eventWithTime[] = [
+    {
+      type: EventType.Custom,
+      timestamp: 10000,
+      data: { tag: 'start', payload: {} },
+    },
+    {
+      type: EventType.Custom,
+      timestamp: 70000,
+      data: { tag: 'end', payload: {} },
+    },
+  ];
+  const player = new Replayer(events, { skipInactive: true, adaptiveSkip: false });
+  try {
+    player.play();
+    expect(player.timer.speed).toBe(12);
+
+    player.setConfig({ adaptiveSkip: true });
+    expect(player.timer.speed).toBe(inactiveSkipSpeed(60000, 1, 1000));
+
+    player.setConfig({ adaptiveSkip: false });
+    expect(player.timer.speed).toBe(12);
+  } finally {
+    player.destroy();
+  }
+});

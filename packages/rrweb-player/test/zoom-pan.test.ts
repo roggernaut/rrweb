@@ -123,6 +123,33 @@ describe('zoomed replay panning', () => {
     },
   );
 
+  it('keeps the camera active during a press when manual pan is off', async () => {
+    let animate: FrameRequestCallback | undefined;
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      animate = callback;
+      return 1;
+    });
+    vi.stubGlobal('cancelAnimationFrame', () => {
+      animate = undefined;
+    });
+    const { replay, cursor, capturedPointers, pointer } = mount(true);
+    Object.defineProperties(replay, {
+      offsetWidth: { value: 800 },
+      offsetHeight: { value: 480 },
+    });
+    cursor.style.cssText = 'left: 650px; top: 240px';
+    zoomPan.$set({ canPan: false, followCursor: true });
+    await tick();
+    expect(animate).toBeDefined();
+
+    await pointer('pointerdown', 0, 0);
+    await pointer('pointermove', 30, 20);
+    expect(capturedPointers.size).toBe(0);
+    expect(animate).toBeDefined();
+    animate?.(performance.now() + 64);
+    expect(replay.style.translate).not.toBe('0px 0px');
+  });
+
   it('centres only an axis outside the dead zone and holds the camera while paused', async () => {
     const { replay, pointer } = mount();
     Object.defineProperties(replay, {

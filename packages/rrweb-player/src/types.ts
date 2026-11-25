@@ -2,6 +2,8 @@ import type { eventWithTime } from '@rrweb/types';
 import type { Replayer, playerConfig } from '@rrweb/replay';
 import type { Mirror } from 'rrweb-snapshot';
 
+import type { PlayerFeatures, PlayerControls, PlayerIcons, JumpEvent } from './features';
+
 export type RRwebPlayerOptions = {
   target: HTMLElement;
   props: {
@@ -10,6 +12,9 @@ export type RRwebPlayerOptions = {
      * @default `[]`
      */
     events: eventWithTime[];
+    features?: PlayerFeatures;
+    controls?: PlayerControls;
+    icons?: PlayerIcons;
     /**
      * The width of the replayer
      * @defaultValue `1024`
@@ -45,6 +50,8 @@ export type RRwebPlayerOptions = {
      * @defaultValue `true`
      */
     showController?: boolean;
+    /** Display the fast-forward indicator while skipping inactivity. */
+    showSkipIndicator?: boolean;
     /**
      * Display timed captions from annotation events.
      * @defaultValue `true`
@@ -69,10 +76,14 @@ export type RRwebPlayerOptions = {
 };
 
 export type RRwebPlayerExpose = {
-  addEventListener: (
-    event: string,
-    handler: (params: unknown) => unknown,
-  ) => void;
+  setZoom: (scale: number) => void;
+  fit: () => void;
+  setFeatures: (patch: PlayerFeatures) => void;
+  jump: (direction: 'back' | 'forward') => void;
+  addEventListener: {
+    (event: 'ui-jump', handler: (detail: JumpEvent) => unknown): () => void;
+    (event: string, handler: (detail: unknown) => unknown): () => void;
+  };
   addEvent: (event: eventWithTime) => void;
   getMetaData: Replayer['getMetaData'];
   getReplayer: () => Replayer;
@@ -80,10 +91,15 @@ export type RRwebPlayerExpose = {
   // getSilly: () => void;
   toggle: () => void;
   setSpeed: (speed: number) => void;
+  setInactivity: (
+    options: Partial<
+      Pick<playerConfig, 'skipInactive' | 'inactivePeriodThreshold' | 'maxSpeed' | 'adaptiveSkip'>
+    >,
+  ) => void;
   toggleSkipInactive: () => void;
   toggleFullscreen: () => void;
   triggerResize: () => void;
-  $set: (options: { width: number; height: number }) => void;
+  $set: (options: Partial<RRwebPlayerOptions['props']>) => void;
   play: () => void;
   pause: () => void;
   goto: (timeOffset: number, play?: boolean) => void;
