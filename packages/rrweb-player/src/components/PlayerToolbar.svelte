@@ -154,15 +154,6 @@
     </div>
   </ControlPopover>
   {/if}
-  {#if hasActivity && controlVisibility.activity !== false}
-    <ControlPopover {icons} label="Timeline layers" icon="activity" {container} bind:active={panel}>
-      <label class="rr-setting"><span>Activity</span><input type="checkbox" role="switch" bind:checked={activityVisible} /></label>
-      {#each legend.filter(([key]) => features.activity !== false && (features.activity?.allowedLayers?.includes(key) ?? true)) as [key, label, opacity]}
-        <label class="rr-setting"><span><i style:background={`var(--rrweb-player-activity-${key}, ${key === 'clicks' ? 'var(--rrweb-player-activity-click, white)' : 'white'})`} style:opacity />{label}</span>
-          <input type="checkbox" role="switch" bind:checked={layers[key]} disabled={!activityVisible} /></label>
-      {/each}
-    </ControlPopover>
-  {/if}
   {#if features.zoom !== false && controlVisibility.zoom !== false}
   <ControlPopover {icons}
     label="Zoom"
@@ -195,9 +186,9 @@
       <span>{Math.round(zoom * 100)}%</span>
     </div>
     {#if features.zoom?.allowFollow !== false}
-    <label class="rr-setting">
+    <label class="rr-setting rr-follow-setting">
       <span>Follow cursor</span>
-      <input type="checkbox" bind:checked={followCursor} />
+      <input type="checkbox" role="switch" aria-label="Follow cursor" bind:checked={followCursor} />
     </label>
     {/if}
     <p class="rr-control-hint">
@@ -234,6 +225,27 @@
     >
   </ControlPopover>
   {/if}
+  {#if hasActivity && controlVisibility.activity !== false}
+    <ControlPopover {icons} label="Timeline layers" icon="activity" {container} bind:active={panel}>
+      <label class="rr-setting rr-engagement">
+        <span><strong>Engagement</strong><small>Clicks, input events, scroll and mouse travel</small></span>
+        <input type="checkbox" role="switch" aria-label="Engagement" bind:checked={activityVisible} />
+      </label>
+      {#if activityVisible}
+        <div class="rr-layer-list">
+          {#each legend.filter(([key]) => features.activity !== false && (features.activity?.allowedLayers?.includes(key) ?? true)) as [key, label, opacity]}
+            <label class="rr-layer-row">
+              <span aria-hidden="true" class="rr-swatch" data-legend-swatch={key} class:click-dot={key === 'clicks'}>
+                <i style:background={`var(--rrweb-player-activity-${key}, ${key === 'clicks' ? 'var(--rrweb-player-activity-click, white)' : 'white'})`} style:opacity />
+              </span>
+              <span>{label}</span>
+              <input type="checkbox" role="switch" aria-label={label} bind:checked={layers[key]} />
+            </label>
+          {/each}
+        </div>
+      {/if}
+    </ControlPopover>
+  {/if}
   {#if features.fullscreen !== false && controlVisibility.fullscreen !== false}
   <button
     type="button"
@@ -248,7 +260,30 @@
 </div>
 
 <style>
-  .rr-setting i { display:inline-block; width:10px; height:6px; border-radius:3px; background:white; margin-right:6px; }
+  .rr-engagement { padding-block: 8px; gap: 16px; }
+  .rr-engagement strong { font-weight: 500; }
+  .rr-engagement small { font-size: 11px; color: #ffffffa6; }
+  .rr-layer-list { padding-left: 12px; border-left: 1px solid #ffffff26; }
+  .rr-layer-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-block: 4px;
+    cursor: pointer;
+  }
+  .rr-swatch {
+    width: 12px;
+    height: 12px;
+    flex: none;
+    box-shadow: 0 0 0 1px #ffffff73;
+    border-radius: 3px;
+  }
+  .rr-swatch i { display: block; width: 100%; height: 100%; border-radius: inherit; }
+  .rr-swatch.click-dot { box-shadow: none; }
+  .click-dot i { width: 8px; height: 8px; margin: 2px; border-radius: 50%; }
+  .rr-layer-row input[role='switch'] { width: 28px; height: 16px; margin-left: auto; }
+  .rr-layer-row input[role='switch']::before { width: 12px; height: 12px; }
+  .rr-layer-row input[role='switch']:checked::before { transform: translateX(12px); }
   .rr-controller__btns {
     display: flex;
     align-items: center;
@@ -376,8 +411,16 @@
     padding-top: 12px;
     border-top: 1px solid #ffffff1a;
   }
+  .rr-follow-setting {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid #ffffff33;
+  }
   input[role='switch'] {
     appearance: none;
+    box-sizing: border-box;
+    border: 0;
+    margin: 0;
     width: 36px;
     height: 20px;
     padding: 2px;
@@ -395,7 +438,7 @@
     background: white;
   }
   input[role='switch']:checked {
-    background: var(--rrweb-player-accent, #d4ad00);
+    background: var(--rrweb-player-accent, #eec202);
   }
   input[role='switch']:checked::before {
     transform: translateX(16px);

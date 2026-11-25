@@ -65,9 +65,7 @@ const graph = () =>
 const trigger = () =>
   target.querySelector<HTMLButtonElement>('[aria-label="Timeline layers"]');
 const getSwitch = (text: string) =>
-  [...target.querySelectorAll('label')]
-    .find((label) => label.textContent?.includes(text))
-    ?.querySelector('input');
+  target.querySelector<HTMLInputElement>(`input[role="switch"][aria-label="${text}"]`);
 
 afterEach(() => {
   player?.$destroy();
@@ -86,7 +84,7 @@ it('separates allowed layers from the initial selection and retains viewer choic
   );
   trigger()!.click();
   await tick();
-  expect(getSwitch('Scroll')).toBeUndefined();
+  expect(getSwitch('Scroll')).toBeNull();
   expect(getSwitch('Input events')?.checked).toBe(false);
   expect(getSwitch('Clicks')?.checked).toBe(true);
 
@@ -98,11 +96,11 @@ it('separates allowed layers from the initial selection and retains viewer choic
   );
   expect(graph()?.querySelector('line')).toBeNull();
 
-  getSwitch('Activity')!.click();
+  getSwitch('Engagement')!.click();
   await tick();
   expect(graph()).toBeNull();
-  expect(getSwitch('Input events')?.disabled).toBe(true);
-  getSwitch('Activity')!.click();
+  expect(getSwitch('Input events')).toBeNull();
+  getSwitch('Engagement')!.click();
   await tick();
   player.setFeatures({ activity: { seek: false } });
   await tick();
