@@ -77,7 +77,8 @@
   }
   function move(e: PointerEvent) {
     if (!press || e.pointerId !== press.id) return;
-    if (!dragged && Math.hypot(e.clientX-press.x,e.clientY-press.y) <= 5) return;
+    const threshold = zoom > 1 ? 5 : 4;
+    if (!dragged && Math.hypot(e.clientX-press.x,e.clientY-press.y) <= threshold) return;
     dragged = true;
     if (zoom > 1) {
       followCursor = false;
@@ -90,6 +91,11 @@
       );
     }
     press.lastX=e.clientX; press.lastY=e.clientY;
+  }
+  function leave(e: PointerEvent) {
+    if (press?.id === e.pointerId && !surface.hasPointerCapture?.(e.pointerId)) {
+      dragged = true;
+    }
   }
   function end(e: PointerEvent) {
     if (!press || e.pointerId !== press.id) return;
@@ -109,7 +115,7 @@
 </script>
 <button type="button" class="rr-player__surface" class:zoomed={zoom > 1} bind:this={surface}
   aria-label="Play or pause replay" on:pointerdown={down} on:pointermove={move}
-  on:pointerup={end} on:pointercancel={end} on:lostpointercapture={end}
+  on:pointerleave={leave} on:pointerup={end} on:pointercancel={end} on:lostpointercapture={end}
   on:keydown={keydown} on:click={e => { if (!e.detail || !dragged) dispatch('toggle'); }} />
 <style>
   .rr-player__surface {position:absolute;inset:0;width:100%;height:100%;padding:0;background:transparent;border:0;cursor:pointer;}
