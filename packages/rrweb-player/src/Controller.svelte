@@ -311,45 +311,57 @@
     skipInactive = !skipInactive;
   };
 
-  let refresh: Promise<void> | undefined;
+  let refreshPending = false;
   let eventCount = replayer.service.state.context.events.length;
-  export const triggerUpdateMeta = () => {
-    return refresh ??= Promise.resolve().then(() => {
-      refresh = undefined;
-      eventCount = replayer.service.state.context.events.length;
-      meta = replayer.getMetaData();
-      timeline = updateTimeline(replayer.service.state.context.events, replayer.config.inactivePeriodThreshold);
+  function scheduleTimelineRefresh() {
+    if (refreshPending) return;
+    refreshPending = true;
+    void Promise.resolve().then(() => {
+      if (!refreshPending) return;
+      refreshPending = false;
+      const events = replayer.service.state.context.events;
+      eventCount = events.length;
+      const nextMeta = replayer.getMetaData();
+      if (nextMeta.startTime !== meta.startTime) {
+        currentTime = Math.max(0, replayer.getCurrentTime());
+      }
+      meta = nextMeta;
+      timeline = updateTimeline(events, replayer.config.inactivePeriodThreshold);
     });
-  };
+  }
+
+  function handleStateChange(states: unknown) {
+    if (eventCount !== replayer.service.state.context.events.length) {
+      scheduleTimelineRefresh();
+    }
+    const { player, speed } = states as {
+      player?: PlayerMachineState;
+      speed?: SpeedMachineState;
+    };
+    if (player?.value && playerState !== player.value) {
+      playerState = player.value;
+      switch (playerState) {
+        case 'playing':
+          loopTimer();
+          break;
+        case 'paused':
+          stopTimer();
+          break;
+        default:
+          break;
+      }
+    }
+    if (speed?.value && speedState !== speed.value) {
+      speedState = speed.value;
+    }
+  }
 
   onMount(() => {
     replayer.on('annotation', handleAnnotation);
     replayer.on('start', restoreCaptionOnSeek);
     playerState = replayer.service.state.value;
     speedState = replayer.speedService.state.value;
-    replayer.on(
-      'state-change',
-      (states) => {
-        if (eventCount !== replayer.service.state.context.events.length) void triggerUpdateMeta();
-        const { player, speed } = states as { player?: PlayerMachineState; speed?: SpeedMachineState };
-        if (player?.value && playerState !== player.value) {
-          playerState = player.value;
-          switch (playerState) {
-            case 'playing':
-              loopTimer();
-              break;
-            case 'paused':
-              stopTimer();
-              break;
-            default:
-              break;
-          }
-        }
-        if (speed?.value && speedState !== speed.value) {
-          speedState = speed.value;
-        }
-      },
-    );
+    replayer.on('state-change', handleStateChange);
     replayer.on('finish', () => {
       finished = true;
       if (onPauseHook) {
@@ -371,8 +383,10 @@
 
   onDestroy(() => {
     captionUpdatePending = false;
+    refreshPending = false;
     replayer.off('annotation', handleAnnotation);
     replayer.off('start', restoreCaptionOnSeek);
+    replayer.off('state-change', handleStateChange);
     replayer.pause();
     stopTimer();
   });

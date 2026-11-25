@@ -41,7 +41,7 @@ export function createTimelineIndex() {
       return;
     }
 
-    // A mouse batch can arrive after events that played later than its
+    // A pointer batch can arrive after events that played later than its
     // samples. Only a sample inside an existing idle period can change it.
     let low = 0;
     let high = periods.length;
@@ -95,10 +95,11 @@ export function createTimelineIndex() {
       } else if (event.type === EventType.Custom) {
         state.markers.push({ timestamp: event.timestamp, tag: event.data.tag });
       }
-      if (!isUserInteraction(event)) continue;
       if (
         event.type === EventType.IncrementalSnapshot &&
-        event.data.source === IncrementalSource.MouseMove &&
+        (event.data.source === IncrementalSource.MouseMove ||
+          event.data.source === IncrementalSource.TouchMove ||
+          event.data.source === IncrementalSource.Drag) &&
         event.data.positions?.length
       ) {
         for (const { timeOffset } of event.data.positions) {
@@ -107,7 +108,7 @@ export function createTimelineIndex() {
             : 0;
           addActivity(event.timestamp + offset, inactiveThreshold);
         }
-      } else {
+      } else if (isUserInteraction(event)) {
         addActivity(event.timestamp, inactiveThreshold);
       }
     }

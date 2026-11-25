@@ -14,11 +14,18 @@ const input = (timestamp: number): eventWithTime => ({
   timestamp,
   data: { source: IncrementalSource.Input, id: 1, text: '', isChecked: false },
 });
-const mouseMove = (timestamp: number, offsets: number[]): eventWithTime => ({
+const pointerMove = (
+  timestamp: number,
+  offsets: number[],
+  source:
+    | IncrementalSource.MouseMove
+    | IncrementalSource.TouchMove
+    | IncrementalSource.Drag = IncrementalSource.MouseMove,
+): eventWithTime => ({
   type: EventType.IncrementalSnapshot,
   timestamp,
   data: {
-    source: IncrementalSource.MouseMove,
+    source,
     positions: offsets.map((timeOffset) => ({ id: 1, x: 0, y: 0, timeOffset })),
   },
 });
@@ -88,7 +95,7 @@ describe('timeline indexing cost and ordering', () => {
       [13000, 36000],
     ]);
 
-    events.push(mouseMove(40000, [-33000, -16000]));
+    events.push(pointerMove(40000, [-33000, -16000]));
     const index = update(events, 10000);
     expect(index.periods).toEqual([
       [13000, 24000],
@@ -97,19 +104,26 @@ describe('timeline indexing cost and ordering', () => {
     expect(index.lastActive).toBe(36000);
   });
 
-  it('uses all samples of a mouse batch, including the last active time', () => {
-    const update = createTimelineIndex();
-    const events = [
-      caption(1000, 'Start'),
-      mouseMove(23000, [-11000, -5000, -1000]),
-    ];
-    const index = update(events, 10000);
-    expect(index.periods).toEqual([[1000, 12000]]);
-    expect(index.lastActive).toBe(22000);
+  it.each([
+    IncrementalSource.MouseMove,
+    IncrementalSource.TouchMove,
+    IncrementalSource.Drag,
+  ])(
+    'uses all samples of pointer source %i, including the last active time',
+    (source) => {
+      const update = createTimelineIndex();
+      const events = [
+        caption(1000, 'Start'),
+        pointerMove(23000, [-11000, -5000, -1000], source),
+      ];
+      const index = update(events, 10000);
+      expect(index.periods).toEqual([[1000, 12000]]);
+      expect(index.lastActive).toBe(22000);
 
-    events.push(input(29000));
-    expect(update(events, 10000).periods).toEqual([[1000, 12000]]);
-  });
+      events.push(input(29000));
+      expect(update(events, 10000).periods).toEqual([[1000, 12000]]);
+    },
+  );
 
   it('uses logarithmic caption lookup even near the beginning', () => {
     let reads = 0;
