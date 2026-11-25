@@ -67,8 +67,20 @@
     activeCaptionText = resolveCaption(index);
   }
 
-  function handleAnnotation(event: unknown) {
+  let hasAnnotations = false;
+  $: if (timeline.hasCaptions || timeline.markers.some(marker => marker.text)) {
+    hasAnnotations = true;
+  }
+
+  // Streamed annotations can be cast before they appear in the public event list.
+  function detectAnnotation(event: unknown) {
     const annotation = parseAnnotationEvent(event);
+    if (annotation?.text) hasAnnotations = true;
+    return annotation;
+  }
+
+  function handleAnnotation(event: unknown) {
+    const annotation = detectAnnotation(event);
     if (annotation?.type !== 'caption' || captionUpdatePending) return;
     captionUpdatePending = true;
     void Promise.resolve().then(() => {
@@ -442,6 +454,7 @@
 
   onMount(() => {
     replayer.on('annotation', handleAnnotation);
+    replayer.on('event-cast', detectAnnotation);
     replayer.on('start', restoreCaptionOnSeek);
     playerState = replayer.service.state.value;
     speedState = replayer.speedService.state.value;
@@ -489,6 +502,7 @@
   onDestroy(() => {
     captionUpdatePending = false;
     replayer.off('annotation', handleAnnotation);
+    replayer.off('event-cast', detectAnnotation);
     replayer.off('start', restoreCaptionOnSeek);
     replayer.pause();
     stopTimer();
@@ -574,7 +588,7 @@
       totalTime={meta.totalTime}
       playing={playerState === 'playing'}
       canSkip={canJump}
-      hasAnnotations={timeline.hasCaptions || timeline.markers.some(marker => marker.text)}
+      {hasAnnotations}
       {speed}
       {speedOption}
       canChangeSpeed={speedState !== 'skipping'}
