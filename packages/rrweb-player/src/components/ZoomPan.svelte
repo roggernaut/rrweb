@@ -23,13 +23,23 @@
     pan = clamp(point);
     replay.style.translate = `${pan.x}px ${pan.y}px`;
   }
-  function sync(value: number, follow: boolean) {
+  function stopCamera() {
     stopFollowing?.();
+    stopFollowing = undefined;
+  }
+  function syncZoom(value: number) {
     replay.style.scale = String(value);
     paint(pan);
-    stopFollowing = follow && value > 1 ? followReplayCursor(frame,replay,replayer,()=>pan,paint,clamp) : undefined;
   }
-  $: sync(zoom,followCursor);
+  function syncCamera(value: number, follow: boolean, holdingPointer: boolean) {
+    stopCamera();
+    if (follow && value > 1 && !holdingPointer) {
+      stopFollowing = followReplayCursor(frame, replay, replayer, () => pan, paint, clamp);
+    }
+  }
+  $: holdingPointer = press !== null;
+  $: syncZoom(zoom);
+  $: syncCamera(zoom, followCursor, holdingPointer);
   onMount(() => {
     if (typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver(() => paint(pan));
@@ -37,16 +47,19 @@
     return () => observer.disconnect();
   });
   onDestroy(() => {
-    stopFollowing?.();
+    stopCamera();
     replay.style.removeProperty('scale');
     replay.style.removeProperty('translate');
   });
   function down(e: PointerEvent) {
     if (e.button !== 0 || !e.isPrimary) return;
+    if (press && surface.hasPointerCapture?.(press.id)) return;
     dragged = false;
     press = {id:e.pointerId,x:e.clientX,y:e.clientY,lastX:e.clientX,lastY:e.clientY};
     if (zoom > 1) {
-      surface.focus();
+      // Hold the camera before the pointer crosses the drag threshold.
+      stopCamera();
+      surface.focus({ preventScroll: true });
       surface.setPointerCapture(e.pointerId);
     }
   }

@@ -7,7 +7,7 @@ import ZoomPan from '../src/components/ZoomPan.svelte';
 let frame: HTMLElement;
 let zoomPan: ZoomPan;
 
-function mount() {
+function mount(playing = false) {
   frame = document.createElement('div');
   const replay = document.createElement('div');
   const cursor = document.createElement('div');
@@ -31,7 +31,7 @@ function mount() {
       zoom: 2,
       followCursor: false,
       replayer: {
-        service: { state: { value: 'paused' } },
+        service: { state: { value: playing ? 'playing' : 'paused' } },
         getCurrentTime: () => 0,
         on() {},
         off() {},
@@ -45,7 +45,13 @@ function mount() {
     hasPointerCapture: (id: number) => capturedPointers.has(id),
     releasePointerCapture: (id: number) => capturedPointers.delete(id),
   });
-  function pointer(type: string, x: number, y: number, pointerId = 1) {
+  function pointer(
+    type: string,
+    x: number,
+    y: number,
+    pointerId = 1,
+    isPrimary = pointerId === 1,
+  ) {
     surface.dispatchEvent(
       new PointerEvent(type, {
         bubbles: true,
@@ -53,21 +59,70 @@ function mount() {
         clientX: x,
         clientY: y,
         pointerId,
-        isPrimary: pointerId === 1,
+        isPrimary,
       }),
     );
     return tick();
   }
 
-  return { replay, capturedPointers, pointer };
+  return { replay, cursor, surface, capturedPointers, pointer };
 }
 
 afterEach(() => {
   zoomPan.$destroy();
   frame.remove();
+  vi.unstubAllGlobals();
 });
 
 describe('zoomed replay panning', () => {
+  it.each(['click', 'drag'] as const)(
+    'holds the moving camera on pointerdown before a %s',
+    async (gesture) => {
+      const frames = new Map<number, FrameRequestCallback>();
+      let frameId = 0;
+      vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+        frames.set(++frameId, callback);
+        return frameId;
+      });
+      vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
+      function animate() {
+        const callbacks = [...frames.values()];
+        frames.clear();
+        callbacks.forEach((callback) => callback(performance.now() + 64));
+      }
+
+      const { replay, cursor, surface, pointer } = mount(true);
+      Object.defineProperties(replay, {
+        offsetWidth: { value: 800 },
+        offsetHeight: { value: 480 },
+      });
+      cursor.style.cssText = 'left: 650px; top: 240px';
+      zoomPan.$set({ followCursor: true });
+      await tick();
+      expect(frames.size).toBe(1);
+
+      await pointer('pointerdown', 100, 100);
+      await pointer('pointermove', 103, 100);
+      animate();
+      expect(replay.style.translate).toBe('0px 0px');
+
+      const toggle = vi.fn();
+      zoomPan.$on('toggle', toggle);
+      const endX = gesture === 'drag' ? 115 : 103;
+      await pointer('pointerup', endX, 100);
+      surface.dispatchEvent(new MouseEvent('click', { detail: 1 }));
+      animate();
+
+      if (gesture === 'drag') {
+        expect(replay.style.translate).toBe('15px 0px');
+        expect(toggle).not.toHaveBeenCalled();
+      } else {
+        expect(replay.style.translate).not.toBe('0px 0px');
+        expect(toggle).toHaveBeenCalledOnce();
+      }
+    },
+  );
+
   it('centres only an axis outside the dead zone and holds the camera while paused', async () => {
     const { replay, pointer } = mount();
     Object.defineProperties(replay, {
@@ -101,6 +156,15 @@ describe('zoomed replay panning', () => {
     expect(capturedPointers.has(1)).toBe(false);
     await pointer('pointermove', 180, 140);
     expect(replay.style.translate).toBe('60px 30px');
+  });
+
+  it('keeps the first captured pointer when another pointer type is primary', async () => {
+    const { replay, capturedPointers, pointer } = mount();
+    await pointer('pointerdown', 0, 0);
+    await pointer('pointerdown', 10, 10, 2, true);
+    await pointer('pointermove', 30, 20);
+    expect([...capturedPointers]).toEqual([1]);
+    expect(replay.style.translate).toBe('30px 20px');
   });
 
   it.each(['pointerup', 'pointercancel', 'lostpointercapture'])(
