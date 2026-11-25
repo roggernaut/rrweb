@@ -81,6 +81,49 @@ new rrwebPlayer({
 | inactiveColor       | #D4D4D4          | Customize the color of inactive periods indicator in the progress bar with a valid CSS color string.              |
 | ...                 | -                | all the [rrweb Replayer options](https://github.com/rrweb-io/rrweb/blob/main/guide.md#options-1) will be bypassed |
 
+## Playback controls
+
+Use `features.jump` to set the jump distance in seconds. The default is 10.
+Its `keyboard` option accepts `'page'` (the default), `'player'` for the
+focused replay surface or player, and `'off'`. Set `features.jump: false` to disable
+jumps, or `controls.jump: false` to hide the jump buttons while keeping
+keyboard and programmatic jumps available. Set `features.clickToPlay: false`
+to turn off play/pause clicks on the replay surface.
+
+```js
+const player = new rrwebPlayer({
+  target: document.body,
+  props: { events, features: { jump: { seconds: 5, keyboard: 'player' } } },
+});
+
+const unsubscribe = player.addEventListener('ui-jump', ({ fromMs, toMs, source }) => {
+  console.log(fromMs, toMs, source);
+});
+player.jump('forward');
+player.setFeatures({ jump: { seconds: 15 } }); // retains keyboard: 'player'
+unsubscribe();
+```
+
+Jump events use replay offsets in milliseconds and identify the source as
+`'button'`, `'keyboard'`, or `'api'`. Use `icons['jump-back']` or
+`icons['jump-forward']` to supply custom artwork. Each callback receives
+`{ name, seconds, document }` and returns an SVG element created with that
+document. Buttons retain their accessible names. Use `[data-rrweb-part="timeline"]`
+or `[data-rrweb-control="jump-forward"]` for CSS selectors that target a
+specific part or control.
+
+Set the player's colors on its mounting element. CSS custom properties inherit
+into each player, so two players on the same page can use different themes.
+
+```css
+.customer-replay {
+  --rrweb-player-surface: #142036;
+  --rrweb-player-text: #f5f8ff;
+  --rrweb-player-accent: #71d9cc;
+  --rrweb-player-focus-ring: #ffcd70;
+}
+```
+
 ## Captions and timeline markers
 
 Use `record.addAnnotation()` to add captions and timeline markers. Captions are

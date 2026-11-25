@@ -13,7 +13,20 @@
   } from './utils';
   import Controller from './Controller.svelte';
   import type { RRwebPlayerOptions, RRwebPlayerExpose } from './types';
-    
+
+  import type { PlayerFeatures, PlayerControls, PlayerIcons, JumpEvent } from './features';
+  import { mergeFeatures } from './features';
+  export let features: PlayerFeatures = {};
+  export let controls: PlayerControls = {};
+  export let icons: PlayerIcons = {};
+  const jumpListeners = new Set<(event: JumpEvent) => unknown>();
+  export function setFeatures(patch: PlayerFeatures) {
+    features = mergeFeatures(features, patch);
+  }
+  export const jump: RRwebPlayerExpose['jump'] = (direction) => {
+    controller?.jump(direction === 'forward' ? 1 : -1, 'api', features.jump);
+  };
+
   export let width: NonNullable<RRwebPlayerOptions['props']['width']>  = 1024;
   export let height: NonNullable<RRwebPlayerOptions['props']['height']> = 576;
   export let maxScale: NonNullable<RRwebPlayerOptions['props']['maxScale']> = 1;
@@ -121,18 +134,18 @@
   };
 
   export const addEventListener: RRwebPlayerExpose['addEventListener'] = (
-    event: string,
-    handler: (detail: unknown) => unknown,
+    event: string, handler: (detail: JumpEvent) => unknown,
   ) => {
-    replayer.on(event, handler);
-    switch (event) {
-      case 'ui-update-current-time':
-      case 'ui-update-progress':
-      case 'ui-update-player-state':
-        controller.$on(event, ({ detail }) => handler(detail));
-      default:
-        break;
+    if (event === 'ui-jump') {
+      jumpListeners.add(handler);
+      return () => { jumpListeners.delete(handler); };
     }
+    if (event === 'ui-update-current-time' || event === 'ui-update-progress' || event === 'ui-update-player-state') {
+      return controller.$on(event, ({ detail }) => (handler as (value: unknown) => unknown)(detail));
+    }
+    const listener = handler as (detail: unknown) => unknown;
+    replayer.on(event, listener);
+    return () => { replayer.off(event, listener); };
   };
 
   export const addEvent: RRwebPlayerExpose['addEvent'] = (event: eventWithTime) => {
@@ -192,11 +205,12 @@
         `);
     }
 
+    const { features: _features, controls: _controls, icons: _icons, ...replayProps } = $$props;
     replayer = new Replayer(events, {
       speed,
       root: frame,
       unpackFn: unpack,
-      ...$$props,
+      ...replayProps,
     });
 
     replayer.on('resize', (dimension) => {
@@ -306,17 +320,18 @@
 </style>
 
 <div
-  class="rr-player"
+  class="rr-player" data-rrweb-part="player"
+  tabindex={features.jump && features.jump.keyboard === 'player' ? 0 : undefined}
   bind:this={player}
   style={playerStyle}
   style:--rr-timeline-marker-panel-width={`${Math.min(280, width * 0.7)}px`}
   style:--rr-timeline-marker-panel-height={`${Math.max(48, height - 32)}px`}
 >
-  <div class="rr-player__viewport" {style}>
-    {#if showController}
+  <div class="rr-player__viewport" data-rrweb-part="viewport" {style}>
+    {#if showController && features.clickToPlay !== false}
       <button
         type="button"
-        class="rr-player__surface"
+        class="rr-player__surface" data-rrweb-part="surface"
         aria-label="Play or pause replay"
         on:pointerdown={startPress}
         on:pointermove={trackPress}
@@ -336,6 +351,8 @@
   {#if replayer}
     <Controller
       bind:this={controller}
+      {features} {icons} controlVisibility={controls}
+      on:ui-jump={({ detail }) => jumpListeners.forEach(listener => listener(detail))}
       {replayer}
       bind:captionText
       bind:showCaptions

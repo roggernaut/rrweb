@@ -1,9 +1,13 @@
 <script context="module" lang="ts">
   const shortcutControllers = new Set<HTMLElement>();
 
-  function registerShortcutController(element: HTMLElement) {
-    shortcutControllers.add(element);
-    return { destroy: () => shortcutControllers.delete(element) };
+  function registerShortcutController(element: HTMLElement, enabled: boolean) {
+    function update(active: boolean) {
+      if (active) shortcutControllers.add(element);
+      else shortcutControllers.delete(element);
+    }
+    update(enabled);
+    return { update, destroy: () => shortcutControllers.delete(element) };
   }
 </script>
 
@@ -26,6 +30,12 @@
   import { parseAnnotationEvent, getActiveCaption } from './annotations';
   import { createTimelineIndex } from './timeline-index';
 
+  import { jumpSeconds, type PlayerFeatures, type PlayerControls, type PlayerIcons, type JumpEvent } from './features';
+  export let features: PlayerFeatures = {};
+  export let controlVisibility: PlayerControls = {};
+  export let icons: PlayerIcons = {};
+  $: seconds = jumpSeconds(features.jump);
+  import IconOverride from './components/IconOverride.svelte';
   const dispatch = createEventDispatcher();
 
   export let replayer: Replayer;
@@ -252,12 +262,24 @@
   };
 
   let controls: HTMLElement | undefined;
-  $: canJump = playerState !== 'live' && speedState !== 'skipping';
+  function canJumpInState(state: typeof playerState, speed: typeof speedState) {
+    return state !== 'live' && speed !== 'skipping';
+  }
+  $: canJump = canJumpInState(playerState, speedState);
 
-  function jump(direction: -1 | 1) {
-    if (!canJump) return;
-    const now = Math.max(0, replayer.getCurrentTime());
-    goto(Math.max(0, Math.min(meta.totalTime, now + direction * 10000)));
+  export function jump(
+    direction: -1 | 1,
+    source: JumpEvent['source'] = 'button',
+    option = features.jump,
+  ) {
+    if (option === false || !canJumpInState(playerState, speedState)) return;
+    const now = Math.max(0, Math.min(meta.totalTime, replayer.getCurrentTime()));
+    const toMs = Math.max(
+      0,
+      Math.min(meta.totalTime, now + direction * jumpSeconds(option) * 1000),
+    );
+    goto(toMs);
+    dispatch('ui-jump', { fromMs: now, toMs, source } satisfies JumpEvent);
   }
 
   function isVisiblePlayer(element: Element, viewport: Window) {
@@ -295,7 +317,8 @@
     if (
       !showController ||
       !controls ||
-      !canJump ||
+      !canJumpInState(playerState, speedState) ||
+      features.jump === false || features.jump?.keyboard === 'off' ||
       event.defaultPrevented ||
       event.isComposing ||
       event.altKey ||
@@ -311,7 +334,8 @@
     const target = event.composedPath()[0];
     const player = controls.parentElement;
     const surface = player?.querySelector('.rr-player__surface');
-    if (target !== surface) {
+    if (target !== surface && target !== player) {
+      if (features.jump?.keyboard === 'player') return;
       if (target !== doc.body && target !== doc.documentElement) return;
       if (
         doc.designMode === 'on' ||
@@ -336,7 +360,7 @@
       }
     }
     event.preventDefault();
-    jump(event.key === 'ArrowLeft' ? -1 : 1);
+    jump(event.key === 'ArrowLeft' ? -1 : 1, 'keyboard');
   }
 
   const handleProgressClick = (event: MouseEvent) => {
@@ -467,7 +491,7 @@
   .rr-controller {
     width: 100%;
     height: 80px;
-    background: #fff;
+    background: var(--rrweb-player-surface, #fff);
     display: flex;
     flex-direction: column;
     justify-content: space-around;
@@ -485,7 +509,7 @@
     display: inline-block;
     width: 100px;
     text-align: center;
-    color: #11103e;
+    color: var(--rrweb-player-text, #11103e);
   }
 
   .rr-progress {
@@ -507,7 +531,7 @@
     border-radius: 3px;
   }
   .rr-progress__slider:focus-visible {
-    outline: 2px solid rgb(73, 80, 246);
+    outline: 2px solid var(--rrweb-player-focus-ring, rgb(73, 80, 246));
     outline-offset: 2px;
   }
   .rr-progress.disabled {
@@ -529,7 +553,7 @@
     position: absolute;
     top: 2px;
     transform: translate(-50%, -50%);
-    background: rgb(73, 80, 246);
+    background: var(--rrweb-player-accent, rgb(73, 80, 246));
   }
 
   .rr-controller__btns {
@@ -558,7 +582,7 @@
 
   .rr-controller__btns button.active {
     color: #fff;
-    background: rgb(73, 80, 246);
+    background: var(--rrweb-player-accent, rgb(73, 80, 246));
   }
 
   .rr-controller__btns button:disabled {
@@ -567,8 +591,8 @@
 </style>
 
 {#if showController}
-  <div class="rr-controller" bind:this={controls} use:registerShortcutController>
-    <div class="rr-timeline">
+  <div class="rr-controller" data-rrweb-part="controller" bind:this={controls} use:registerShortcutController={features.jump !== false && (features.jump?.keyboard ?? 'page') === 'page'}>
+    <div class="rr-timeline" data-rrweb-part="timeline">
       <span class="rr-timeline__time">{formatTime(currentTime)}</span>
       <div
         class="rr-progress"
@@ -673,18 +697,24 @@
           </svg>
         {/if}
       </button>
+      {#if features.jump !== false && controlVisibility.jump !== false}
       <button
         type="button"
-        aria-label="Back 10 seconds"
+        data-rrweb-control="jump-back"
+        aria-label={`Back ${seconds} ${seconds === 1 ? 'second' : 'seconds'}`}
+        title={`Back ${seconds} ${seconds === 1 ? 'second' : 'seconds'}`}
         disabled={!canJump}
         on:click={() => jump(-1)}
-      >−10s</button>
+      ><IconOverride {icons} {seconds} name="jump-back">−{seconds}s</IconOverride></button>
       <button
         type="button"
-        aria-label="Forward 10 seconds"
+        data-rrweb-control="jump-forward"
+        aria-label={`Forward ${seconds} ${seconds === 1 ? 'second' : 'seconds'}`}
+        title={`Forward ${seconds} ${seconds === 1 ? 'second' : 'seconds'}`}
         disabled={!canJump}
         on:click={() => jump(1)}
-      >+10s</button>
+      ><IconOverride {icons} {seconds} name="jump-forward">+{seconds}s</IconOverride></button>
+      {/if}
       {#each speedOption as s}
         <button
           class:active={s === speed && speedState !== 'skipping'}
