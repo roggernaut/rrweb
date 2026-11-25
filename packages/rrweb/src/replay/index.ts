@@ -137,6 +137,7 @@ export class Replayer {
 
   private emitter: Emitter = mitt();
 
+  private playbackId = 0;
   private skipRefreshPending = false;
   private interactionCount = -1;
   private interactionBoundaries: eventWithTime[] = [];
@@ -532,6 +533,7 @@ export class Replayer {
   }
 
   private playAt(timeOffset: number, skipInactive: boolean) {
+    this.playbackId++;
     this.backToNormal();
     if (this.service.state.matches('paused')) {
       this.service.send({ type: 'PLAY', payload: { timeOffset } });
@@ -574,6 +576,7 @@ export class Replayer {
    * Memory occupation can be released by removing all references to this replayer.
    */
   public destroy() {
+    this.playbackId++;
     this.pause();
     this.mirror.reset();
     this.styleMirror.reset();
@@ -694,6 +697,7 @@ export class Replayer {
   };
 
   private getCastFn = (event: eventWithTime, isSync = false) => {
+    const playbackId = this.playbackId;
     let castFn: undefined | (() => void);
     switch (event.type) {
       case EventType.DomContentLoaded:
@@ -759,14 +763,14 @@ export class Replayer {
       this.service.send({ type: 'CAST_EVENT', payload: { event } });
 
       // events are kept sorted by timestamp, check if this is the last event
-      const lastIndex = this.service.state.context.events.length - 1;
-      if (
-        !this.config.liveMode &&
-        event === this.service.state.context.events[lastIndex]
-      ) {
+      const { events } = this.service.state.context;
+      if (!this.config.liveMode && event === events[events.length - 1]) {
         const finish = () => {
-          if (lastIndex < this.service.state.context.events.length - 1) {
-            // more events have been added since the setTimeout
+          const { events } = this.service.state.context;
+          if (
+            playbackId !== this.playbackId ||
+            event !== events[events.length - 1]
+          ) {
             return;
           }
           this.backToNormal();
