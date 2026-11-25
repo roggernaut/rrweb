@@ -97,6 +97,32 @@ describe('player transport', () => {
     click('[aria-label="Forward 10 seconds"]');
     expect(player.getReplayer().getCurrentTime()).toBe(10000);
   });
+
+  it('toggles on a surface click and ignores a drag that leaves the surface', async () => {
+    const player = await mount();
+    const surface = target.querySelector<HTMLButtonElement>('.rr-player__surface')!;
+    const state = () => player.getReplayer().service.state.value;
+    const pointer = (type: string, x: number, pointerId = 1) =>
+      surface.dispatchEvent(
+        new PointerEvent(type, { button: 0, clientX: x, isPrimary: true, pointerId }),
+      );
+    const mouseClick = () => surface.dispatchEvent(new MouseEvent('click', { detail: 1 }));
+
+    pointer('pointerdown', 1);
+    pointer('pointerleave', -1);
+    pointer('pointerup', 1);
+    mouseClick();
+    expect(state()).toBe('paused');
+
+    pointer('pointerdown', 1);
+    pointer('pointercancel', 1, 2);
+    pointer('pointerup', 1);
+    mouseClick();
+    expect(state()).toBe('playing');
+
+    surface.click();
+    expect(state()).toBe('paused');
+  });
 });
 
 describe('player annotations', () => {

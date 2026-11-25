@@ -45,9 +45,34 @@
     press = { x: event.clientX, y: event.clientY, id: event.pointerId };
     dragged = false;
   }
+
   function trackPress(event: PointerEvent) {
-    if (press?.id === event.pointerId &&
-        Math.hypot(event.clientX - press.x, event.clientY - press.y) > 4) dragged = true;
+    if (
+      press?.id === event.pointerId &&
+      Math.hypot(event.clientX - press.x, event.clientY - press.y) > 4
+    ) {
+      dragged = true;
+    }
+  }
+
+  function leavePress(event: PointerEvent) {
+    if (press?.id === event.pointerId) dragged = true;
+  }
+
+  function finishPress(event: PointerEvent) {
+    if (press?.id !== event.pointerId) return;
+    trackPress(event);
+    press = undefined;
+  }
+
+  function cancelPress(event: PointerEvent) {
+    if (press?.id !== event.pointerId) return;
+    dragged = true;
+    press = undefined;
+  }
+
+  function handleSurfaceClick(event: MouseEvent) {
+    if (!event.detail || !dragged) toggle();
   }
 
   let fullscreenListener: undefined | (() => void);
@@ -261,6 +286,12 @@
     overflow: hidden;
   }
 
+  /* The iframe can still receive input when the Replayer enables interaction. */
+  .rr-player__surface + .rr-player__frame {
+    position: relative;
+    pointer-events: none;
+  }
+
   .replayer-wrapper {
     float: left;
     clear: both;
@@ -282,14 +313,20 @@
   style:--rr-timeline-marker-panel-height={`${Math.max(48, height - 32)}px`}
 >
   <div class="rr-player__viewport" {style}>
-    <div class="rr-player__frame" bind:this={frame} {style} />
     {#if showController}
-      <button type="button" class="rr-player__surface" aria-label="Play or pause replay"
-        on:pointerdown={startPress} on:pointermove={trackPress}
-        on:pointerup={(event) => { trackPress(event); press = undefined; }}
-        on:pointercancel={() => { press = undefined; dragged = true; }}
-        on:click={(event) => { if (!event.detail || !dragged) toggle(); }} />
+      <button
+        type="button"
+        class="rr-player__surface"
+        aria-label="Play or pause replay"
+        on:pointerdown={startPress}
+        on:pointermove={trackPress}
+        on:pointerleave={leavePress}
+        on:pointerup={finishPress}
+        on:pointercancel={cancelPress}
+        on:click={handleSurfaceClick}
+      />
     {/if}
+    <div class="rr-player__frame" bind:this={frame} {style} />
     <div role="status" aria-live="polite" aria-atomic="true">
       {#if captionText !== undefined}
         <div class="rr-player__caption">{captionText}</div>
