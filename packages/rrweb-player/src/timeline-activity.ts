@@ -164,8 +164,8 @@ export function clickMarks(
   return marks;
 }
 
-/** A fixed-size drawing of the stacked bands, independent of recording
- * length.
+/** A sampled drawing of the stacked bands with 601 grid points, plus idle
+ * edges and bins that share a grid point on opposite sides of a gap.
  *
  * Each sample's `layers` follow the order of ACTIVITY_LAYERS, bottom of the
  * stack first. Every layer is scaled to its own highest value and gets an
@@ -184,7 +184,7 @@ export function activitySamples(
   // bucket in it. Sampling only at the grid point loses isolated bursts.
   const coarse = new Map<
     number,
-    { position: number; values: ActivityBucket }
+    Map<number, { position: number; values: ActivityBucket }>
   >();
   const ordered = [...buckets.entries()].sort(([a], [b]) => a - b);
   let first = 0;
@@ -210,20 +210,23 @@ export function activitySamples(
       const end = Math.min(span.end, (second + 1) * 1000);
       const position = scale.timeToPosition((start + end) / 2);
       const index = Math.round(position * SAMPLE_INTERVALS);
-      const bin = coarse.get(index) ?? { position, values: empty() };
-      for (const key of ACTIVITY_LAYERS)
-        bin.values[key] += (bucket[key] * (end - start)) / 1000;
-      coarse.set(index, bin);
+      const bins = coarse.get(index) ?? new Map();
+      const bin = bins.get(span.start) ?? { position, values: empty() };
+      // Counts and distances belong to discrete events. Keep their full value
+      // when the bucket overlaps only the edge of an active span.
+      for (const key of ACTIVITY_LAYERS) bin.values[key] += bucket[key];
+      bins.set(span.start, bin);
+      coarse.set(index, bins);
     }
   }
-  const samples = positions.map((position, index) => {
-    const bin = coarse.get(index);
-    if (bin)
-      return {
+  const samples = positions.flatMap((position, index) => {
+    const bins = coarse.get(index);
+    if (bins)
+      return Array.from(bins.values(), (bin) => ({
         position: bin.position,
         time: scale.positionToTime(bin.position),
         values: bin.values,
-      };
+      }));
     const time = scale.positionToTime(position);
     const span = scale.spans.find(
       (part) => time >= part.start && time < part.end,
@@ -260,6 +263,18 @@ export function activitySamples(
     }
     return { position, time, values };
   });
+  // Baseline anchors keep the graph out of idle gaps narrower than one grid
+  // interval, including when activity on either side shares a grid point.
+  for (const span of scale.spans) {
+    if (!span.idle) continue;
+    for (const time of [span.start, span.end])
+      samples.push({
+        position: scale.timeToPosition(time),
+        time,
+        values: empty(),
+      });
+  }
+  samples.sort((a, b) => a.position - b.position);
   const maxima = empty();
   for (const sample of samples)
     for (const key of ACTIVITY_LAYERS)
