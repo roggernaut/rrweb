@@ -182,10 +182,8 @@
     padding: 4px 12px;
     /* Popovers are positioned against an ancestor outside the scrolling row. */
     overflow-x: auto;
-    color: var(--rrweb-player-text, var(--rr-theme-text, #edf1ff));
-    font:
-      12px/1.5 system-ui,
-      sans-serif;
+    color: var(--rrweb-player-text, #11103e);
+    font: var(--rrweb-player-font, 12px/1.5 system-ui, sans-serif);
   }
   .rr-controller__btns :global(button) {
     padding: 0;
@@ -199,18 +197,19 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 36px;
-    height: 36px;
+    width: var(--rrweb-player-control-size, 32px);
+    height: var(--rrweb-player-control-size, 32px);
     flex-shrink: 0;
-    border-radius: 8px;
+    border-radius: var(--rrweb-player-control-radius, 50%);
   }
   .rr-controller__btns :global(button:hover),
+  .rr-controller__btns :global(button:active),
   .rr-controller__btns :global(button.active) {
-    background: #ffffff1a;
+    background: var(--rrweb-player-selected, #e0e1fe);
   }
   .rr-controller__btns :global(button:focus-visible),
   .rr-controller__btns :global(input:focus-visible) {
-    outline: 2px solid var(--rrweb-player-focus-ring, var(--rr-theme-focus-ring, #ffe373));
+    outline: 2px solid var(--rrweb-player-focus-ring, var(--rrweb-player-accent, #4950f6));
     outline-offset: 2px;
   }
   .rr-controller__btns :global(button:disabled) {
@@ -237,13 +236,13 @@
     min-width: 28px;
     height: 28px;
     border-radius: 999px;
-    background: #ffffff1a;
+    background: var(--rrweb-player-control-background, #f1f1f8);
   }
   input[type='range'] {
     min-width: 0;
     flex: 1;
     height: 32px;
-    accent-color: var(--rrweb-player-accent, var(--rr-theme-accent, #ffe373));
+    accent-color: var(--rrweb-player-accent, #4950f6);
     cursor: pointer;
   }
   .rr-speed-presets {
@@ -260,12 +259,12 @@
   .rr-speed-presets button {
     width: 100%;
     padding: 6px 0;
-    background: #ffffff1a;
+    background: var(--rrweb-player-control-background, #f1f1f8);
     border-radius: 999px;
     font-size: 11px;
   }
   .rr-speed-presets button[aria-pressed='true'] {
-    background: var(--rrweb-player-selected, var(--rr-theme-selected, var(--rrweb-player-accent, var(--rr-theme-accent, #ffffff40))));
+    background: var(--rrweb-player-selected, #e0e1fe);
   }
   .normal {
     text-decoration: underline;
@@ -274,7 +273,7 @@
   small {
     display: block;
     margin-top: 4px;
-    color: #edf1ffb3;
+    color: var(--rrweb-player-muted, #54546b);
     font-size: 10px;
   }
   .rr-setting {
@@ -287,15 +286,12 @@
   .rr-setting + .rr-setting {
     margin-top: 12px;
     padding-top: 12px;
-    border-top: 1px solid #ffffff1a;
+    border-top: 1px solid var(--rrweb-player-divider, #dadbe5);
   }
   @container (max-width: 440px) {
     .rr-controller__btns {
       gap: 0;
       padding-inline: 8px;
-    }
-    .rr-controller__btns :global(button[data-replay-control]) {
-      width: 30px;
     }
   }
 </style>

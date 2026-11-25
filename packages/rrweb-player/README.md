@@ -112,8 +112,8 @@ document. Buttons retain their accessible names. Use `[data-rrweb-part="timeline
 or `[data-rrweb-control="jump-forward"]` for CSS selectors that target a
 specific part or control.
 
-Set the player's colors on its mounting element. CSS custom properties inherit
-into each player, so two players on the same page can use different themes.
+The player opens with the white-and-blue toolbar. Customize its appearance on the mounting element. CSS custom properties inherit
+into each player, so two players on the same page can use different colors.
 
 ```css
 .customer-replay {
@@ -127,6 +127,22 @@ into each player, so two players on the same page can use different themes.
 Use `--rrweb-player-track` for the timeline background and
 `--rrweb-player-played` for its elapsed portion. The popover background uses
 `--rrweb-player-popover` and selected buttons use `--rrweb-player-selected`.
+
+Use the following CSS properties for the toolbar and popovers. Each name has the prefix `--rrweb-player-`.
+
+| Area | Properties |
+| --- | --- |
+| Buttons and typography | `control-size`, `control-radius`, `control-background`, `selected`, `font`, `muted` |
+| Popovers and tooltip | `popover`, `border`, `divider`, `popover-radius`, `popover-shadow` |
+| Switches | `switch-on`, `switch-off`, `switch-knob`, `switch-shadow`, `switch-width`, `switch-height`, `switch-thumb-size`, `switch-inset` |
+| Player and timeline | `surface`, `radius`, `shadow`, `fullscreen-background`, `color-scheme`, `timeline-inset`, `playhead-size` |
+| Captions | `caption-background`, `caption-color` |
+
+For finer control, target a part inside the mount directly, for example
+`.customer-replay [data-rrweb-part="time-tooltip"]` or
+`.customer-replay [data-rrweb-control="play"]`. CSS updates apply to an
+already mounted player. Use the `icons` prop for custom SVG artwork and
+`features` and `controls` for behavior and visibility.
 
 Set `controls.play`, `controls.time`, `controls.speed`,
 `controls.settings`, or `controls.fullscreen` to `false` to hide individual
@@ -461,9 +477,7 @@ playRange(
   </tr>
 </table>
 
-### Player theme and recording time
-
-Pass `theme: 'light'` in the player props for the white rrweb toolbar. The default is `'dark'`. Change it on a mounted player with `player.$set({ theme: 'light' })`. Per-icon renderers and the public CSS color variables continue to take precedence.
+### Recording start time
 
 Hover over the elapsed time or focus it with Tab to see when the recording started in the viewer’s local time. Set `recordingTimeZone` to the recorded user’s IANA time zone (for example, `'America/New_York'`) to show their local time as well.
 
