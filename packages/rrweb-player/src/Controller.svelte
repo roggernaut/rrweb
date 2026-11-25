@@ -1,9 +1,13 @@
 <script context="module" lang="ts">
   const shortcutControllers = new Set<HTMLElement>();
 
-  function registerShortcutController(element: HTMLElement) {
-    shortcutControllers.add(element);
-    return { destroy: () => shortcutControllers.delete(element) };
+  function registerShortcutController(element: HTMLElement, enabled: boolean) {
+    function update(active: boolean) {
+      if (active) shortcutControllers.add(element);
+      else shortcutControllers.delete(element);
+    }
+    update(enabled);
+    return { update, destroy: () => shortcutControllers.delete(element) };
   }
 </script>
 
@@ -26,22 +30,29 @@
   import { parseAnnotationEvent, getActiveCaption } from './annotations';
   import { createTimelineIndex } from './timeline-index';
 
+  import { jumpSeconds, type PlayerFeatures, type PlayerControls, type PlayerIcons, type JumpEvent } from './features';
+  export let features: PlayerFeatures = {};
+  export let controlVisibility: PlayerControls = {};
+  export let fullscreen = false;
+  export let icons: PlayerIcons = {};
+  $: seconds = jumpSeconds(features.jump);
   const dispatch = createEventDispatcher();
 
   export let replayer: Replayer;
+  export let maxZoom = 4;
   export let zoom = 1;
   export let followCursor = true;
   let toolbar: PlayerToolbar;
-  export function fit() { toolbar?.fit(); }
+  export function fit() { followCursor = false; toolbar?.fit(); }
   export let container: HTMLElement;
   let pointerSeek = false;
   export let showCaptions = true;
-  let showTimelineNotes = true;
+  let showAnnotations = true;
   const updateTimeline = createTimelineIndex();
   $: timeline = updateTimeline(replayer.service.state.context.events, replayer.config.inactivePeriodThreshold);
   export let captionText: string | undefined = undefined;
   let activeCaptionText: string | undefined;
-  $: captionText = showCaptions ? activeCaptionText : undefined;
+  $: captionText = showAnnotations && showCaptions ? activeCaptionText : undefined;
   // Index changes and seeks reconcile state; playback updates come from annotation events.
   $: activeCaptionText = resolveCaption(timeline);
 
@@ -259,12 +270,24 @@
   };
 
   let controls: HTMLElement | undefined;
-  $: canJump = playerState !== 'live' && speedState !== 'skipping';
+  function canJumpInState(state: typeof playerState, speed: typeof speedState) {
+    return state !== 'live' && speed !== 'skipping';
+  }
+  $: canJump = canJumpInState(playerState, speedState);
 
-  function jump(direction: -1 | 1) {
-    if (!canJump) return;
-    const now = Math.max(0, replayer.getCurrentTime());
-    goto(Math.max(0, Math.min(meta.totalTime, now + direction * 10000)));
+  export function jump(
+    direction: -1 | 1,
+    source: JumpEvent['source'] = 'button',
+    option = features.jump,
+  ) {
+    if (option === false || !canJumpInState(playerState, speedState)) return;
+    const now = Math.max(0, Math.min(meta.totalTime, replayer.getCurrentTime()));
+    const toMs = Math.max(
+      0,
+      Math.min(meta.totalTime, now + direction * jumpSeconds(option) * 1000),
+    );
+    goto(toMs);
+    dispatch('ui-jump', { fromMs: now, toMs, source } satisfies JumpEvent);
   }
 
   function isVisiblePlayer(element: Element, viewport: Window) {
@@ -302,7 +325,8 @@
     if (
       !showController ||
       !controls ||
-      !canJump ||
+      !canJumpInState(playerState, speedState) ||
+      features.jump === false || features.jump?.keyboard === 'off' ||
       event.defaultPrevented ||
       event.isComposing ||
       event.altKey ||
@@ -318,7 +342,8 @@
     const target = event.composedPath()[0];
     const player = controls.parentElement;
     const surface = player?.querySelector('.rr-player__surface');
-    if (target !== surface) {
+    if (target !== surface && target !== player) {
+      if (features.jump?.keyboard === 'player') return;
       if (target !== doc.body && target !== doc.documentElement) return;
       if (
         doc.designMode === 'on' ||
@@ -343,7 +368,7 @@
       }
     }
     event.preventDefault();
-    jump(event.key === 'ArrowLeft' ? -1 : 1);
+    jump(event.key === 'ArrowLeft' ? -1 : 1, 'keyboard');
   }
 
   const handleProgressClick = (event: MouseEvent) => {
@@ -474,12 +499,12 @@
 
 {#if showController}
   <div
-    class="rr-controller"
+    class="rr-controller" data-rrweb-part="controller"
     bind:this={controls}
-    use:registerShortcutController
+    use:registerShortcutController={features.jump !== false && (features.jump?.keyboard ?? 'page') === 'page'}
     data-native-replay-controls
   >
-    <div class="rr-timeline">
+    <div class="rr-timeline" data-rrweb-part="timeline">
       <div
         class="rr-progress"
         class:pointer-seek={pointerSeek}
@@ -515,7 +540,7 @@
         {/each}
         {#each customEvents as event}
           {#if event.timelineMarkerText}
-            {#if showTimelineNotes}
+            {#if showAnnotations}
               <CustomEventMarker
                 dismissalVersion={timelineMarkerDismissalVersion}
                 name={event.name}
@@ -540,9 +565,9 @@
         <div class="rr-progress__handler" style="left: {percentage}" />
       </div>
     </div>
-    <PlayerToolbar
+    <PlayerToolbar {features} {controlVisibility} {icons} {seconds} {fullscreen}
       bind:this={toolbar}
-      bind:zoom
+      {maxZoom} bind:zoom
       bind:followCursor
       {container}
       {currentTime}
@@ -553,14 +578,14 @@
       {speed}
       {speedOption}
       canChangeSpeed={speedState !== 'skipping'}
-      annotations={showCaptions || showTimelineNotes}
+      annotations={showAnnotations}
       bind:skipInactive
       on:toggle={toggle}
       on:fullscreen={() => dispatch('fullscreen')}
       on:speed={(event) => setSpeed(event.detail)}
       on:annotations={(event) => {
-        showCaptions = event.detail;
-        showTimelineNotes = event.detail;
+        showAnnotations = event.detail;
+        if (showAnnotations) showCaptions = true;
       }}
       on:skip={(event) => jump(event.detail < 0 ? -1 : 1)}
     />
@@ -571,8 +596,8 @@
   .rr-controller {
     width: 100%;
     height: 80px;
-    background: #0a1325;
-    color: #edf1ff;
+    background: var(--rrweb-player-surface, #0a1325);
+    color: var(--rrweb-player-text, #edf1ff);
     display: flex;
     flex-direction: column;
     justify-content: space-around;
@@ -591,7 +616,7 @@
   .rr-progress {
     flex: 1;
     height: 12px;
-    background: #dbe2fd24;
+    background: var(--rrweb-player-track, #dbe2fd24);
     background-clip: padding-box;
     position: relative;
     border-radius: 3px;
@@ -608,7 +633,7 @@
     border-radius: 3px;
   }
   .rr-progress:not(.pointer-seek) .rr-progress__slider:focus-visible {
-    outline: 2px solid #ffe373;
+    outline: 2px solid var(--rrweb-player-focus-ring, #ffe373);
     outline-offset: 2px;
   }
   .rr-progress.disabled {
@@ -620,7 +645,7 @@
     position: absolute;
     left: 0;
     top: 0;
-    background: #eec20266;
+    background: var(--rrweb-player-played, var(--rrweb-player-accent, #eec20266));
   }
 
   .rr-progress__handler {
@@ -630,6 +655,6 @@
     position: absolute;
     top: 2px;
     transform: translate(-50%, -50%);
-    background: #eec202;
+    background: var(--rrweb-player-accent, #eec202);
   }
 </style>

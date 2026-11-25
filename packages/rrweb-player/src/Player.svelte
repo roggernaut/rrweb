@@ -14,7 +14,23 @@
   import ZoomPan from './components/ZoomPan.svelte';
   import Controller from './Controller.svelte';
   import type { RRwebPlayerOptions, RRwebPlayerExpose } from './types';
-    
+
+  import type { PlayerFeatures, PlayerControls, PlayerIcons, JumpEvent } from './features';
+  import { mergeFeatures } from './features';
+  export let features: PlayerFeatures = {};
+  export let controls: PlayerControls = {};
+  export let icons: PlayerIcons = {};
+  const jumpListeners = new Set<(event: JumpEvent) => unknown>();
+  export function setFeatures(patch: PlayerFeatures) {
+    features = mergeFeatures(features, patch);
+    if (patch.zoom && patch.zoom.followCursor !== undefined && features.zoom) {
+      followCursor = patch.zoom.followCursor && features.zoom.allowFollow !== false;
+    }
+  }
+  export const jump: RRwebPlayerExpose['jump'] = (direction) => {
+    controller?.jump(direction === 'forward' ? 1 : -1, 'api', features.jump);
+  };
+
   export let width: NonNullable<RRwebPlayerOptions['props']['width']>  = 1024;
   export let height: NonNullable<RRwebPlayerOptions['props']['height']> = 576;
   export let maxScale: NonNullable<RRwebPlayerOptions['props']['maxScale']> = 1;
@@ -40,7 +56,21 @@
   let frame: HTMLElement;
   let zoom = 1;
   let followCursor = true;
-  function fit() { controller?.fit(); }
+  $: zoomOptions = features.zoom || {};
+  function getMaxZoom(option: PlayerFeatures['zoom']) {
+    if (option === false) return 1;
+    const max = option?.max;
+    return typeof max === 'number' && Number.isFinite(max) ? Math.max(1, max) : 4;
+  }
+  $: maxZoom = getMaxZoom(features.zoom);
+  $: if (zoom > maxZoom) zoom = maxZoom;
+  $: followDefault = zoomOptions.followCursor ?? true;
+  $: allowFollow = zoomOptions.allowFollow !== false;
+  $: followCursor = followDefault && allowFollow;
+  export function setZoom(value: number) {
+    if (Number.isFinite(value)) zoom = Math.max(1, Math.min(getMaxZoom(features.zoom), value));
+  }
+  export function fit() { zoom = 1; controller?.fit(); }
   function escape(event: KeyboardEvent) {
     if (event.key === 'Escape' && zoom !== 1 && player?.contains(event.target as Node)) {
       event.preventDefault();
@@ -49,6 +79,9 @@
   }
   let fullscreenListener: undefined | (() => void);
   let fullscreenSize: { width: number; height: number } | null = null;
+  $: if (features.fullscreen === false && fullscreenSize && player && getFullscreenElement(player) === player) {
+    void exitFullscreen(player.ownerDocument);
+  }
   let fullscreenObserver: ResizeObserver | undefined;
   let controller: {
     toggle: () => void;
@@ -105,22 +138,22 @@
     if (!player) return;
     if (getFullscreenElement(player) === player)
       void exitFullscreen(player.ownerDocument);
-    else void openFullscreen(player);
+    else if (features.fullscreen !== false) void openFullscreen(player);
   };
 
   export const addEventListener: RRwebPlayerExpose['addEventListener'] = (
-    event: string,
-    handler: (detail: unknown) => unknown,
+    event: string, handler: (detail: JumpEvent) => unknown,
   ) => {
-    replayer.on(event, handler);
-    switch (event) {
-      case 'ui-update-current-time':
-      case 'ui-update-progress':
-      case 'ui-update-player-state':
-        controller.$on(event, ({ detail }) => handler(detail));
-      default:
-        break;
+    if (event === 'ui-jump') {
+      jumpListeners.add(handler);
+      return () => { jumpListeners.delete(handler); };
     }
+    if (event === 'ui-update-current-time' || event === 'ui-update-progress' || event === 'ui-update-player-state') {
+      return controller.$on(event, ({ detail }) => (handler as (value: unknown) => unknown)(detail));
+    }
+    const listener = handler as (detail: unknown) => unknown;
+    replayer.on(event, listener);
+    return () => { replayer.off(event, listener); };
   };
 
   export const addEvent: RRwebPlayerExpose['addEvent'] = (event: eventWithTime) => {
@@ -180,11 +213,12 @@
         `);
     }
 
+    const { features: _features, controls: _controls, icons: _icons, ...replayProps } = $$props;
     replayer = new Replayer(events, {
       speed,
       root: frame,
       unpackFn: unpack,
-      ...$$props,
+      ...replayProps,
     });
 
     replayer.on('resize', (dimension) => {
@@ -292,15 +326,18 @@
 
 <svelte:window on:keydown|capture={escape} />
 <div
-  class="rr-player"
+  class="rr-player" data-rrweb-part="player"
+  tabindex={features.jump && features.jump.keyboard === 'player' ? 0 : undefined}
   bind:this={player}
   style={playerStyle}
   style:--rr-timeline-marker-panel-width={`${Math.min(280, viewportSize.width * 0.7)}px`}
   style:--rr-timeline-marker-panel-height={`${Math.max(48, viewportSize.height - 32)}px`}
 >
-  <div class="rr-player__viewport" {style}>
-    {#if showController && replayer}
+  <div class="rr-player__viewport" data-rrweb-part="viewport" {style}>
+    {#if replayer && ((showController && features.clickToPlay !== false) || zoom > 1)}
       <ZoomPan
+        clickToPlay={showController && features.clickToPlay !== false}
+        canPan={zoomOptions.pan !== false}
         {frame}
         replay={replayer.wrapper}
         {replayer}
@@ -312,7 +349,7 @@
     {/if}
     <div
       class="rr-player__frame"
-      class:with-surface={showController && !!replayer}
+      class:with-surface={!!replayer && ((showController && features.clickToPlay !== false) || zoom > 1)}
       bind:this={frame}
       {style}
     />
@@ -325,8 +362,10 @@
   {#if replayer}
     <Controller
       bind:this={controller}
+      fullscreen={fullscreenSize !== null} {features} {icons} controlVisibility={controls}
+      on:ui-jump={({ detail }) => jumpListeners.forEach(listener => listener(detail))}
       {replayer}
-      bind:zoom bind:followCursor
+      bind:zoom bind:followCursor {maxZoom}
       container={player}
       {speed}
       bind:captionText

@@ -5,11 +5,11 @@ import ControlPopover from '../src/components/ControlPopover.svelte';
 
 let popover: ControlPopover | undefined;
 
-async function mount() {
+async function mount(root?: ShadowRoot) {
   const container = document.createElement('div');
   const external = document.createElement('button');
   const sibling = document.createElement('button');
-  document.body.append(external, container);
+  (root ?? document.body).append(external, container);
   popover = new ControlPopover({
     target: container,
     props: { container, label: 'Playback speed', icon: 'speed' },
@@ -28,6 +28,7 @@ function escape() {
     key: 'Escape',
     bubbles: true,
     cancelable: true,
+    composed: true,
   });
 }
 
@@ -37,6 +38,25 @@ afterEach(() => {
 });
 
 describe('native control popover focus', () => {
+  it('keeps interaction and Escape focus within an embedded shadow root', async () => {
+    const host = document.createElement('div');
+    document.body.append(host);
+    const root = host.attachShadow({ mode: 'open' });
+    const { trigger, panel } = await mount(root);
+    trigger.click();
+    await tick();
+    const dialog = panel()!;
+    expect(root.activeElement).toBe(dialog);
+
+    dialog.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, composed: true }));
+    await tick();
+    expect(panel()).toBe(dialog);
+    expect(dialog.dispatchEvent(escape())).toBe(false);
+    await tick();
+    expect(panel()).toBeNull();
+    expect(root.activeElement).toBe(trigger);
+  });
+
   it('dismisses a hover popup without consuming Escape or moving outside focus', async () => {
     const { external, trigger, panel } = await mount();
     external.focus();
