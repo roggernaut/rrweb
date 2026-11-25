@@ -458,6 +458,7 @@ export class Replayer {
     }
     if (
       config.speed !== undefined ||
+      config.maxSpeed !== undefined ||
       config.skipInactive !== undefined ||
       config.inactivePeriodThreshold !== undefined
     ) {
