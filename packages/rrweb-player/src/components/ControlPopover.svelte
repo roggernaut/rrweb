@@ -163,22 +163,20 @@
     z-index: 50;
     box-sizing: border-box;
     overflow-y: auto;
-    border: 1px solid #ffffff26;
-    border-radius: 8px;
-    background: var(--rrweb-player-popover, var(--rr-theme-popover, var(--rrweb-player-surface, var(--rr-theme-surface, #101827a6))));
+    border: 1px solid var(--rrweb-player-border, #d8d9e7);
+    border-radius: var(--rrweb-player-popover-radius, 8px);
+    background: var(--rrweb-player-popover, var(--rrweb-player-surface, rgb(255 255 255 / 97%)));
     backdrop-filter: blur(24px);
     -webkit-backdrop-filter: blur(24px);
-    color: var(--rrweb-player-text, var(--rr-theme-text, #edf1ff));
-    box-shadow: 0 16px 32px #0004;
-    font:
-      12px/1.5 system-ui,
-      sans-serif;
+    color: var(--rrweb-player-text, #11103e);
+    box-shadow: var(--rrweb-player-popover-shadow, 0 8px 24px #11103e24);
+    font: var(--rrweb-player-font, 12px/1.5 system-ui, sans-serif);
     text-align: left;
   }
   h3 {
     margin: 0;
     padding: 8px 12px;
-    border-bottom: 1px solid #ffffff33;
+    border-bottom: 1px solid var(--rrweb-player-divider, #dadbe5);
     font-size: 12px;
     font-weight: 600;
   }

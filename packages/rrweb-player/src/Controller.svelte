@@ -521,7 +521,7 @@
   >
     <div class="rr-timeline" data-rrweb-part="timeline">
       <div
-        class="rr-progress"
+        class="rr-progress" data-rrweb-part="track"
         class:pointer-seek={pointerSeek}
         class:disabled={speedState === 'skipping'}
         bind:this={progress}
@@ -543,7 +543,7 @@
           on:blur={() => (pointerSeek = false)}
         />
         <div
-          class="rr-progress__step"
+          class="rr-progress__step" data-rrweb-part="played"
           style="width: {percentage}"
         />
         {#each inactivePeriods as period}
@@ -577,7 +577,7 @@
           {/if}
         {/each}
 
-        <div class="rr-progress__handler" style="left: {percentage}" />
+        <div class="rr-progress__handler" data-rrweb-part="playhead" style="left: {percentage}" />
       </div>
     </div>
     <PlayerToolbar startedAt={meta.startTime} {recordingTimeZone} {features} {controlVisibility} {icons} {seconds} {fullscreen}
@@ -611,19 +611,19 @@
   .rr-controller {
     width: 100%;
     height: 80px;
-    background: var(--rrweb-player-surface, var(--rr-theme-surface, #0a1325));
-    color: var(--rrweb-player-text, var(--rr-theme-text, #edf1ff));
+    background: var(--rrweb-player-surface, #fff);
+    color: var(--rrweb-player-text, #11103e);
     display: flex;
     flex-direction: column;
     justify-content: space-around;
     align-items: center;
-    border-radius: 0 0 5px 5px;
+    border-radius: 0 0 var(--rrweb-player-radius, 5px) var(--rrweb-player-radius, 5px);
   }
 
   .rr-timeline {
     width: 100%;
     box-sizing: border-box;
-    padding: 0 12px;
+    padding: 0 var(--rrweb-player-timeline-inset, 12px);
     display: flex;
     align-items: center;
   }
@@ -631,7 +631,7 @@
   .rr-progress {
     flex: 1;
     height: 12px;
-    background: var(--rrweb-player-track, var(--rr-theme-track, #dbe2fd24));
+    background: var(--rrweb-player-track, #eee);
     background-clip: padding-box;
     position: relative;
     border-radius: 3px;
@@ -648,7 +648,7 @@
     border-radius: 3px;
   }
   .rr-progress:not(.pointer-seek) .rr-progress__slider:focus-visible {
-    outline: 2px solid var(--rrweb-player-focus-ring, var(--rr-theme-focus-ring, #ffe373));
+    outline: 2px solid var(--rrweb-player-focus-ring, var(--rrweb-player-accent, #4950f6));
     outline-offset: 2px;
   }
   .rr-progress.disabled {
@@ -660,16 +660,16 @@
     position: absolute;
     left: 0;
     top: 0;
-    background: var(--rrweb-player-played, var(--rr-theme-played, var(--rrweb-player-accent, var(--rr-theme-accent, #eec20266))));
+    background: var(--rrweb-player-played, #e0e1fe);
   }
 
   .rr-progress__handler {
-    width: 20px;
-    height: 20px;
-    border-radius: 10px;
+    width: var(--rrweb-player-playhead-size, 20px);
+    height: var(--rrweb-player-playhead-size, 20px);
+    border-radius: 50%;
     position: absolute;
     top: 2px;
     transform: translate(-50%, -50%);
-    background: var(--rrweb-player-accent, var(--rr-theme-accent, #eec202));
+    background: var(--rrweb-player-accent, #4950f6);
   }
 </style>

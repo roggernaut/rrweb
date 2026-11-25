@@ -19,12 +19,8 @@
   import { mergeFeatures } from './features';
   export let features: PlayerFeatures = {};
   export let controls: PlayerControls = {};
-  import './light.css';
-  import { lightIcons } from './light-icons';
   export let icons: PlayerIcons = {};
-  export let theme: NonNullable<RRwebPlayerOptions['props']['theme']> = 'dark';
   export let recordingTimeZone: string | undefined = undefined;
-  $: toolbarIcons = theme === 'light' ? { ...lightIcons, ...icons } : icons;
   const jumpListeners = new Set<(event: JumpEvent) => unknown>();
   export function setFeatures(patch: PlayerFeatures) {
     features = mergeFeatures(features, patch);
@@ -218,7 +214,7 @@
         `);
     }
 
-    const { features: _features, controls: _controls, icons: _icons, theme: _theme, recordingTimeZone: _timeZone, ...replayProps } = $$props;
+    const { features: _features, controls: _controls, icons: _icons, recordingTimeZone: _timeZone, ...replayProps } = $$props;
     replayer = new Replayer(events, {
       speed,
       root: frame,
@@ -268,17 +264,18 @@
 
   .rr-player {
     position: relative;
-    background: white;
+    background: var(--rrweb-player-surface, #fff);
+    color-scheme: var(--rrweb-player-color-scheme, light);
     float: left;
-    border-radius: 5px;
-    box-shadow: 0 24px 48px rgba(17, 16, 62, 0.12);
+    border-radius: var(--rrweb-player-radius, 5px);
+    box-shadow: var(--rrweb-player-shadow, 0 24px 48px rgba(17, 16, 62, 0.12));
   }
 
   .rr-player:fullscreen {
     width: 100vw !important;
     height: 100vh !important;
     border-radius: 0;
-    background: #0a1325;
+    background: var(--rrweb-player-fullscreen-background, var(--rrweb-player-surface, #fff));
   }
   .rr-player { container-type: inline-size; }
   .rr-player__viewport {
@@ -298,8 +295,8 @@
     box-sizing: border-box;
     padding: 10px 16px;
     border-radius: 6px;
-    background: rgba(24, 29, 40, 0.94);
-    color: #fff;
+    background: var(--rrweb-player-caption-background, rgba(24, 29, 40, 0.94));
+    color: var(--rrweb-player-caption-color, #fff);
     font: 16px/1.5 system-ui, sans-serif;
     text-align: center;
     white-space: pre-wrap;
@@ -331,7 +328,7 @@
 
 <svelte:window on:keydown|capture={escape} />
 <div
-  class="rr-player" data-rrweb-part="player" data-rrweb-theme={theme}
+  class="rr-player" data-rrweb-part="player"
   tabindex={features.jump && features.jump.keyboard === 'player' ? 0 : undefined}
   bind:this={player}
   style={playerStyle}
@@ -360,14 +357,14 @@
     />
     <div role="status" aria-live="polite" aria-atomic="true">
       {#if captionText !== undefined}
-        <div class="rr-player__caption">{captionText}</div>
+        <div class="rr-player__caption" data-rrweb-part="caption">{captionText}</div>
       {/if}
     </div>
   </div>
   {#if replayer}
     <Controller
       bind:this={controller}
-      fullscreen={fullscreenSize !== null} {features} icons={toolbarIcons} {recordingTimeZone} controlVisibility={controls}
+      fullscreen={fullscreenSize !== null} {features} {icons} {recordingTimeZone} controlVisibility={controls}
       on:ui-jump={({ detail }) => jumpListeners.forEach(listener => listener(detail))}
       {replayer}
       bind:zoom bind:followCursor {maxZoom}
