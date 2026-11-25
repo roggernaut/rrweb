@@ -1,5 +1,15 @@
 import type { Replayer } from '@rrweb/replay';
 type Point = { x: number; y: number };
+
+export function getFrameScale(frame: HTMLElement): Point {
+  // Pointer and bounding-rect coordinates include any embedding page scale.
+  const { width, height } = frame.getBoundingClientRect();
+  return {
+    x: width && frame.clientWidth ? width / frame.clientWidth : 1,
+    y: height && frame.clientHeight ? height / frame.clientHeight : 1,
+  };
+}
+
 export function followReplayCursor(
   frame: HTMLElement,
   replay: HTMLElement,
@@ -73,10 +83,12 @@ export function followReplayCursor(
     )
       return;
     const bounds = replay.getBoundingClientRect();
+    const scale = getFrameScale(frame);
+    const width = bounds.width / scale.x;
+    const height = bounds.height / scale.y;
     const centered = {
-      x: ((replay.offsetWidth / 2 - left) * bounds.width) / replay.offsetWidth,
-      y:
-        ((replay.offsetHeight / 2 - top) * bounds.height) / replay.offsetHeight,
+      x: (replay.offsetWidth / 2 - left) * (width / replay.offsetWidth),
+      y: (replay.offsetHeight / 2 - top) * (height / replay.offsetHeight),
     };
     // Let the cursor roam within the central half. Once it leaves, center
     // only that axis to give it room before the next camera movement.

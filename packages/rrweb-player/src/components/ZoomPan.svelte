@@ -1,7 +1,7 @@
 <script lang="ts">
-  import {createEventDispatcher, onDestroy, onMount} from 'svelte';
-  import type {Replayer} from '@rrweb/replay';
-  import {followReplayCursor} from '../cursor-camera';
+  import { createEventDispatcher, onDestroy, onMount } from 'svelte';
+  import type { Replayer } from '@rrweb/replay';
+  import { followReplayCursor, getFrameScale } from '../cursor-camera';
   export let frame: HTMLElement;
   export let replay: HTMLElement;
   export let replayer: Replayer;
@@ -14,13 +14,18 @@
   let dragged = false;
   let stopFollowing: (()=>void) | undefined;
   function clamp(point: typeof pan) {
-    const rect = replay.getBoundingClientRect();
-    const x = zoom === 1 ? 0 : Math.max(0,(rect.width - frame.clientWidth)/2);
-    const y = zoom === 1 ? 0 : Math.max(0,(rect.height - frame.clientHeight)/2);
-    return {x: Math.max(-x, Math.min(x,point.x)), y: Math.max(-y,Math.min(y,point.y))};
+    if (zoom <= 1) return { x: 0, y: 0 };
+    const { width, height } = replay.getBoundingClientRect();
+    const scale = getFrameScale(frame);
+    const x = Math.max(0, (width / scale.x - frame.clientWidth) / 2);
+    const y = Math.max(0, (height / scale.y - frame.clientHeight) / 2);
+    return {
+      x: Math.max(-x, Math.min(x, point.x)),
+      y: Math.max(-y, Math.min(y, point.y)),
+    };
   }
   function paint(point: typeof pan) {
-    pan = clamp(point);
+    pan = point;
     replay.style.translate = `${pan.x}px ${pan.y}px`;
   }
   function stopCamera() {
@@ -29,12 +34,19 @@
   }
   function syncZoom(value: number) {
     replay.style.scale = String(value);
-    paint(pan);
+    paint(clamp(pan));
   }
   function syncCamera(value: number, follow: boolean, holdingPointer: boolean) {
     stopCamera();
     if (follow && value > 1 && !holdingPointer) {
-      stopFollowing = followReplayCursor(frame, replay, replayer, () => pan, paint, clamp);
+      stopFollowing = followReplayCursor(
+        frame,
+        replay,
+        replayer,
+        () => pan,
+        paint,
+        clamp,
+      );
     }
   }
   $: holdingPointer = press !== null;
@@ -42,7 +54,7 @@
   $: syncCamera(zoom, followCursor, holdingPointer);
   onMount(() => {
     if (typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(() => paint(pan));
+    const observer = new ResizeObserver(() => paint(clamp(pan)));
     observer.observe(frame); observer.observe(replay);
     return () => observer.disconnect();
   });
@@ -69,7 +81,13 @@
     dragged = true;
     if (zoom > 1) {
       followCursor = false;
-      paint({x:pan.x+e.clientX-press.lastX,y:pan.y+e.clientY-press.lastY});
+      const scale = getFrameScale(frame);
+      paint(
+        clamp({
+          x: pan.x + (e.clientX - press.lastX) / scale.x,
+          y: pan.y + (e.clientY - press.lastY) / scale.y,
+        }),
+      );
     }
     press.lastX=e.clientX; press.lastY=e.clientY;
   }
@@ -86,7 +104,7 @@
     const delta = {ArrowLeft:[50,0],ArrowRight:[-50,0],ArrowUp:[0,50],ArrowDown:[0,-50]}[e.key];
     if (!delta) return;
     e.preventDefault(); followCursor = false;
-    paint({x:pan.x+delta[0],y:pan.y+delta[1]});
+    paint(clamp({ x: pan.x + delta[0], y: pan.y + delta[1] }));
   }
 </script>
 <button type="button" class="rr-player__surface" class:zoomed={zoom > 1} bind:this={surface}

@@ -158,6 +158,41 @@ describe('zoomed replay panning', () => {
     expect(replay.style.translate).toBe('60px 30px');
   });
 
+  it('pans by the pointer delta when the embedding page scales the player', async () => {
+    const { replay, pointer } = mount();
+    vi.spyOn(frame, 'getBoundingClientRect').mockReturnValue(
+      new DOMRect(0, 0, 200, 150),
+    );
+    vi.mocked(replay.getBoundingClientRect).mockReturnValue(
+      new DOMRect(0, 0, 400, 240),
+    );
+
+    await pointer('pointerdown', 50, 50);
+    await pointer('pointermove', 80, 70);
+    expect(replay.style.translate).toBe('60px 40px');
+    await pointer('pointerup', 200, 150);
+    expect(replay.style.translate).toBe('200px 90px');
+  });
+
+  it('follows the cursor in replay coordinates when the embedding page scales the player', async () => {
+    const { replay, cursor } = mount();
+    vi.spyOn(frame, 'getBoundingClientRect').mockReturnValue(
+      new DOMRect(0, 0, 200, 150),
+    );
+    vi.mocked(replay.getBoundingClientRect).mockReturnValue(
+      new DOMRect(0, 0, 400, 240),
+    );
+    Object.defineProperties(replay, {
+      offsetWidth: { value: 800 },
+      offsetHeight: { value: 480 },
+    });
+    cursor.style.cssText = 'left: 550px; top: 140px';
+
+    zoomPan.$set({ followCursor: true });
+    await tick();
+    expect(replay.style.translate).toBe('-150px 90px');
+  });
+
   it('keeps the first captured pointer when another pointer type is primary', async () => {
     const { replay, capturedPointers, pointer } = mount();
     await pointer('pointerdown', 0, 0);
