@@ -307,6 +307,9 @@
   }
   input[role='switch'] {
     appearance: none;
+    box-sizing: border-box;
+    border: 0;
+    margin: 0;
     width: 36px;
     height: 20px;
     padding: 2px;
@@ -324,7 +327,7 @@
     background: white;
   }
   input[role='switch']:checked {
-    background: var(--rrweb-player-accent, #d4ad00);
+    background: var(--rrweb-player-accent, #eec202);
   }
   input[role='switch']:checked::before {
     transform: translateX(16px);
