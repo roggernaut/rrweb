@@ -121,4 +121,3 @@ describe('compressed replay time scale', () => {
     );
   });
 });
-

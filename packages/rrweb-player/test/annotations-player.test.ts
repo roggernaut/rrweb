@@ -1,8 +1,13 @@
 // @vitest-environment happy-dom
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { pack } from '@rrweb/packer';
 import { tick } from 'svelte';
-import { EventType, IncrementalSource, MouseInteractions } from '@rrweb/types';
+import {
+  EventType,
+  IncrementalSource,
+  MouseInteractions,
+  NodeType,
+} from '@rrweb/types';
 import type { eventWithTime } from '@rrweb/types';
 import Player from '../src/Player.svelte';
 import * as annotations from '../src/annotations';
@@ -88,25 +93,196 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe('player transport', () => {
-  it('jumps without player focus and leaves inputs and the timeline in control', async () => {
+describe("player transport", () => {
+  it("jumps without player focus and leaves inputs and the timeline in control", async () => {
     const player = await mount();
-    const controls = target.querySelector<HTMLElement>('.rr-controller')!;
-    vi.spyOn(controls, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 400, 80));
-    const arrow = (el: Element, key: string) => el.dispatchEvent(new KeyboardEvent('keydown', {key, bubbles: true, cancelable: true}));
-    arrow(document.body, 'ArrowRight');
+    const playerElement = target.querySelector<HTMLElement>(".rr-player")!;
+    vi.spyOn(playerElement, "getBoundingClientRect").mockReturnValue(
+      new DOMRect(0, 0, 400, 360),
+    );
+    const arrow = (el: Element, key: string) =>
+      el.dispatchEvent(
+        new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }),
+      );
+    arrow(document.body, "ArrowRight");
     expect(player.getReplayer().getCurrentTime()).toBe(10000);
-    expect(player.getReplayer().service.state.value).toBe('paused');
-    const input = document.createElement('input');
+    expect(player.getReplayer().service.state.value).toBe("paused");
+    const input = document.createElement("input");
     target.append(input);
-    arrow(input, 'ArrowLeft');
+    arrow(input, "ArrowLeft");
     expect(player.getReplayer().getCurrentTime()).toBe(10000);
-    arrow(target.querySelector('[role="slider"]')!, 'ArrowLeft');
+    arrow(target.querySelector('[role="slider"]')!, "ArrowLeft");
     expect(player.getReplayer().getCurrentTime()).toBe(5000);
     click('[aria-label="Skip back 10 seconds"]');
     expect(player.getReplayer().getCurrentTime()).toBe(0);
     click('[aria-label="Skip forward 10 seconds"]');
     expect(player.getReplayer().getCurrentTime()).toBe(10000);
+  });
+
+  it("leaves page arrows available while the player is hidden or the page is editable", async () => {
+    const player = await mount();
+    const playerElement = target.querySelector<HTMLElement>(".rr-player")!;
+    vi.spyOn(playerElement, "getBoundingClientRect").mockReturnValue(
+      new DOMRect(0, 0, 400, 360),
+    );
+    const forward = () =>
+      document.body.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "ArrowRight",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+
+    playerElement.style.visibility = "hidden";
+    expect(forward()).toBe(true);
+    expect(player.getReplayer().getCurrentTime()).toBeLessThan(10000);
+
+    playerElement.style.visibility = "visible";
+    document.designMode = "on";
+    try {
+      expect(forward()).toBe(true);
+      expect(player.getReplayer().getCurrentTime()).toBeLessThan(10000);
+    } finally {
+      document.designMode = "off";
+    }
+  });
+
+  it("leaves playback positions alone while skipping or playing live", async () => {
+    const player = await mount({ skipInactive: true });
+    const replayer = player.getReplayer();
+    const next = target.querySelector<HTMLButtonElement>(
+      '[aria-label="Skip forward 10 seconds"]',
+    )!;
+    const surface = target.querySelector<HTMLButtonElement>(
+      ".rr-player__surface",
+    )!;
+    const forward = () =>
+      surface.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "ArrowRight",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    player.goto(2000, false);
+
+    replayer.speedService.send({
+      type: "FAST_FORWARD",
+      payload: { speed: 10 },
+    });
+    await tick();
+    expect(next.disabled).toBe(true);
+    expect(forward()).toBe(true);
+    expect(replayer.getCurrentTime()).toBe(2000);
+
+    replayer.speedService.send({ type: "BACK_TO_NORMAL" });
+    replayer.startLive();
+    await tick();
+    expect(next.disabled).toBe(true);
+    expect(forward()).toBe(true);
+    expect(replayer.service.state.value).toBe("live");
+  });
+
+  it("toggles on a surface click and ignores a drag that leaves the surface", async () => {
+    const player = await mount();
+    const surface = target.querySelector<HTMLButtonElement>(
+      ".rr-player__surface",
+    )!;
+    const state = () => player.getReplayer().service.state.value;
+    const pointer = (type: string, x: number, pointerId = 1) =>
+      surface.dispatchEvent(
+        new PointerEvent(type, {
+          button: 0,
+          clientX: x,
+          isPrimary: true,
+          pointerId,
+        }),
+      );
+    const mouseClick = () =>
+      surface.dispatchEvent(new MouseEvent("click", { detail: 1 }));
+
+    pointer("pointerdown", 1);
+    pointer("pointerleave", -1);
+    pointer("pointerup", 1);
+    mouseClick();
+    expect(state()).toBe("paused");
+
+    pointer("pointerdown", 1);
+    pointer("pointercancel", 1, 2);
+    pointer("pointerup", 1);
+    mouseClick();
+    expect(state()).toBe("playing");
+
+    surface.click();
+    expect(state()).toBe("paused");
+  });
+});
+
+describe('player fullscreen', () => {
+  let fullscreenElement: Element | null;
+  const exitFullscreen = vi.fn(() => Promise.resolve());
+
+  beforeEach(() => {
+    fullscreenElement = null;
+    exitFullscreen.mockClear();
+    Object.defineProperties(document, {
+      fullscreen: { configurable: true, get: () => fullscreenElement !== null },
+      fullscreenElement: { configurable: true, get: () => fullscreenElement },
+      exitFullscreen: { configurable: true, value: exitFullscreen },
+    });
+  });
+
+  afterEach(() => {
+    for (const property of ['fullscreen', 'fullscreenElement', 'exitFullscreen']) {
+      Reflect.deleteProperty(document, property);
+    }
+  });
+
+  it('fits fullscreen around the controls and restores the latest embedded size', async () => {
+    const player = await mount({ width: 640, height: 360 });
+    const root = target.querySelector<HTMLElement>('.rr-player')!;
+    const viewport = root.querySelector<HTMLElement>('.rr-player__viewport')!;
+    Object.defineProperties(root, {
+      clientWidth: { value: 1200 },
+      clientHeight: { value: 800 },
+    });
+
+    fullscreenElement = root;
+    document.dispatchEvent(new Event('fullscreenchange'));
+    await tick();
+    expect([viewport.style.width, viewport.style.height]).toEqual([
+      '1200px', '720px',
+    ]);
+
+    player.$set({ width: 500, height: 280, showController: false });
+    await tick();
+    expect([viewport.style.width, viewport.style.height]).toEqual([
+      '1200px', '800px',
+    ]);
+
+    fullscreenElement = null;
+    document.dispatchEvent(new Event('fullscreenchange'));
+    await tick();
+    expect([viewport.style.width, viewport.style.height]).toEqual([
+      '500px', '280px',
+    ]);
+  });
+
+  it('only exits fullscreen when this player owns it', async () => {
+    const player = await mount();
+    const root = target.querySelector<HTMLElement>('.rr-player')!;
+    const requestFullscreen = vi.fn(() => Promise.resolve());
+    Object.defineProperty(root, 'requestFullscreen', { value: requestFullscreen });
+
+    fullscreenElement = target;
+    player.toggleFullscreen();
+    expect(requestFullscreen).toHaveBeenCalledOnce();
+    expect(exitFullscreen).not.toHaveBeenCalled();
+
+    fullscreenElement = root;
+    player.toggleFullscreen();
+    expect(exitFullscreen).toHaveBeenCalledOnce();
   });
 });
 
@@ -361,7 +537,82 @@ describe('player annotations', () => {
     expect(target.querySelector('[role="dialog"][aria-label="Playback speed"]')).toBeNull();
   });
 
+  it('keeps a focused popup open on sibling hover and switches on click', async () => {
+    await mount();
+    const speedTrigger = target.querySelector<HTMLButtonElement>(
+      'button[aria-label="Playback speed"]',
+    )!;
+    const settingsTrigger = target.querySelector<HTMLButtonElement>(
+      'button[aria-label="Replay settings"]',
+    )!;
+    const dialogs = () =>
+      Array.from(target.querySelectorAll('.rr-controller__btns [role="dialog"]'));
+    const hover = (element: HTMLElement) => {
+      element.dispatchEvent(
+        new PointerEvent('pointerenter', { pointerType: 'mouse' }),
+      );
+    };
 
+    hover(speedTrigger);
+    await tick();
+    hover(settingsTrigger);
+    await tick();
+    expect(dialogs().map((dialog) => dialog.getAttribute('aria-label'))).toEqual([
+      'Replay settings',
+    ]);
+
+    speedTrigger.click();
+    await tick();
+    const preset = target.querySelector<HTMLButtonElement>(
+      'button[aria-label="2× speed"]',
+    )!;
+    preset.focus();
+    hover(settingsTrigger);
+    await tick();
+    expect(dialogs().map((dialog) => dialog.getAttribute('aria-label'))).toEqual([
+      'Playback speed',
+    ]);
+    expect(document.activeElement).toBe(preset);
+
+    settingsTrigger.click();
+    await tick();
+    expect(dialogs().map((dialog) => dialog.getAttribute('aria-label'))).toEqual([
+      'Replay settings',
+    ]);
+    expect(document.activeElement).toBe(dialogs()[0]);
+  });
+
+  it('disables speed controls while skipping inactivity', async () => {
+    const player = await mount({ skipInactive: true });
+    click('button[aria-label="Playback speed"]');
+    await tick();
+    const dialog = target.querySelector(
+      '[role="dialog"][aria-label="Playback speed"]',
+    )!;
+    const range = dialog.querySelector<HTMLInputElement>('input[type="range"]')!;
+    const preset = dialog.querySelector<HTMLButtonElement>(
+      'button[aria-label="2× speed"]',
+    )!;
+    expect(range.disabled).toBe(false);
+    expect(preset.disabled).toBe(false);
+
+    const { speedService } = player.getReplayer();
+    speedService.send({ type: 'FAST_FORWARD', payload: { speed: 5 } });
+    await tick();
+    expect(range.disabled).toBe(true);
+    expect(
+      Array.from(dialog.querySelectorAll('button')).every(
+        (button) => button.disabled,
+      ),
+    ).toBe(true);
+    preset.click();
+    expect(speedService.state.value).toBe('skipping');
+
+    speedService.send({ type: 'BACK_TO_NORMAL' });
+    await tick();
+    expect(range.disabled).toBe(false);
+    expect(preset.disabled).toBe(false);
+  });
   it('supports accessible keyboard seeking on the timeline slider', async () => {
     const player = await mount();
     player.goto(3000, false);
@@ -517,6 +768,121 @@ describe('player annotations', () => {
     expect(target.querySelector('.rr-player__caption')?.textContent).toBe(
       'Added later',
     );
+  });
+
+  it('reprojects the paused playhead and exact markers after earlier events and a batched move arrive', async () => {
+    const input = (offset: number): eventWithTime => ({
+      type: EventType.IncrementalSnapshot,
+      timestamp: start + offset,
+      data: {
+        source: IncrementalSource.Input,
+        id: 1,
+        text: '',
+        isChecked: false,
+      },
+    });
+    const custom = (offset: number, tag: string): eventWithTime => ({
+      type: EventType.Custom,
+      timestamp: start + offset,
+      data: { tag, payload: {} },
+    });
+    const player = await mount({
+      events: [
+        recording()[0],
+        {
+          type: EventType.FullSnapshot,
+          timestamp: start + 9000,
+          data: {
+            node: {
+              id: 1,
+              type: NodeType.Document,
+              childNodes: [
+                {
+                  id: 2,
+                  type: NodeType.Element,
+                  tagName: 'html',
+                  attributes: {},
+                  childNodes: [],
+                },
+              ],
+            },
+            initialOffset: { left: 0, top: 0 },
+          },
+        },
+        input(12000),
+        input(13543),
+        timelineMarker(13543, 'Mark'),
+        custom(72000, 'End'),
+      ],
+    });
+    const replayer = player.getReplayer();
+    // Happy DOM does not expose the sandboxed iframe through frameElement.
+    Object.defineProperty(replayer.iframe.contentWindow, 'frameElement', {
+      value: replayer.iframe,
+    });
+    player.goto(13543, false);
+    await tick();
+
+    const progress = vi.fn();
+    player.addEventListener('ui-update-progress', progress);
+    replayer.addEvent(custom(-2000, 'Earlier start'));
+    replayer.addEvent(custom(5000, 'inactive period'));
+    replayer.addEvent({
+      type: EventType.IncrementalSnapshot,
+      timestamp: start + 25000,
+      data: {
+        source: IncrementalSource.MouseMove,
+        positions: [-18000, -14500, -4000].map((timeOffset) => ({
+          id: 2,
+          x: 0,
+          y: 0,
+          timeOffset,
+        })),
+      },
+    });
+    await tick();
+    await tick();
+
+    const track = target.querySelector<HTMLElement>('.rr-progress')!;
+    const idle = track.querySelectorAll<HTMLElement>('.rr-inactive-period');
+    expect(idle).toHaveLength(1);
+    expect(parseFloat(idle[0].style.left)).toBeCloseTo(80);
+    expect(parseFloat(idle[0].style.width)).toBeCloseTo(20);
+    const playhead = track.querySelector<HTMLElement>('.rr-progress__handler')!;
+    const annotation = track.querySelector<HTMLElement>(
+      '.rr-custom-event-container',
+    )!;
+    const tag = track.querySelector<HTMLElement>(
+      '[title="inactive period"]:not(.rr-inactive-period)',
+    )!;
+    const markerPosition = (80 * 15543) / 23000;
+    expect(parseFloat(annotation.style.left)).toBeCloseTo(markerPosition, 6);
+    expect(parseFloat(tag.style.left)).toBeCloseTo((80 * 7000) / 23000, 6);
+    expect(parseFloat(playhead.style.left)).toBeCloseTo(markerPosition, 6);
+    expect(progress).toHaveBeenLastCalledWith({ payload: 15543 / 74000 });
+
+    vi.spyOn(track, 'getBoundingClientRect').mockReturnValue(
+      new DOMRect(0, 0, 1000, 12),
+    );
+    track.dispatchEvent(
+      new MouseEvent('click', { bubbles: true, clientX: 900 }),
+    );
+    expect(replayer.getCurrentTime()).toBeCloseTo(48500, 6);
+    click('.rr-custom-event');
+    expect(replayer.getCurrentTime()).toBe(15543);
+  });
+
+  it('refreshes timeline metadata once for a synchronous batch from both append APIs', async () => {
+    const player = await mount();
+    const replayer = player.getReplayer();
+    const metadata = vi.spyOn(replayer, 'getMetaData');
+    player.addEvent(timelineMarker(15000, 'One'));
+    replayer.addEvent(timelineMarker(20000, 'Two'));
+    player.addEvent(timelineMarker(25000, 'Three'));
+    await tick();
+    await tick();
+    expect(target.querySelectorAll('.rr-custom-event')).toHaveLength(4);
+    expect(metadata).toHaveBeenCalledTimes(1);
   });
 
   async function expectPausedCaptionUpdate(

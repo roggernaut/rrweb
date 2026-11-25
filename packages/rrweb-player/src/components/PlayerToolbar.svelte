@@ -10,6 +10,7 @@
   export let totalTime: number;
   export let speed: number;
   export let speedOption: number[];
+  export let canChangeSpeed: boolean;
   export let annotations: boolean;
   export let skipInactive: boolean;
   export let hasActivity = false;
@@ -78,15 +79,16 @@
       <button
         type="button"
         aria-label="Decrease playback speed"
-        disabled={speed <= minSpeed}
+        disabled={!canChangeSpeed || speed <= minSpeed}
         on:click={() => changeSpeed(speed - 0.25)}>−</button
       >
       <input
         type="range"
         min={minSpeed}
         max={maxSpeed}
-        step="0.25"
+        step="any"
         value={speed}
+        disabled={!canChangeSpeed}
         aria-label="Playback speed"
         aria-valuetext={`${speed.toFixed(2)} times`}
         on:input={(event) => changeSpeed(Number(event.currentTarget.value))}
@@ -94,7 +96,7 @@
       <button
         type="button"
         aria-label="Increase playback speed"
-        disabled={speed >= maxSpeed}
+        disabled={!canChangeSpeed || speed >= maxSpeed}
         on:click={() => changeSpeed(speed + 0.25)}>+</button
       >
     </div>
@@ -105,7 +107,8 @@
             type="button"
             aria-label={`${value}× speed`}
             aria-pressed={speed === value}
-                on:click={() => changeSpeed(value)}
+            disabled={!canChangeSpeed}
+            on:click={() => changeSpeed(value)}
             ><span class:normal={value === 1}
               >{Number.isInteger(value) ? value.toFixed(1) : value}</span
             ></button
@@ -276,11 +279,6 @@
     margin-top: 4px;
     color: #edf1ffb3;
     font-size: 10px;
-  }
-  .rr-control-hint {
-    margin: 8px 0 0;
-    color: #edf1ffb3;
-    font-size: 11px;
   }
   .rr-setting {
     display: flex;

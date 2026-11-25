@@ -1,3 +1,12 @@
+<script context="module" lang="ts">
+  const shortcutControllers = new Set<HTMLElement>();
+
+  function registerShortcutController(element: HTMLElement) {
+    shortcutControllers.add(element);
+    return { destroy: () => shortcutControllers.delete(element) };
+  }
+</script>
+
 <script lang="ts">
   import type { playerMetaData } from '@rrweb/types';
   import type {
@@ -239,30 +248,89 @@
     replayer.play(timeOffset);
   };
 
-  let controls: HTMLElement;
+  let controls: HTMLElement | undefined;
+  $: canJump = playerState !== 'live' && speedState !== 'skipping';
 
   function jump(direction: -1 | 1) {
+    if (!canJump) return;
     const now = Math.max(0, replayer.getCurrentTime());
     goto(Math.max(0, Math.min(meta.totalTime, now + direction * 10000)));
   }
 
+  function isVisiblePlayer(element: Element, viewport: Window) {
+    if (element.checkVisibility) {
+      if (!element.checkVisibility({
+        checkOpacity: true,
+        checkVisibilityCSS: true,
+      })) {
+        return false;
+      }
+    } else {
+      const style = viewport.getComputedStyle(element);
+      if (
+        style.visibility === 'hidden' ||
+        style.visibility === 'collapse' ||
+        style.opacity === '0'
+      ) {
+        return false;
+      }
+    }
+
+    const rect = element.getBoundingClientRect();
+    return (
+      rect.width > 0 &&
+      rect.height > 0 &&
+      rect.bottom > 0 &&
+      rect.top < viewport.innerHeight &&
+      rect.right > 0 &&
+      rect.left < viewport.innerWidth
+    );
+  }
+
   function handlePageKeydown(event: KeyboardEvent) {
     dismissTimelineMarkersOnEscape(event);
-    if (!showController || !controls || event.defaultPrevented || event.isComposing ||
-        event.altKey || event.ctrlKey || event.metaKey || event.shiftKey ||
-        (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')) return;
+    if (
+      !showController ||
+      !controls ||
+      !canJump ||
+      event.defaultPrevented ||
+      event.isComposing ||
+      event.altKey ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.shiftKey ||
+      (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')
+    ) {
+      return;
+    }
+
     const doc = controls.ownerDocument;
     const target = event.composedPath()[0];
-    const surface = controls.closest('.rr-player')?.querySelector('.rr-player__surface');
+    const player = controls.parentElement;
+    const surface = player?.querySelector('.rr-player__surface');
     if (target !== surface) {
       if (target !== doc.body && target !== doc.documentElement) return;
+      if (
+        doc.designMode === 'on' ||
+        doc.body.isContentEditable ||
+        doc.documentElement.isContentEditable
+      ) {
+        return;
+      }
       if (doc.querySelector('dialog[open], [role="dialog"][aria-modal="true"]')) return;
-      const visible = Array.from(doc.querySelectorAll('.rr-player .rr-controller')).filter(el => {
-        const rect = el.getBoundingClientRect();
-        return rect.width > 0 && rect.height > 0 && rect.bottom > 0 &&
-          rect.top < window.innerHeight && rect.right > 0 && rect.left < window.innerWidth;
-      });
-      if (visible.length !== 1 || visible[0] !== controls) return;
+      const viewport = doc.defaultView;
+      if (!player || !viewport || !isVisiblePlayer(player, viewport)) return;
+      for (const controller of shortcutControllers) {
+        const otherPlayer = controller.parentElement;
+        if (
+          controller !== controls &&
+          controller.ownerDocument === doc &&
+          otherPlayer &&
+          isVisiblePlayer(otherPlayer, viewport)
+        ) {
+          return;
+        }
+      }
     }
     event.preventDefault();
     jump(event.key === 'ArrowLeft' ? -1 : 1);
@@ -330,16 +398,50 @@
     skipInactive = !skipInactive;
   };
 
-  let refresh: Promise<void> | undefined;
+  let refreshPending = false;
   let eventCount = replayer.service.state.context.events.length;
-  export const triggerUpdateMeta = () => {
-    return refresh ??= Promise.resolve().then(() => {
-      refresh = undefined;
-      eventCount = replayer.service.state.context.events.length;
-      meta = replayer.getMetaData();
-      timeline = updateTimeline(replayer.service.state.context.events, replayer.config.inactivePeriodThreshold);
+  function scheduleTimelineRefresh() {
+    if (refreshPending) return;
+    refreshPending = true;
+    void Promise.resolve().then(() => {
+      if (!refreshPending) return;
+      refreshPending = false;
+      const events = replayer.service.state.context.events;
+      eventCount = events.length;
+      const nextMeta = replayer.getMetaData();
+      if (nextMeta.startTime !== meta.startTime) {
+        currentTime = Math.max(0, replayer.getCurrentTime());
+      }
+      meta = nextMeta;
+      timeline = updateTimeline(events, replayer.config.inactivePeriodThreshold);
     });
-  };
+  }
+
+  function handleStateChange(states: unknown) {
+    if (eventCount !== replayer.service.state.context.events.length) {
+      scheduleTimelineRefresh();
+    }
+    const { player, speed } = states as {
+      player?: PlayerMachineState;
+      speed?: SpeedMachineState;
+    };
+    if (player?.value && playerState !== player.value) {
+      playerState = player.value;
+      switch (playerState) {
+        case 'playing':
+          loopTimer();
+          break;
+        case 'paused':
+          stopTimer();
+          break;
+        default:
+          break;
+      }
+    }
+    if (speed?.value && speedState !== speed.value) {
+      speedState = speed.value;
+    }
+  }
 
   onMount(() => {
     function trackHover(event: PointerEvent) {
@@ -355,29 +457,7 @@
     replayer.on('start', restoreCaptionOnSeek);
     playerState = replayer.service.state.value;
     speedState = replayer.speedService.state.value;
-    replayer.on(
-      'state-change',
-      (states) => {
-        if (eventCount !== replayer.service.state.context.events.length) void triggerUpdateMeta();
-        const { player, speed } = states as { player?: PlayerMachineState; speed?: SpeedMachineState };
-        if (player?.value && playerState !== player.value) {
-          playerState = player.value;
-          switch (playerState) {
-            case 'playing':
-              loopTimer();
-              break;
-            case 'paused':
-              stopTimer();
-              break;
-            default:
-              break;
-          }
-        }
-        if (speed?.value && speedState !== speed.value) {
-          speedState = speed.value;
-        }
-      },
-    );
+    replayer.on('state-change', handleStateChange);
     replayer.on('finish', () => {
       finished = true;
       if (onPauseHook) {
@@ -401,8 +481,10 @@
 
   onDestroy(() => {
     captionUpdatePending = false;
+    refreshPending = false;
     replayer.off('annotation', handleAnnotation);
     replayer.off('start', restoreCaptionOnSeek);
+    replayer.off('state-change', handleStateChange);
     replayer.pause();
     stopTimer();
   });
@@ -411,7 +493,12 @@
 <svelte:window on:keydown={handlePageKeydown} />
 
 {#if showController}
-  <div class="rr-controller" bind:this={controls} data-native-replay-controls>
+  <div
+    class="rr-controller"
+    bind:this={controls}
+    use:registerShortcutController
+    data-native-replay-controls
+  >
     <div class="rr-timeline">
       <div
         class="rr-progress"
@@ -479,11 +566,12 @@
       {currentTime}
       totalTime={meta.totalTime}
       playing={playerState === 'playing'}
-      canSkip={playerState === 'playing' || playerState === 'paused'}
+      canSkip={canJump}
       {hasActivity} bind:activityVisible bind:layers
       hasAnnotations={timeline.hasCaptions || timeline.markers.some(marker => marker.text)}
       {speed}
       {speedOption}
+      canChangeSpeed={speedState !== 'skipping'}
       annotations={showCaptions || showTimelineNotes}
       bind:skipInactive
       on:toggle={toggle}

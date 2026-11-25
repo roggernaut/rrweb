@@ -9,6 +9,26 @@ const caption = (timestamp: number, text: string): eventWithTime => ({
   timestamp,
   data: { type: 'caption', text },
 });
+const input = (timestamp: number): eventWithTime => ({
+  type: EventType.IncrementalSnapshot,
+  timestamp,
+  data: { source: IncrementalSource.Input, id: 1, text: '', isChecked: false },
+});
+const pointerMove = (
+  timestamp: number,
+  offsets: number[],
+  source:
+    | IncrementalSource.MouseMove
+    | IncrementalSource.TouchMove
+    | IncrementalSource.Drag = IncrementalSource.MouseMove,
+): eventWithTime => ({
+  type: EventType.IncrementalSnapshot,
+  timestamp,
+  data: {
+    source,
+    positions: offsets.map((timeOffset) => ({ id: 1, x: 0, y: 0, timeOffset })),
+  },
+});
 
 describe('timeline indexing cost and ordering', () => {
   it('does not revisit 50,000 existing events when appending a batch', () => {
@@ -66,6 +86,44 @@ describe('timeline indexing cost and ordering', () => {
     expect(index.periods).toEqual([[0, 6000]]);
     expect(getActiveCaption(index.captions, 3000)?.text).toBe('Last');
   });
+
+  it('splits an existing gap when an appended mouse sample played before earlier events', () => {
+    const update = createTimelineIndex();
+    const events = [caption(1000, 'Start'), input(13000), input(36000)];
+    expect(update(events, 10000).periods).toEqual([
+      [1000, 13000],
+      [13000, 36000],
+    ]);
+
+    events.push(pointerMove(40000, [-33000, -16000]));
+    const index = update(events, 10000);
+    expect(index.periods).toEqual([
+      [13000, 24000],
+      [24000, 36000],
+    ]);
+    expect(index.lastActive).toBe(36000);
+  });
+
+  it.each([
+    IncrementalSource.MouseMove,
+    IncrementalSource.TouchMove,
+    IncrementalSource.Drag,
+  ])(
+    'uses all samples of pointer source %i, including the last active time',
+    (source) => {
+      const update = createTimelineIndex();
+      const events = [
+        caption(1000, 'Start'),
+        pointerMove(23000, [-11000, -5000, -1000], source),
+      ];
+      const index = update(events, 10000);
+      expect(index.periods).toEqual([[1000, 12000]]);
+      expect(index.lastActive).toBe(22000);
+
+      events.push(input(29000));
+      expect(update(events, 10000).periods).toEqual([[1000, 12000]]);
+    },
+  );
 
   it('uses logarithmic caption lookup even near the beginning', () => {
     let reads = 0;
