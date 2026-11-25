@@ -528,6 +528,10 @@ export class Replayer {
    * @param timeOffset - number
    */
   public play(timeOffset = 0) {
+    this.playAt(timeOffset, true);
+  }
+
+  private playAt(timeOffset: number, skipInactive: boolean) {
     this.backToNormal();
     if (this.service.state.matches('paused')) {
       this.service.send({ type: 'PLAY', payload: { timeOffset } });
@@ -538,7 +542,7 @@ export class Replayer {
     this.iframe.contentDocument
       ?.getElementsByTagName('html')[0]
       ?.classList.remove('rrweb-paused');
-    this.skipAtPlayhead();
+    if (skipInactive) this.skipAtPlayhead();
     this.emitter.emit(ReplayerEvents.Start);
   }
 
@@ -547,7 +551,7 @@ export class Replayer {
       this.service.send({ type: 'PAUSE' });
     }
     if (typeof timeOffset === 'number') {
-      this.play(timeOffset);
+      this.playAt(timeOffset, false);
       this.service.send({ type: 'PAUSE' });
     }
     this.iframe.contentDocument
@@ -600,8 +604,7 @@ export class Replayer {
         this.skipRefreshPending = true;
         void Promise.resolve().then(() => {
           this.skipRefreshPending = false;
-          this.backToNormal();
-          this.skipAtPlayhead();
+          this.skipAtPlayhead(true);
         });
       }
     });
@@ -2259,12 +2262,12 @@ export class Replayer {
     );
   }
 
-  private skipAtPlayhead() {
+  private skipAtPlayhead(refresh = false) {
     if (
       !this.config.skipInactive ||
       this.config.liveMode ||
       !this.service.state.matches('playing') ||
-      this.nextUserInteractionEvent
+      (!refresh && this.nextUserInteractionEvent)
     )
       return;
     const { events, baselineTime } = this.service.state.context;
@@ -2284,12 +2287,20 @@ export class Replayer {
       else hi = mid;
     }
     const target = this.interactionBoundaries[lo];
-    if (!target) return;
+    if (!target) {
+      this.backToNormal();
+      return;
+    }
     const end = replayTimestamp(target);
     const start = lo
       ? replayTimestamp(this.interactionBoundaries[lo - 1])
       : events[0].timestamp;
-    if (end - start <= this.config.inactivePeriodThreshold) return;
+    if (end - start <= this.config.inactivePeriodThreshold) {
+      this.backToNormal();
+      return;
+    }
+    if (target === this.nextUserInteractionEvent) return;
+    this.backToNormal();
     const speed = Math.min(
       this.config.maxSpeed,
       Math.max(
