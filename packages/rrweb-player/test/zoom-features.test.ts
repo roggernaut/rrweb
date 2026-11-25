@@ -64,7 +64,7 @@ describe('zoom customization', () => {
     await mount({ zoom: { followCursor: false } });
     target.querySelector<HTMLButtonElement>('[aria-label="Zoom"]')!.click();
     await tick();
-    const follow = target.querySelector<HTMLInputElement>('[aria-label="Zoom"] input[type="checkbox"]')!;
+    const follow = target.querySelector<HTMLInputElement>('[role="switch"][aria-label="Follow cursor"]')!;
     expect(follow.checked).toBe(false);
     follow.click();
     await tick();

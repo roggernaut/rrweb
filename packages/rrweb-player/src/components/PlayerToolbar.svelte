@@ -178,9 +178,9 @@
       <span>{Math.round(zoom * 100)}%</span>
     </div>
     {#if features.zoom?.allowFollow !== false}
-    <label class="rr-setting">
+    <label class="rr-setting rr-follow-setting">
       <span>Follow cursor</span>
-      <input type="checkbox" bind:checked={followCursor} />
+      <input type="checkbox" role="switch" aria-label="Follow cursor" bind:checked={followCursor} />
     </label>
     {/if}
     <p class="rr-control-hint">
@@ -358,8 +358,16 @@
     padding-top: 12px;
     border-top: 1px solid #ffffff1a;
   }
+  .rr-follow-setting {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid #ffffff33;
+  }
   input[role='switch'] {
     appearance: none;
+    box-sizing: border-box;
+    border: 0;
+    margin: 0;
     width: 36px;
     height: 20px;
     padding: 2px;
@@ -377,7 +385,7 @@
     background: white;
   }
   input[role='switch']:checked {
-    background: var(--rrweb-player-accent, #d4ad00);
+    background: var(--rrweb-player-accent, #eec202);
   }
   input[role='switch']:checked::before {
     transform: translateX(16px);
