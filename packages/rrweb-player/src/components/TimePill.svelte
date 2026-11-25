@@ -79,7 +79,7 @@
     style:left={left+'px'} style:bottom={bottom+'px'} style:width={width+'px'}
     on:pointerenter={() => { hovered = true; clearTimeout(timer); }}
     on:pointerleave={() => { hovered = false; scheduleClose(); }}>
-    <strong>Recording started</strong>
+    <strong class="tooltip-title">Recording started</strong>
     <dl>
       {#if userStart}<dt>Recorded user’s local time</dt><dd>{userStart} · {recordingTimeZone}</dd>{/if}
       {#if viewerStart}<dt>Your local time</dt><dd>{viewerStart} · {viewerZone}</dd>{/if}
@@ -91,8 +91,15 @@
   .rr-time-pill { display:flex; flex-shrink:0; gap:4px; padding:4px 8px; border-radius:999px; background:#ffffff1a; white-space:nowrap; font-size:11px; font-variant-numeric:tabular-nums; }
   .rr-time-pill:focus-visible { outline:2px solid var(--rrweb-player-focus-ring,var(--rr-theme-focus-ring,#ffe373)); outline-offset:2px; }
   @container (max-width:440px) { .rr-time-pill { padding:4px; } }
-  .rr-start-tooltip { position:absolute; z-index:50; box-sizing:border-box; padding:10px 12px; border:1px solid var(--rr-theme-panel-border,#ffffff26); border-radius:8px; background:var(--rrweb-player-popover,var(--rr-theme-popover,#101827dd)); color:inherit; backdrop-filter:blur(24px); box-shadow:0 8px 24px #0002; overflow-wrap:anywhere; }
-  dl, dd { margin:0; }
+  .rr-start-tooltip { position:absolute; z-index:50; box-sizing:border-box; border:1px solid var(--rr-theme-panel-border,#ffffff26); border-radius:8px; background:var(--rrweb-player-popover,var(--rr-theme-popover,#101827dd)); color:inherit; backdrop-filter:blur(24px); box-shadow:0 8px 24px #0002; overflow-wrap:anywhere; }
+  .tooltip-title {
+    display:block;
+    padding:8px 12px;
+    border-bottom:1px solid var(--rrweb-player-divider,var(--rr-theme-panel-border,#ffffff33));
+  }
+  dl { margin:0; padding:10px 12px; }
+  dd { margin:0; }
+  dt:first-child { margin-top:0; }
   dt { margin-top:8px; font-size:11px; opacity:.8; }
   dd { font-variant-numeric:tabular-nums; }
 </style>
