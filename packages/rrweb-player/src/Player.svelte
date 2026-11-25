@@ -272,7 +272,7 @@
   }
 
   /* The iframe can still receive input when the Replayer enables interaction. */
-  .rr-player__surface + .rr-player__frame {
+  .rr-player__frame.with-surface {
     position: relative;
     pointer-events: none;
   }
@@ -310,7 +310,12 @@
         on:toggle={toggle}
       />
     {/if}
-    <div class="rr-player__frame" bind:this={frame} {style} />
+    <div
+      class="rr-player__frame"
+      class:with-surface={showController && !!replayer}
+      bind:this={frame}
+      {style}
+    />
     <div role="status" aria-live="polite" aria-atomic="true">
       {#if captionText !== undefined}
         <div class="rr-player__caption">{captionText}</div>
