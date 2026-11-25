@@ -19,7 +19,12 @@
   import { mergeFeatures } from './features';
   export let features: PlayerFeatures = {};
   export let controls: PlayerControls = {};
+  import './light.css';
+  import { lightIcons } from './light-icons';
   export let icons: PlayerIcons = {};
+  export let theme: NonNullable<RRwebPlayerOptions['props']['theme']> = 'dark';
+  export let recordingTimeZone: string | undefined = undefined;
+  $: toolbarIcons = theme === 'light' ? { ...lightIcons, ...icons } : icons;
   const jumpListeners = new Set<(event: JumpEvent) => unknown>();
   export function setFeatures(patch: PlayerFeatures) {
     features = mergeFeatures(features, patch);
@@ -233,7 +238,7 @@
         `);
     }
 
-    const { features: _features, controls: _controls, icons: _icons, ...replayProps } = $$props;
+    const { features: _features, controls: _controls, icons: _icons, theme: _theme, recordingTimeZone: _timeZone, ...replayProps } = $$props;
     replayer = new Replayer(events, {
       speed,
       root: frame,
@@ -367,7 +372,7 @@
 
 <svelte:window on:keydown|capture={escape} />
 <div
-  class="rr-player" data-rrweb-part="player"
+  class="rr-player" data-rrweb-part="player" data-rrweb-theme={theme}
   tabindex={features.jump && features.jump.keyboard === 'player' ? 0 : undefined}
   bind:this={player}
   style={playerStyle}
@@ -408,7 +413,7 @@
   {#if replayer}
     <Controller
       bind:this={controller}
-      fullscreen={fullscreenSize !== null} {features} {icons} controlVisibility={controls}
+      fullscreen={fullscreenSize !== null} {features} icons={toolbarIcons} {recordingTimeZone} controlVisibility={controls}
       on:ui-jump={({ detail }) => jumpListeners.forEach(listener => listener(detail))}
       {replayer}
       bind:zoom bind:followCursor {maxZoom}

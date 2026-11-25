@@ -52,7 +52,17 @@
         "default": "./dist/rrweb-player.cjs"
       }
     },
-    "./dist/style.css": "./dist/style.css"
+    "./dist/style.css": "./dist/style.css",
+    "./timeline": {
+      "import": {
+        "types": "./dist/timeline.d.ts",
+        "default": "./dist/timeline.js"
+      },
+      "require": {
+        "types": "./dist/timeline.d.cts",
+        "default": "./dist/timeline.cjs"
+      }
+    }
   },
   "files": [
     "LICENSE-lucide",

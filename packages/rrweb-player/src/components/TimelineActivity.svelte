@@ -67,11 +67,11 @@
   on:click|stopPropagation={click} on:keydown={key} on:blur={() => choice = null}>
   <svg aria-hidden="true" viewBox="0 0 1000 110" preserveAspectRatio="none">
     {#each bands as path, i}
-      {#if path}<path d={path} fill={`var(--rrweb-player-activity-${ACTIVITY_LAYERS[i]}, white)`} fill-opacity={[0.17,0.36,0.65][i]} />{/if}
+      {#if path}<path d={path} fill={`var(--rrweb-player-activity-${ACTIVITY_LAYERS[i]}, var(--rr-theme-activity-${ACTIVITY_LAYERS[i]}, white))`} fill-opacity={[0.17,0.36,0.65][i]} />{/if}
     {/each}
     {#if layers.clicks}
       {#each marks as mark}
-        <line x1={1000*mark.from} x2={1000*mark.to+0.001} y1="106" y2="106" stroke="var(--rrweb-player-activity-clicks, var(--rrweb-player-activity-click, white))" stroke-width="4" stroke-linecap="round" vector-effect="non-scaling-stroke" />
+        <line x1={1000*mark.from} x2={1000*mark.to+0.001} y1="106" y2="106" stroke="var(--rrweb-player-activity-clicks, var(--rrweb-player-activity-click, var(--rr-theme-activity-clicks, white)))" stroke-width="4" stroke-linecap="round" vector-effect="non-scaling-stroke" />
       {/each}
     {/if}
     {#if choice !== null}
@@ -80,7 +80,7 @@
   </svg>
 </button>
 <style>
-  .rr-activity {position:absolute;bottom:100%;left:0;width:100%;height:clamp(30px,8vh,80px);margin:0;padding:0;border:0;background:linear-gradient(transparent,rgba(10,19,37,.78));opacity:0;pointer-events:none;transition:opacity .15s;cursor:crosshair;}
+  .rr-activity {position:absolute;bottom:100%;left:0;width:100%;height:clamp(30px,8vh,80px);margin:0;padding:0;border:0;background:transparent;opacity:0;pointer-events:none;transition:opacity .15s;cursor:crosshair;}
   .rr-activity.shown,
   .rr-activity:focus-visible,
   :global(.rr-progress:focus-within) .rr-activity {
@@ -91,6 +91,14 @@
   :global(.rr-progress:focus-within) .rr-activity:not(:disabled) {
     pointer-events: auto;
   }
-  .rr-activity svg {display:block;width:100%;height:100%;}
+  /* The decorative fade reaches the player edges; graph coordinates and hit target follow the track. */
+  .rr-activity::before {
+    content: '';
+    position: absolute;
+    inset: 0 calc(-1 * var(--rr-timeline-inset));
+    background: linear-gradient(transparent, var(--rr-activity-fade, rgba(10,19,37,.78)));
+    pointer-events: none;
+  }
+  .rr-activity svg {position:relative;display:block;width:100%;height:100%;}
   @media (prefers-reduced-motion:reduce){.rr-activity{transition:none;}}
 </style>

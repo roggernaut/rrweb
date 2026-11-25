@@ -527,3 +527,32 @@ playRange(
     </td>
   </tr>
 </table>
+
+### Player theme and recording time
+
+Pass `theme: 'light'` in the player props for the white rrweb toolbar. The default is `'dark'`. Change it on a mounted player with `player.$set({ theme: 'light' })`. Per-icon renderers and the public CSS color variables continue to take precedence.
+
+Hover over the elapsed time or focus it with Tab to see when the recording started in the viewer’s local time. Set `recordingTimeZone` to the recorded user’s IANA time zone (for example, `'America/New_York'`) to show their local time as well.
+
+### Using the timeline in a custom UI
+
+Import `rrweb-player/timeline` from JavaScript or TypeScript. It runs without mounting the player or loading its styles. Pass the same inactivity threshold (milliseconds) and maximum idle share as the player.
+
+```ts
+import { createRecordingTimelineScale } from 'rrweb-player/timeline';
+
+const scale = createRecordingTimelineScale(events, { inactivePeriodThreshold: 10_000, maxIdleShare: 0.2 });
+const leftPercent = 100 * scale.timeToPosition(playheadMs);
+const seekMs = scale.positionToTime(pointerX / trackWidth);
+```
+
+If your application already supplies idle intervals, use `createReplayTimelineScale(durationMs, intervals, maxIdleShare)`. Each interval is a pair of offsets in milliseconds from the first event.
+
+For the same activity bands and clicks as the player, use the same scale for both.
+
+```ts
+import { activitySamples, bucketReplayActivity, clickMarks, replayClickTimes } from 'rrweb-player/timeline';
+
+const bands = activitySamples(bucketReplayActivity(events, scale.total), scale);
+const clicks = clickMarks(replayClickTimes(events), scale);
+```
