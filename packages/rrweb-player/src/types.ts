@@ -45,6 +45,8 @@ export type RRwebPlayerOptions = {
      * @defaultValue `true`
      */
     showController?: boolean;
+    /** Display the fast-forward indicator while skipping inactivity. */
+    showSkipIndicator?: boolean;
     /**
      * Display timed captions from annotation events.
      * @defaultValue `true`
@@ -80,6 +82,11 @@ export type RRwebPlayerExpose = {
   // getSilly: () => void;
   toggle: () => void;
   setSpeed: (speed: number) => void;
+  setInactivity: (
+    options: Partial<
+      Pick<playerConfig, 'skipInactive' | 'inactivePeriodThreshold' | 'maxSpeed' | 'adaptiveSkip'>
+    >,
+  ) => void;
   toggleSkipInactive: () => void;
   toggleFullscreen: () => void;
   triggerResize: () => void;

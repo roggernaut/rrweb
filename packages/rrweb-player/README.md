@@ -106,6 +106,32 @@ steps, or use Home/End to jump to the start/end.
 See the [annotation recipe](../../docs/recipes/annotations.md)
 for replay callbacks, keyboard interactions, seeking, and TypeScript usage.
 
+## Updating inactivity settings
+
+Call `setInactivity` with the options you want to change. During playback,
+the replayer applies the changes at the current position.
+
+```ts
+player.setInactivity({
+  skipInactive: true,
+  inactivePeriodThreshold: 15000,
+  maxSpeed: 100,
+});
+```
+
+The threshold is in milliseconds and `maxSpeed` caps the playback speed
+during a skip.
+
+Adaptive skipping is enabled by default. Pass `adaptiveSkip: false` as a
+constructor prop or call `player.setInactivity({ adaptiveSkip: false })` to
+use the classic skip speed.
+
+The skip indicator appears during fast-forward even when `showController` is
+`false`. Set `showSkipIndicator: false` to hide it. Style the indicator with
+`[data-rrweb-part="skip-indicator"]` or the CSS properties
+`--rrweb-player-skip-overlay`, `--rrweb-player-skip-indicator-background`
+and `--rrweb-player-skip-indicator-color`.
+
 ## Methods on the rrwebPlayer component
 
 ```ts

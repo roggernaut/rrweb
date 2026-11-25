@@ -177,6 +177,8 @@ export type { Replayer } from './replay';
 export type playerConfig = {
   speed: number;
   maxSpeed: number;
+  /** Scale skip duration with gap length. Disable for the classic skip rate. */
+  adaptiveSkip?: boolean;
   root: Element;
   loadTimeout: number;
   skipInactive: boolean;

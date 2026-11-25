@@ -159,3 +159,48 @@ it('finishes after a late append that does not change the recording end', async 
   expect(player.service.state.value).toBe('paused');
   expect(onFinish).toHaveBeenCalledTimes(1);
 });
+
+it('keeps normal speed after a scroll that follows the final mouse batch cast', () => {
+  const scroll: eventWithTime = {
+    type: EventType.IncrementalSnapshot,
+    timestamp: 110000,
+    data: { source: IncrementalSource.Scroll, id: -1, x: 0, y: 100 },
+  };
+  const finalBatch: eventWithTime = {
+    type: EventType.IncrementalSnapshot,
+    timestamp: 125000,
+    data: {
+      source: IncrementalSource.MouseMove,
+      positions: [
+        { id: -1, x: 0, y: 0, timeOffset: -20000 },
+        { id: -1, x: 5, y: 5, timeOffset: -10000 },
+        { id: -1, x: 10, y: 10, timeOffset: 0 },
+      ],
+    },
+  };
+  player = new Replayer([custom(10000), scroll, finalBatch], {
+    skipInactive: true,
+  });
+  const onCast = vi.fn();
+  const onSkipStart = vi.fn();
+  const onFinish = vi.fn();
+  player.on(ReplayerEvents.EventCast, onCast);
+  player.on(ReplayerEvents.SkipStart, onSkipStart);
+  player.on(ReplayerEvents.Finish, onFinish);
+
+  player.play(94000);
+  vi.advanceTimersByTime(1200);
+  expect(onCast).toHaveBeenCalledWith(finalBatch);
+  expect(onCast).not.toHaveBeenCalledWith(scroll);
+  expect(player.timer.speed).toBe(1);
+
+  vi.advanceTimersByTime(5500);
+  expect(onCast).toHaveBeenCalledWith(scroll);
+  expect(onSkipStart).toHaveBeenCalledTimes(1);
+  expect(player.timer.speed).toBe(1);
+  expect(player.getCurrentTime()).toBeLessThan(105000);
+  expect(onFinish).not.toHaveBeenCalled();
+
+  vi.advanceTimersByTime(15000);
+  expect(onFinish).toHaveBeenCalledTimes(1);
+});

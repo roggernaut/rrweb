@@ -13,7 +13,7 @@
   } from './utils';
   import Controller from './Controller.svelte';
   import type { RRwebPlayerOptions, RRwebPlayerExpose } from './types';
-    
+
   export let width: NonNullable<RRwebPlayerOptions['props']['width']>  = 1024;
   export let height: NonNullable<RRwebPlayerOptions['props']['height']> = 576;
   export let maxScale: NonNullable<RRwebPlayerOptions['props']['maxScale']> = 1;
@@ -29,6 +29,7 @@
   // color of inactive periods indicator
   export let inactiveColor: NonNullable<RRwebPlayerOptions['props']['inactiveColor']> = '#D4D4D4';
 
+  export let showSkipIndicator = true;
   let replayer: Replayer;
   let skipping = false;
   const showSkip = () => {
@@ -117,6 +118,19 @@
   };
   export const setSpeed: RRwebPlayerExpose['setSpeed'] = (speed: number) => {
     controller.setSpeed(speed);
+  };
+  export const setInactivity: RRwebPlayerExpose['setInactivity'] = (options) => {
+    const { skipInactive: enabled, inactivePeriodThreshold, maxSpeed, adaptiveSkip } = options;
+    if (enabled !== undefined) skipInactive = enabled;
+    replayer.setConfig({
+      ...(enabled !== undefined && { skipInactive: enabled }),
+      ...(inactivePeriodThreshold !== undefined && { inactivePeriodThreshold }),
+      ...(maxSpeed !== undefined && { maxSpeed }),
+      ...(adaptiveSkip !== undefined && { adaptiveSkip }),
+    });
+    if (inactivePeriodThreshold !== undefined) {
+      controller.updateInactivityTimeline();
+    }
   };
   export const toggleSkipInactive: RRwebPlayerExpose['toggleSkipInactive'] = () => {
     controller.toggleSkipInactive();
@@ -228,15 +242,15 @@
     inset: 0;
     display: grid;
     place-items: center;
-    background: rgb(0 0 0 / 15%);
+    background: var(--rrweb-player-skip-overlay, rgb(0 0 0 / 15%));
     pointer-events: none;
   }
 
   .rr-player__skip-indicator > span {
     padding: 8px 12px;
     border-radius: 8px;
-    background: #222;
-    color: #fff;
+    background: var(--rrweb-player-skip-indicator-background, #222);
+    color: var(--rrweb-player-skip-indicator-color, #fff);
     font: 32px/1 system-ui, sans-serif;
   }
 
@@ -287,8 +301,8 @@
 >
   <div class="rr-player__viewport" {style}>
     <div class="rr-player__frame" bind:this={frame} {style} />
-    {#if skipping}
-      <div class="rr-player__skip-indicator" aria-hidden="true">
+    {#if skipping && showSkipIndicator}
+      <div class="rr-player__skip-indicator" data-rrweb-part="skip-indicator" aria-hidden="true">
         <span>⏩︎</span>
       </div>
     {/if}
@@ -307,7 +321,7 @@
       {showController}
       {autoPlay}
       {speedOption}
-      {skipInactive}
+      bind:skipInactive
       {tags}
       {timelineMarkerColor}
       {inactiveColor}

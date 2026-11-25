@@ -296,10 +296,17 @@
     skipInactive = !skipInactive;
   };
 
+  export function updateInactivityTimeline() {
+    timeline = updateTimeline(
+      replayer.service.state.context.events,
+      replayer.config.inactivePeriodThreshold,
+    );
+  }
+
   export const triggerUpdateMeta = () => {
     return Promise.resolve().then(() => {
       meta = replayer.getMetaData();
-      timeline = updateTimeline(replayer.service.state.context.events, replayer.config.inactivePeriodThreshold);
+      updateInactivityTimeline();
     });
   };
 
@@ -586,11 +593,7 @@
           CC
         </button>
       {/if}
-      <Switch
-        id="skip"
-        bind:checked={skipInactive}
-        label="skip inactive"
-      />
+      <Switch bind:checked={skipInactive} label="Skip inactive" />
       <button on:click={() => dispatch('fullscreen')}>
         <svg
           class="icon"

@@ -191,6 +191,7 @@ export class Replayer {
     const defaultConfig: playerConfig = {
       speed: 1,
       maxSpeed: 1000,
+      adaptiveSkip: true,
       root: document.body,
       loadTimeout: 0,
       skipInactive: false,
@@ -440,6 +441,9 @@ export class Replayer {
   }
 
   public setConfig(config: Partial<playerConfig>) {
+    const skipPolicyChanged =
+      config.adaptiveSkip !== undefined &&
+      config.adaptiveSkip !== this.config.adaptiveSkip;
     const maxSpeedChanged =
       config.maxSpeed !== undefined && config.maxSpeed !== this.config.maxSpeed;
     Object.keys(config).forEach((key) => {
@@ -462,6 +466,7 @@ export class Replayer {
     if (
       config.speed !== undefined ||
       maxSpeedChanged ||
+      skipPolicyChanged ||
       config.skipInactive !== undefined ||
       config.inactivePeriodThreshold !== undefined
     ) {
@@ -2311,6 +2316,7 @@ export class Replayer {
       end - now,
       this.config.speed,
       this.config.maxSpeed,
+      this.config.adaptiveSkip,
     );
     if (speed <= this.timer.speed) return;
     this.nextUserInteractionEvent = target;

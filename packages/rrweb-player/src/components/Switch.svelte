@@ -1,6 +1,5 @@
 <script lang="ts">
   export let checked: boolean;
-  export let id: string;
   export let label: string;
 </script>
 
@@ -20,7 +19,7 @@
     opacity: 0;
   }
 
-  .switch label {
+  .switch .track {
     width: 2em;
     height: 1em;
     position: relative;
@@ -28,7 +27,7 @@
     display: block;
   }
 
-  .switch label:before {
+  .switch .track:before {
     content: '';
     position: absolute;
     width: 2em;
@@ -39,7 +38,7 @@
     border-radius: 50px;
   }
 
-  .switch label:after {
+  .switch .track:after {
     content: '';
     position: absolute;
     width: 1em;
@@ -53,18 +52,23 @@
     z-index: 2;
   }
 
-  .switch input[type='checkbox']:checked + label:before {
+  .switch input[type='checkbox']:checked + .track:before {
     background: rgb(73, 80, 246);
   }
 
-  .switch input[type='checkbox']:checked + label:after {
+  .switch input[type='checkbox']:focus-visible + .track {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+  }
+
+  .switch input[type='checkbox']:checked + .track:after {
     animation: switch-on 0.2s ease-out;
     left: 1.1em;
   }
 </style>
 
-<div class="switch">
-  <input type="checkbox" {id} bind:checked />
-  <label for={id} />
+<label class="switch">
+  <input type="checkbox" role="switch" bind:checked />
+  <span class="track" aria-hidden="true" />
   <span class="label">{label}</span>
-</div>
+</label>
