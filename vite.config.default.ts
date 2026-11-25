@@ -65,10 +65,12 @@ export function minifyAndUMDPlugin({
   name,
   outDir,
   umdExport,
+  umdEntry,
 }: {
   name: LibraryOptions['name'];
   outDir: string;
   umdExport?: 'default';
+  umdEntry?: string;
 }): Plugin {
   return {
     name: 'minify-plugin',
@@ -79,7 +81,7 @@ export function minifyAndUMDPlugin({
         const isEntry =
           outputOptions.format === 'cjs' &&
           file.type === 'chunk' &&
-          file.isEntry;
+          file.isEntry && (!umdEntry || file.name === umdEntry);
         const isCSS = file.type === 'asset' && file.fileName.endsWith('.css');
         if (isEntry || isCSS) {
           const inputFilePath = resolve(outputOptions.dir!, file.fileName);
@@ -180,6 +182,7 @@ export default function (
     plugins?: Plugin[];
     bundleStats?: boolean;
     umdExport?: 'default';
+    umdEntry?: string;
   },
 ) {
   const {
@@ -188,6 +191,7 @@ export default function (
     plugins = [],
     bundleStats = true,
     umdExport,
+    umdEntry,
   } = options || {};
 
   let formats: LibraryFormats[] = ['es', 'cjs'];
@@ -232,7 +236,7 @@ export default function (
           });
         },
       }),
-      minifyAndUMDPlugin({ name, outDir, umdExport }),
+      minifyAndUMDPlugin({ name, outDir, umdExport, umdEntry }),
       visualizer({
         filename: resolve(__dirname, name + '-bundle-analysis.html'), // Path for the HTML report
         open: false, // don't Automatically open the report in the browser

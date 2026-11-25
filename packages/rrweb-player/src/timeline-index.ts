@@ -60,7 +60,7 @@ export function createTimelineIndex() {
     periods.splice(low, 1, ...remaining);
   }
 
-  return (events: eventWithTime[], inactiveThreshold: number) => {
+  return (events: readonly eventWithTime[], inactiveThreshold: number) => {
     if (
       threshold !== inactiveThreshold ||
       events.length < count ||

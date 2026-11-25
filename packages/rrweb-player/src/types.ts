@@ -15,6 +15,10 @@ export type RRwebPlayerOptions = {
     features?: PlayerFeatures;
     controls?: PlayerControls;
     icons?: PlayerIcons;
+    /** Controller appearance. Defaults to dark. */
+    theme?: 'light' | 'dark';
+    /** IANA time zone of the recorded user, when supplied by the host. */
+    recordingTimeZone?: string;
     /**
      * The width of the replayer
      * @defaultValue `1024`
