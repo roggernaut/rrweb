@@ -7,7 +7,7 @@
     inlineCss,
     openFullscreen,
     exitFullscreen,
-    isFullscreen,
+    getFullscreenElement,
     onFullscreenChange,
     typeOf,
   } from './utils';
@@ -45,13 +45,38 @@
     press = { x: event.clientX, y: event.clientY, id: event.pointerId };
     dragged = false;
   }
+
   function trackPress(event: PointerEvent) {
-    if (press?.id === event.pointerId &&
-        Math.hypot(event.clientX - press.x, event.clientY - press.y) > 4) dragged = true;
+    if (
+      press?.id === event.pointerId &&
+      Math.hypot(event.clientX - press.x, event.clientY - press.y) > 4
+    ) {
+      dragged = true;
+    }
+  }
+
+  function leavePress(event: PointerEvent) {
+    if (press?.id === event.pointerId) dragged = true;
+  }
+
+  function finishPress(event: PointerEvent) {
+    if (press?.id !== event.pointerId) return;
+    trackPress(event);
+    press = undefined;
+  }
+
+  function cancelPress(event: PointerEvent) {
+    if (press?.id !== event.pointerId) return;
+    dragged = true;
+    press = undefined;
+  }
+
+  function handleSurfaceClick(event: MouseEvent) {
+    if (!event.detail || !dragged) toggle();
   }
 
   let fullscreenListener: undefined | (() => void);
-  let embeddedSize: {width: number; height: number} | null = null;
+  let fullscreenSize: { width: number; height: number } | null = null;
   let fullscreenObserver: ResizeObserver | undefined;
   let controller: {
     toggle: () => void;
@@ -59,10 +84,19 @@
     toggleSkipInactive: () => void;
   } & Controller;
 
+  $: viewportSize = {
+    width: fullscreenSize?.width ?? width,
+    height: fullscreenSize
+      ? Math.max(
+          1,
+          fullscreenSize.height - (showController ? controllerHeight : 0),
+        )
+      : height,
+  };
   let style: string;
   $: style = inlineCss({
-    width: `${width}px`,
-    height: `${height}px`,
+    width: `${viewportSize.width}px`,
+    height: `${viewportSize.height}px`,
   });
   let playerStyle: string;
   $: playerStyle = inlineCss({
@@ -72,27 +106,34 @@
 
   const updateScale = (
     el: HTMLElement,
+    viewport: { width: number; height: number },
     frameDimension: { width: number; height: number },
   ) => {
-    const widthScale = width / frameDimension.width;
-    const heightScale = height / frameDimension.height;
+    const widthScale = viewport.width / frameDimension.width;
+    const heightScale = viewport.height / frameDimension.height;
     const scale = [widthScale, heightScale];
     if (maxScale) scale.push(maxScale);
     el.style.transform =
       `scale(${Math.min(...scale)})` + 'translate(-50%, -50%)';
   };
 
-  export const triggerResize: RRwebPlayerExpose['triggerResize'] = () => {
-    updateScale(replayer.wrapper, {
+  const resizeReplay = (viewport: { width: number; height: number }) => {
+    updateScale(replayer.wrapper, viewport, {
       width: replayer.iframe.offsetWidth,
       height: replayer.iframe.offsetHeight,
     });
   };
+  $: if (replayer) resizeReplay(viewportSize);
+
+  export const triggerResize: RRwebPlayerExpose['triggerResize'] = () => {
+    resizeReplay(viewportSize);
+  };
 
   export const toggleFullscreen: RRwebPlayerExpose['toggleFullscreen'] = () => {
-    if (player) {
-      isFullscreen() ? exitFullscreen() : openFullscreen(player);
-    }
+    if (!player) return;
+    if (getFullscreenElement(player) === player)
+      void exitFullscreen(player.ownerDocument);
+    else void openFullscreen(player);
   };
 
   export const addEventListener: RRwebPlayerExpose['addEventListener'] = (
@@ -176,30 +217,30 @@
     replayer.on('resize', (dimension) => {
       updateScale(
         replayer.wrapper,
+        viewportSize,
         dimension as { width: number; height: number },
       );
     });
 
-    fullscreenListener = onFullscreenChange(() => {
-      const owner = document.fullscreenElement ?? (document as Document & {webkitFullscreenElement?: Element}).webkitFullscreenElement;
-      if (owner === player) {
-        embeddedSize ??= {width, height};
-        const resize = () => {
-          width = player.clientWidth;
-          height = Math.max(1, player.clientHeight - (showController ? controllerHeight : 0));
-          triggerResize();
+    const measureFullscreen = () => {
+      if (player && getFullscreenElement(player) === player) {
+        fullscreenSize = {
+          width: player.clientWidth,
+          height: player.clientHeight,
         };
-        resize();
-        if (typeof ResizeObserver !== 'undefined') {
-          fullscreenObserver?.disconnect();
-          fullscreenObserver = new ResizeObserver(resize);
+      }
+    };
+    fullscreenListener = onFullscreenChange(player.ownerDocument, () => {
+      if (getFullscreenElement(player) === player) {
+        measureFullscreen();
+        if (!fullscreenObserver && typeof ResizeObserver !== 'undefined') {
+          fullscreenObserver = new ResizeObserver(measureFullscreen);
           fullscreenObserver.observe(player);
         }
-      } else if (embeddedSize) {
+      } else {
         fullscreenObserver?.disconnect();
-        ({width, height} = embeddedSize);
-        embeddedSize = null;
-        triggerResize();
+        fullscreenObserver = undefined;
+        fullscreenSize = null;
       }
     });
   });
@@ -268,6 +309,12 @@
     overflow: hidden;
   }
 
+  /* The iframe can still receive input when the Replayer enables interaction. */
+  .rr-player__surface + .rr-player__frame {
+    position: relative;
+    pointer-events: none;
+  }
+
   .replayer-wrapper {
     float: left;
     clear: both;
@@ -285,18 +332,24 @@
   class="rr-player"
   bind:this={player}
   style={playerStyle}
-  style:--rr-timeline-marker-panel-width={`${Math.min(280, width * 0.7)}px`}
-  style:--rr-timeline-marker-panel-height={`${Math.max(48, height - 32)}px`}
+  style:--rr-timeline-marker-panel-width={`${Math.min(280, viewportSize.width * 0.7)}px`}
+  style:--rr-timeline-marker-panel-height={`${Math.max(48, viewportSize.height - 32)}px`}
 >
   <div class="rr-player__viewport" {style}>
-    <div class="rr-player__frame" bind:this={frame} {style} />
     {#if showController}
-      <button type="button" class="rr-player__surface" aria-label="Play or pause replay"
-        on:pointerdown={startPress} on:pointermove={trackPress}
-        on:pointerup={(event) => { trackPress(event); press = undefined; }}
-        on:pointercancel={() => { press = undefined; dragged = true; }}
-        on:click={(event) => { if (!event.detail || !dragged) toggle(); }} />
+      <button
+        type="button"
+        class="rr-player__surface"
+        aria-label="Play or pause replay"
+        on:pointerdown={startPress}
+        on:pointermove={trackPress}
+        on:pointerleave={leavePress}
+        on:pointerup={finishPress}
+        on:pointercancel={cancelPress}
+        on:click={handleSurfaceClick}
+      />
     {/if}
+    <div class="rr-player__frame" bind:this={frame} {style} />
     <div role="status" aria-live="polite" aria-atomic="true">
       {#if captionText !== undefined}
         <div class="rr-player__caption">{captionText}</div>
