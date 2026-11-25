@@ -68,8 +68,9 @@ export function bucketReplayActivity(
   const moves: Array<{ time: number; x: number; y: number; epoch: number }> =
     [];
   let epoch = 0;
+  const inRange = (time: number) =>
+    finite(time) && time >= 0 && time <= duration;
   function bucket(time: number) {
-    if (!finite(time) || time < 0 || time > duration) return null;
     const second = Math.floor(time / 1000);
     let value = buckets.get(second);
     if (!value) {
@@ -104,10 +105,9 @@ export function bucketReplayActivity(
       }
       continue;
     }
-    const value = bucket(time);
-    if (!value) continue;
-    if (isClick(event)) value.clicks++;
-    if (data.source === 5) value.inputs++;
+    if (!inRange(time)) continue;
+    if (isClick(event)) bucket(time).clicks++;
+    if (data.source === 5) bucket(time).inputs++;
     if (
       data.source === 3 &&
       finite(data.id) &&
@@ -115,8 +115,10 @@ export function bucketReplayActivity(
       finite(data.y)
     ) {
       const previous = scroll.get(data.id);
-      if (previous)
-        value.scroll += Math.hypot(data.x - previous.x, data.y - previous.y);
+      if (previous) {
+        const distance = Math.hypot(data.x - previous.x, data.y - previous.y);
+        if (finite(distance) && distance > 0) bucket(time).scroll += distance;
+      }
       // No assumed origin for a nested scroller whose first offset is unknown.
       scroll.set(data.id, { x: data.x, y: data.y });
     }
@@ -124,14 +126,16 @@ export function bucketReplayActivity(
   moves.sort((a, b) => a.time - b.time);
   let previous: (typeof moves)[number] | undefined;
   for (const point of moves) {
-    const value = bucket(point.time);
-    if (!value) continue;
+    if (!inRange(point.time)) continue;
     if (
       previous &&
       previous.epoch === point.epoch &&
       point.time - previous.time <= POINTER_GAP_MS
-    )
-      value.mouse += Math.hypot(point.x - previous.x, point.y - previous.y);
+    ) {
+      const distance = Math.hypot(point.x - previous.x, point.y - previous.y);
+      if (finite(distance) && distance > 0)
+        bucket(point.time).mouse += distance;
+    }
     previous = point;
   }
   return buckets;
@@ -187,6 +191,8 @@ export function activitySamples(
     Map<number, { position: number; values: ActivityBucket }>
   >();
   const ordered = [...buckets.entries()].sort(([a], [b]) => a - b);
+  const beforeSpanEnd = (time: number, end: number) =>
+    time < end || (time === end && end === scale.total);
   let first = 0;
   for (const span of scale.spans) {
     if (
@@ -202,7 +208,7 @@ export function activitySamples(
       first++;
     for (
       let i = first;
-      i < ordered.length && ordered[i][0] * 1000 < span.end;
+      i < ordered.length && beforeSpanEnd(ordered[i][0] * 1000, span.end);
       i++
     ) {
       const [second, bucket] = ordered[i];
@@ -229,7 +235,7 @@ export function activitySamples(
       }));
     const time = scale.positionToTime(position);
     const span = scale.spans.find(
-      (part) => time >= part.start && time < part.end,
+      (part) => time >= part.start && beforeSpanEnd(time, part.end),
     );
     const values = empty();
     if (span && !span.idle) {
@@ -239,7 +245,7 @@ export function activitySamples(
         const at = (second + offset) * 1000;
         // Keep a bucket that overlaps the active span, such as the second
         // in which activity resumes after a gap.
-        if (at + 1000 <= span.start || at >= span.end) continue;
+        if (at + 1000 <= span.start || !beforeSpanEnd(at, span.end)) continue;
         const bucket = buckets.get(second + offset);
         if (!bucket) continue;
         // A continuous kernel around each bucket's centre avoids stair steps
