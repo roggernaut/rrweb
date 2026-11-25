@@ -4,8 +4,11 @@ import type { eventWithTime } from '@rrweb/types';
 import { expect, it } from 'vitest';
 import { Replayer } from '../../src/replay';
 import { inactiveSkipSpeed } from '../../src/replay/inactivity';
+
 it('scales the target duration with gap length and tempo, respecting the configured ceiling', () => {
   expect(inactiveSkipSpeed(10000, 1, 1000)).toBe(10);
+  expect(20000 / inactiveSkipSpeed(20000, 1, 1000)).toBe(1250);
+  expect(5120000 / inactiveSkipSpeed(5120000, 1, 2000)).toBe(3000);
   expect(1500000 / inactiveSkipSpeed(1500000, 1, 1000)).toBeCloseTo(2807, -1);
   expect(inactiveSkipSpeed(60000, 2, 1000)).toBe(
     2 * inactiveSkipSpeed(60000, 1, 1000),
@@ -30,6 +33,12 @@ it('applies a changed cap to the skip at the current playhead', () => {
   try {
     player.play();
     expect(player.speedService.state.context.timer.speed).toBe(20);
+    const skipEvents: string[] = [];
+    player.on('skip-start', () => skipEvents.push('start'));
+    player.on('skip-end', () => skipEvents.push('end'));
+
+    player.setConfig({ maxSpeed: 20 });
+    expect(skipEvents).toHaveLength(0);
 
     player.setConfig({ maxSpeed: 5 });
     expect(player.speedService.state.context.timer.speed).toBe(5);

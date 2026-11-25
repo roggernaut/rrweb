@@ -2,12 +2,21 @@
 import { EventType } from '@rrweb/types';
 import type { eventWithTime } from '@rrweb/types';
 import { tick } from 'svelte';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import Player from '../src/Player.svelte';
 
 it.each([true, false])(
   'shows the skip indicator while skipping with showController=%s',
   async (showController) => {
+    vi.useFakeTimers({
+      toFake: [
+        'requestAnimationFrame',
+        'cancelAnimationFrame',
+        'performance',
+        'setTimeout',
+        'clearTimeout',
+      ],
+    });
     const target = document.createElement('div');
     document.body.append(target);
     const events: eventWithTime[] = [
@@ -40,9 +49,19 @@ it.each([true, false])(
       player.pause();
       await tick();
       expect(indicator()).toBeNull();
+
+      player.play();
+      await tick();
+      expect(indicator()).not.toBeNull();
+
+      vi.advanceTimersByTime(2000);
+      await tick();
+      expect(indicator()).toBeNull();
+      expect(player.getReplayer().getCurrentTime()).toBe(60000);
     } finally {
       player.$destroy();
       target.remove();
+      vi.useRealTimers();
     }
   },
 );

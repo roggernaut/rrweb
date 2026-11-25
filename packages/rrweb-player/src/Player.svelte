@@ -229,9 +229,15 @@
     display: grid;
     place-items: center;
     background: rgb(0 0 0 / 15%);
-    color: white;
-    font: 32px/1 system-ui, sans-serif;
     pointer-events: none;
+  }
+
+  .rr-player__skip-indicator > span {
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: #222;
+    color: #fff;
+    font: 32px/1 system-ui, sans-serif;
   }
 
   .rr-player__caption {
@@ -282,7 +288,9 @@
   <div class="rr-player__viewport" {style}>
     <div class="rr-player__frame" bind:this={frame} {style} />
     {#if skipping}
-      <div class="rr-player__skip-indicator" aria-hidden="true">⏩︎</div>
+      <div class="rr-player__skip-indicator" aria-hidden="true">
+        <span>⏩︎</span>
+      </div>
     {/if}
     <div role="status" aria-live="polite" aria-atomic="true">
       {#if captionText !== undefined}
