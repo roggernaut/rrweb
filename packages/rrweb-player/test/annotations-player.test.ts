@@ -77,20 +77,25 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe('player transport', () => {
-  it('jumps without player focus and leaves inputs and the timeline in control', async () => {
+describe("player transport", () => {
+  it("jumps without player focus and leaves inputs and the timeline in control", async () => {
     const player = await mount();
-    const controls = target.querySelector<HTMLElement>('.rr-controller')!;
-    vi.spyOn(controls, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 400, 80));
-    const arrow = (el: Element, key: string) => el.dispatchEvent(new KeyboardEvent('keydown', {key, bubbles: true, cancelable: true}));
-    arrow(document.body, 'ArrowRight');
+    const playerElement = target.querySelector<HTMLElement>(".rr-player")!;
+    vi.spyOn(playerElement, "getBoundingClientRect").mockReturnValue(
+      new DOMRect(0, 0, 400, 360),
+    );
+    const arrow = (el: Element, key: string) =>
+      el.dispatchEvent(
+        new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }),
+      );
+    arrow(document.body, "ArrowRight");
     expect(player.getReplayer().getCurrentTime()).toBe(10000);
-    expect(player.getReplayer().service.state.value).toBe('paused');
-    const input = document.createElement('input');
+    expect(player.getReplayer().service.state.value).toBe("paused");
+    const input = document.createElement("input");
     target.append(input);
-    arrow(input, 'ArrowLeft');
+    arrow(input, "ArrowLeft");
     expect(player.getReplayer().getCurrentTime()).toBe(10000);
-    arrow(target.querySelector('[role="slider"]')!, 'ArrowLeft');
+    arrow(target.querySelector('[role="slider"]')!, "ArrowLeft");
     expect(player.getReplayer().getCurrentTime()).toBe(5000);
     click('[aria-label="Back 10 seconds"]');
     expect(player.getReplayer().getCurrentTime()).toBe(0);
@@ -98,30 +103,103 @@ describe('player transport', () => {
     expect(player.getReplayer().getCurrentTime()).toBe(10000);
   });
 
-  it('toggles on a surface click and ignores a drag that leaves the surface', async () => {
+  it("leaves page arrows available while the player is hidden or the page is editable", async () => {
     const player = await mount();
-    const surface = target.querySelector<HTMLButtonElement>('.rr-player__surface')!;
+    const playerElement = target.querySelector<HTMLElement>(".rr-player")!;
+    vi.spyOn(playerElement, "getBoundingClientRect").mockReturnValue(
+      new DOMRect(0, 0, 400, 360),
+    );
+    const forward = () =>
+      document.body.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "ArrowRight",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+
+    playerElement.style.visibility = "hidden";
+    expect(forward()).toBe(true);
+    expect(player.getReplayer().getCurrentTime()).toBeLessThan(10000);
+
+    playerElement.style.visibility = "visible";
+    document.designMode = "on";
+    try {
+      expect(forward()).toBe(true);
+      expect(player.getReplayer().getCurrentTime()).toBeLessThan(10000);
+    } finally {
+      document.designMode = "off";
+    }
+  });
+
+  it("leaves playback positions alone while skipping or playing live", async () => {
+    const player = await mount({ skipInactive: true });
+    const replayer = player.getReplayer();
+    const next = target.querySelector<HTMLButtonElement>(
+      '[aria-label="Forward 10 seconds"]',
+    )!;
+    const surface = target.querySelector<HTMLButtonElement>(
+      ".rr-player__surface",
+    )!;
+    const forward = () =>
+      surface.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "ArrowRight",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    player.goto(2000, false);
+
+    replayer.speedService.send({
+      type: "FAST_FORWARD",
+      payload: { speed: 10 },
+    });
+    await tick();
+    expect(next.disabled).toBe(true);
+    expect(forward()).toBe(true);
+    expect(replayer.getCurrentTime()).toBe(2000);
+
+    replayer.speedService.send({ type: "BACK_TO_NORMAL" });
+    replayer.startLive();
+    await tick();
+    expect(next.disabled).toBe(true);
+    expect(forward()).toBe(true);
+    expect(replayer.service.state.value).toBe("live");
+  });
+
+  it("toggles on a surface click and ignores a drag that leaves the surface", async () => {
+    const player = await mount();
+    const surface = target.querySelector<HTMLButtonElement>(
+      ".rr-player__surface",
+    )!;
     const state = () => player.getReplayer().service.state.value;
     const pointer = (type: string, x: number, pointerId = 1) =>
       surface.dispatchEvent(
-        new PointerEvent(type, { button: 0, clientX: x, isPrimary: true, pointerId }),
+        new PointerEvent(type, {
+          button: 0,
+          clientX: x,
+          isPrimary: true,
+          pointerId,
+        }),
       );
-    const mouseClick = () => surface.dispatchEvent(new MouseEvent('click', { detail: 1 }));
+    const mouseClick = () =>
+      surface.dispatchEvent(new MouseEvent("click", { detail: 1 }));
 
-    pointer('pointerdown', 1);
-    pointer('pointerleave', -1);
-    pointer('pointerup', 1);
+    pointer("pointerdown", 1);
+    pointer("pointerleave", -1);
+    pointer("pointerup", 1);
     mouseClick();
-    expect(state()).toBe('paused');
+    expect(state()).toBe("paused");
 
-    pointer('pointerdown', 1);
-    pointer('pointercancel', 1, 2);
-    pointer('pointerup', 1);
+    pointer("pointerdown", 1);
+    pointer("pointercancel", 1, 2);
+    pointer("pointerup", 1);
     mouseClick();
-    expect(state()).toBe('playing');
+    expect(state()).toBe("playing");
 
     surface.click();
-    expect(state()).toBe('paused');
+    expect(state()).toBe("paused");
   });
 });
 
