@@ -31,7 +31,7 @@
   <button
     bind:this={marker}
     type="button"
-    class="rr-custom-event"
+    class="rr-custom-event" data-rrweb-part="marker"
     aria-label={`${name}: ${text}`}
     aria-haspopup="dialog"
     {disabled}
@@ -46,7 +46,7 @@
     <!-- svelte-ignore a11y-no-noninteractive-tabindex a11y-no-noninteractive-element-interactions -->
     <div
       bind:this={panel}
-      class="rr-custom-event__timeline-marker-panel"
+      class="rr-custom-event__timeline-marker-panel" data-rrweb-part="marker-popover"
       class:left={alignment === 'left'}
       class:right={alignment === 'right'}
       role="dialog"
@@ -87,7 +87,7 @@
   }
 
   .rr-custom-event:focus-visible {
-    outline: 2px solid rgb(73, 80, 246);
+    outline: 2px solid var(--rrweb-player-focus-ring, var(--rrweb-player-accent, #4950f6));
     outline-offset: 2px;
     border-radius: 3px;
   }
@@ -112,10 +112,11 @@
     width: var(--rr-timeline-marker-panel-width, 280px);
     box-sizing: border-box;
     padding: 12px 14px;
-    background: #242936;
-    color: #fff;
-    border-radius: 6px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+    background: var(--rrweb-player-popover, var(--rrweb-player-surface, white));
+    color: var(--rrweb-player-text, #11103e);
+    border: 1px solid var(--rrweb-player-border, #d8d9e7);
+    border-radius: var(--rrweb-player-popover-radius, 8px);
+    box-shadow: var(--rrweb-player-popover-shadow, 0 8px 24px #11103e24);
     font: 14px/1.5 system-ui, sans-serif;
     text-align: left;
     white-space: normal;
