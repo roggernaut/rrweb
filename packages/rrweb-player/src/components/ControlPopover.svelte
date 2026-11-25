@@ -1,10 +1,12 @@
 <script lang="ts">
   import { onDestroy, tick } from 'svelte';
+  import type { PlayerIcons } from '../features';
+  export let icons: PlayerIcons = {};
   import ControlIcon from './ControlIcon.svelte';
 
   export let label: string;
-  export let icon: 'speed' | 'zoom' | 'settings' | 'activity';
-  export let active: 'speed' | 'zoom' | 'settings' | 'activity' | null = null;
+  export let icon: 'speed' | 'settings' | 'activity';
+  export let active: 'speed' | 'settings' | 'activity' | null = null;
   $: open = active === icon;
   function setOpen(value: boolean) {
     if (value) active = icon;
@@ -23,12 +25,15 @@
   export function focus() {
     trigger?.focus();
   }
+  function getActiveElement() {
+    return (trigger?.getRootNode() as Document | ShadowRoot | undefined)?.activeElement;
+  }
   function cancelClose() {
     clearTimeout(timer);
   }
   function openOnHover(event: PointerEvent) {
     if (event.pointerType !== 'mouse') return;
-    const focusedPanel = trigger.ownerDocument.activeElement?.closest(
+    const focusedPanel = getActiveElement()?.closest(
       '[data-replay-control-panel]',
     );
     if (
@@ -43,7 +48,7 @@
   function scheduleClose() {
     cancelClose();
     timer = setTimeout(() => {
-      if (!pinned && !panel?.contains(document.activeElement)) setOpen(false);
+      if (!pinned && !panel?.contains(getActiveElement() ?? null)) setOpen(false);
     }, 180);
   }
   function position() {
@@ -77,7 +82,7 @@
   async function click() {
     cancelClose();
     if (open && pinned) {
-      if (panel?.contains(document.activeElement)) trigger.focus();
+      if (panel?.contains(getActiveElement() ?? null)) trigger.focus();
       setOpen(false);
       return;
     }
@@ -87,13 +92,9 @@
     panel?.focus();
   }
   function outside(event: PointerEvent) {
-    if (
-      open &&
-      event.target instanceof Node &&
-      !panel?.contains(event.target) &&
-      !trigger?.contains(event.target)
-    )
-      setOpen(false);
+    if (!open) return;
+    const path = event.composedPath();
+    if (!path.includes(trigger) && !path.includes(panel)) setOpen(false);
   }
   function closeOnBlur(event: FocusEvent) {
     const next = event.relatedTarget;
@@ -105,8 +106,8 @@
   }
   function escape(event: KeyboardEvent) {
     if (!open || event.key !== 'Escape' || event.defaultPrevented) return;
-    const activeElement = trigger.ownerDocument.activeElement;
-    const focusInPanel = panel?.contains(activeElement);
+    const activeElement = getActiveElement();
+    const focusInPanel = panel?.contains(activeElement ?? null);
     if (focusInPanel || activeElement === trigger) event.preventDefault();
     if (focusInPanel) trigger.focus();
     setOpen(false);
@@ -121,7 +122,7 @@
 <svelte:document on:pointerdown={outside} on:keydown={escape} />
 <button
   type="button"
-  data-replay-control
+  data-replay-control data-rrweb-control={icon}
   bind:this={trigger}
   aria-label={label}
   aria-haspopup="dialog"
@@ -132,11 +133,11 @@
   on:click={click}
   on:focusout={closeOnBlur}
 >
-  <ControlIcon name={icon} />
+  <ControlIcon {icons} name={icon} />
 </button>
 {#if open}
   <div
-    class="rr-control-panel"
+    class="rr-control-panel" data-rrweb-part="popover"
     data-replay-control-panel
     bind:this={panel}
     use:observe
@@ -164,10 +165,10 @@
     overflow-y: auto;
     border: 1px solid #ffffff26;
     border-radius: 8px;
-    background: #101827a6;
+    background: var(--rrweb-player-popover, var(--rrweb-player-surface, #101827a6));
     backdrop-filter: blur(24px);
     -webkit-backdrop-filter: blur(24px);
-    color: #edf1ff;
+    color: var(--rrweb-player-text, #edf1ff);
     box-shadow: 0 16px 32px #0004;
     font:
       12px/1.5 system-ui,

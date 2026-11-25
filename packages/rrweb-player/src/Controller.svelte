@@ -1,9 +1,13 @@
 <script context="module" lang="ts">
   const shortcutControllers = new Set<HTMLElement>();
 
-  function registerShortcutController(element: HTMLElement) {
-    shortcutControllers.add(element);
-    return { destroy: () => shortcutControllers.delete(element) };
+  function registerShortcutController(element: HTMLElement, enabled: boolean) {
+    function update(active: boolean) {
+      if (active) shortcutControllers.add(element);
+      else shortcutControllers.delete(element);
+    }
+    update(enabled);
+    return { update, destroy: () => shortcutControllers.delete(element) };
   }
 </script>
 
@@ -35,18 +39,24 @@
   import { createReplayTimelineScale } from './timeline-scale';
   import { createTimelineIndex } from './timeline-index';
 
+  import { jumpSeconds, type PlayerFeatures, type PlayerControls, type PlayerIcons, type JumpEvent } from './features';
+  export let features: PlayerFeatures = {};
+  export let controlVisibility: PlayerControls = {};
+  export let fullscreen = false;
+  export let icons: PlayerIcons = {};
+  $: seconds = jumpSeconds(features.jump);
   const dispatch = createEventDispatcher();
 
   export let replayer: Replayer;
   export let container: HTMLElement;
   let pointerSeek = false;
   export let showCaptions = true;
-  let showTimelineNotes = true;
+  let showAnnotations = true;
   const updateTimeline = createTimelineIndex();
   $: timeline = updateTimeline(replayer.service.state.context.events, replayer.config.inactivePeriodThreshold);
   export let captionText: string | undefined = undefined;
   let activeCaptionText: string | undefined;
-  $: captionText = showCaptions ? activeCaptionText : undefined;
+  $: captionText = showAnnotations && showCaptions ? activeCaptionText : undefined;
   // Index changes and seeks reconcile state; playback updates come from annotation events.
   $: activeCaptionText = resolveCaption(timeline);
 
@@ -87,16 +97,32 @@
   export let timelineMarkerColor = 'rgb(73, 80, 246)';
   export let inactiveColor: string;
 
+  const allLayers = ['inputs', 'scroll', 'mouse', 'clicks'] as const;
+  $: activityOptions = features.activity || {};
+  $: allowedLayers = activityOptions.allowedLayers ?? allLayers;
+  $: initialLayers = activityOptions.initialLayers ?? allLayers;
   let activityVisible = true;
-  let layers = {inputs:true,scroll:true,mouse:true,clicks:true};
+  // Preserve the viewer's switches when an unrelated feature changes.
+  $: initialMask = allLayers.reduce((mask, layer, index) =>
+    initialLayers.some(selected => selected === layer) ? mask | (1 << index) : mask, 0);
+  $: layers = {
+    inputs: Boolean(initialMask & 1), scroll: Boolean(initialMask & 2),
+    mouse: Boolean(initialMask & 4), clicks: Boolean(initialMask & 8),
+  };
+  $: visibleLayers = {
+    inputs: layers.inputs && allowedLayers.some(layer => layer === 'inputs'),
+    scroll: layers.scroll && allowedLayers.some(layer => layer === 'scroll'),
+    mouse: layers.mouse && allowedLayers.some(layer => layer === 'mouse'),
+    clicks: layers.clicks && allowedLayers.some(layer => layer === 'clicks'),
+  };
   let bottomHovered = false;
-  $: buckets = bucketReplayActivity(replayer.service.state.context.events, scale.total);
-  $: marks = clickMarks(replayClickTimes(replayer.service.state.context.events), scale);
-  $: samples = activitySamples(buckets, scale);
-  $: hasActivity = buckets.size > 0;
-  $: hasVisibleActivity = (layers.clicks && marks.length > 0) ||
+  $: buckets = features.activity === false ? new Map() : bucketReplayActivity(replayer.service.state.context.events, scale.total);
+  $: marks = features.activity === false ? [] : clickMarks(replayClickTimes(replayer.service.state.context.events), scale);
+  $: samples = features.activity === false ? [] : activitySamples(buckets, scale);
+  $: hasActivity = allowedLayers.length > 0 && (marks.length > 0 && allowedLayers.some(layer => layer === 'clicks') || ACTIVITY_LAYERS.some((layer, i) => allowedLayers.some(allowed => allowed === layer) && samples.some(sample => sample.layers[i] > 0)));
+  $: hasVisibleActivity = (visibleLayers.clicks && marks.length > 0) ||
     ACTIVITY_LAYERS.some((layer, index) =>
-      layers[layer] && samples.some((sample) => sample.layers[index] > 0),
+      visibleLayers[layer] && samples.some((sample) => sample.layers[index] > 0),
     );
   let currentTime = 0;
   $: {
@@ -126,7 +152,7 @@
     ...timeline.periods.map(([a,b]): [number, number] => [a-timeline.start,b-timeline.start]),
     ...(timeline.end - timeline.lastActive > replayer.config.inactivePeriodThreshold
       ? [[timeline.lastActive - timeline.start, timeline.end - timeline.start] as const] : []),
-  ]);
+  ], features.timeline === false ? 1 : features.timeline?.maxIdleShare);
   let percentage: string;
   $: {
     const percent = meta.totalTime > 0 ? Math.min(1, currentTime / meta.totalTime) : 0;
@@ -249,12 +275,24 @@
   };
 
   let controls: HTMLElement | undefined;
-  $: canJump = playerState !== 'live' && speedState !== 'skipping';
+  function canJumpInState(state: typeof playerState, speed: typeof speedState) {
+    return state !== 'live' && speed !== 'skipping';
+  }
+  $: canJump = canJumpInState(playerState, speedState);
 
-  function jump(direction: -1 | 1) {
-    if (!canJump) return;
-    const now = Math.max(0, replayer.getCurrentTime());
-    goto(Math.max(0, Math.min(meta.totalTime, now + direction * 10000)));
+  export function jump(
+    direction: -1 | 1,
+    source: JumpEvent['source'] = 'button',
+    option = features.jump,
+  ) {
+    if (option === false || !canJumpInState(playerState, speedState)) return;
+    const now = Math.max(0, Math.min(meta.totalTime, replayer.getCurrentTime()));
+    const toMs = Math.max(
+      0,
+      Math.min(meta.totalTime, now + direction * jumpSeconds(option) * 1000),
+    );
+    goto(toMs);
+    dispatch('ui-jump', { fromMs: now, toMs, source } satisfies JumpEvent);
   }
 
   function isVisiblePlayer(element: Element, viewport: Window) {
@@ -292,7 +330,8 @@
     if (
       !showController ||
       !controls ||
-      !canJump ||
+      !canJumpInState(playerState, speedState) ||
+      features.jump === false || features.jump?.keyboard === 'off' ||
       event.defaultPrevented ||
       event.isComposing ||
       event.altKey ||
@@ -308,7 +347,8 @@
     const target = event.composedPath()[0];
     const player = controls.parentElement;
     const surface = player?.querySelector('.rr-player__surface');
-    if (target !== surface) {
+    if (target !== surface && target !== player) {
+      if (features.jump?.keyboard === 'player') return;
       if (target !== doc.body && target !== doc.documentElement) return;
       if (
         doc.designMode === 'on' ||
@@ -333,7 +373,7 @@
       }
     }
     event.preventDefault();
-    jump(event.key === 'ArrowLeft' ? -1 : 1);
+    jump(event.key === 'ArrowLeft' ? -1 : 1, 'keyboard');
   }
 
   const handleProgressClick = (event: MouseEvent) => {
@@ -494,12 +534,12 @@
 
 {#if showController}
   <div
-    class="rr-controller"
+    class="rr-controller" data-rrweb-part="controller"
     bind:this={controls}
-    use:registerShortcutController
+    use:registerShortcutController={features.jump !== false && (features.jump?.keyboard ?? 'page') === 'page'}
     data-native-replay-controls
   >
-    <div class="rr-timeline">
+    <div class="rr-timeline" data-rrweb-part="timeline">
       <div
         class="rr-progress"
         class:pointer-seek={pointerSeek}
@@ -527,16 +567,16 @@
           style="width: {percentage}"
         />
         {#each scale.spans.filter(span => span.idle) as span}
-          <div title="inactive period" class="rr-inactive-period"
+          <div title="inactive period" class="rr-inactive-period" data-rrweb-part="idle"
             style:left={`${span.left * 100}%`} style:width={`${(span.right-span.left) * 100}%`}
-            style:color={inactiveColor} />
+            style:color={`var(--rrweb-player-timeline-idle, ${inactiveColor})`} />
         {/each}
         {#if activityVisible && hasVisibleActivity}
-          <TimelineActivity {scale} {samples} {marks} {layers} {currentTime} {bottomHovered} on:seek={e => goto(e.detail)} />
+          <TimelineActivity {scale} {samples} {marks} layers={visibleLayers} seekable={activityOptions.seek !== false} {currentTime} {bottomHovered} on:seek={e => goto(e.detail)} />
         {/if}
         {#each customEvents as event}
           {#if event.timelineMarkerText}
-            {#if showTimelineNotes}
+            {#if showAnnotations}
               <CustomEventMarker
                 dismissalVersion={timelineMarkerDismissalVersion}
                 name={event.name}
@@ -561,7 +601,7 @@
         <div class="rr-progress__handler" style="left: {percentage}" />
       </div>
     </div>
-    <PlayerToolbar
+    <PlayerToolbar {features} {controlVisibility} {icons} {seconds} {fullscreen}
       {container}
       {currentTime}
       totalTime={meta.totalTime}
@@ -572,14 +612,14 @@
       {speed}
       {speedOption}
       canChangeSpeed={speedState !== 'skipping'}
-      annotations={showCaptions || showTimelineNotes}
+      annotations={showAnnotations}
       bind:skipInactive
       on:toggle={toggle}
       on:fullscreen={() => dispatch('fullscreen')}
       on:speed={(event) => setSpeed(event.detail)}
       on:annotations={(event) => {
-        showCaptions = event.detail;
-        showTimelineNotes = event.detail;
+        showAnnotations = event.detail;
+        if (showAnnotations) showCaptions = true;
       }}
       on:skip={(event) => jump(event.detail < 0 ? -1 : 1)}
     />
@@ -590,8 +630,8 @@
   .rr-controller {
     width: 100%;
     height: 80px;
-    background: #0a1325;
-    color: #edf1ff;
+    background: var(--rrweb-player-surface, #0a1325);
+    color: var(--rrweb-player-text, #edf1ff);
     display: flex;
     flex-direction: column;
     justify-content: space-around;
@@ -617,7 +657,7 @@
   .rr-progress {
     flex: 1;
     height: 12px;
-    background: #dbe2fd24;
+    background: var(--rrweb-player-track, #dbe2fd24);
     background-clip: padding-box;
     position: relative;
     border-radius: 3px;
@@ -634,7 +674,7 @@
     border-radius: 3px;
   }
   .rr-progress:not(.pointer-seek) .rr-progress__slider:focus-visible {
-    outline: 2px solid #ffe373;
+    outline: 2px solid var(--rrweb-player-focus-ring, #ffe373);
     outline-offset: 2px;
   }
   .rr-progress.disabled {
@@ -646,7 +686,7 @@
     position: absolute;
     left: 0;
     top: 0;
-    background: #eec20266;
+    background: var(--rrweb-player-played, var(--rrweb-player-accent, #eec20266));
   }
 
   .rr-progress__handler {
@@ -656,6 +696,6 @@
     position: absolute;
     top: 2px;
     transform: translate(-50%, -50%);
-    background: #eec202;
+    background: var(--rrweb-player-accent, #eec202);
   }
 </style>
