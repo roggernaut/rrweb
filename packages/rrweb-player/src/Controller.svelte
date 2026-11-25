@@ -36,13 +36,14 @@
   import PlayerToolbar from './components/PlayerToolbar.svelte';
   import CustomEventMarker from './components/CustomEventMarker.svelte';
   import { parseAnnotationEvent, getActiveCaption } from './annotations';
-  import { createReplayTimelineScale } from './timeline-scale';
+  import { scaleForTimelineIndex } from './recording-timeline';
   import { createTimelineIndex } from './timeline-index';
 
   import { jumpSeconds, type PlayerFeatures, type PlayerControls, type PlayerIcons, type JumpEvent } from './features';
   export let features: PlayerFeatures = {};
   export let controlVisibility: PlayerControls = {};
   export let fullscreen = false;
+  export let recordingTimeZone: string | undefined = undefined;
   export let icons: PlayerIcons = {};
   $: seconds = jumpSeconds(features.jump);
   const dispatch = createEventDispatcher();
@@ -160,11 +161,7 @@
   let meta: playerMetaData;
   $: meta = replayer.getMetaData();
   $: accessibleTime = Math.max(0, Math.min(meta.totalTime, Math.floor(currentTime / 1000) * 1000));
-  $: scale = createReplayTimelineScale(timeline.end - timeline.start, [
-    ...timeline.periods.map(([a,b]): [number, number] => [a-timeline.start,b-timeline.start]),
-    ...(timeline.end - timeline.lastActive > replayer.config.inactivePeriodThreshold
-      ? [[timeline.lastActive - timeline.start, timeline.end - timeline.start] as const] : []),
-  ], features.timeline === false ? 1 : features.timeline?.maxIdleShare);
+  $: scale = scaleForTimelineIndex(timeline, replayer.config.inactivePeriodThreshold, features.timeline === false ? 1 : features.timeline?.maxIdleShare);
   let percentage: string;
   $: {
     const percent = meta.totalTime > 0 ? Math.min(1, currentTime / meta.totalTime) : 0;
@@ -583,7 +580,7 @@
         {#each scale.spans.filter(span => span.idle) as span}
           <div title="inactive period" class="rr-inactive-period" data-rrweb-part="idle"
             style:left={`${span.left * 100}%`} style:width={`${(span.right-span.left) * 100}%`}
-            style:color={`var(--rrweb-player-timeline-idle, ${inactiveColor})`} />
+            style:color={`var(--rrweb-player-timeline-idle, var(--rr-theme-timeline-idle, ${inactiveColor}))`} />
         {/each}
         {#if activityVisible && hasVisibleActivity}
           <TimelineActivity {scale} {samples} {marks} layers={visibleLayers} seekable={activityOptions.seek !== false} {currentTime} {bottomHovered} on:seek={e => goto(e.detail)} />
@@ -615,7 +612,7 @@
         <div class="rr-progress__handler" style="left: {percentage}" />
       </div>
     </div>
-    <PlayerToolbar {features} {controlVisibility} {icons} {seconds} {fullscreen}
+    <PlayerToolbar startedAt={meta.startTime} {recordingTimeZone} {features} {controlVisibility} {icons} {seconds} {fullscreen}
       {container}
       {currentTime}
       totalTime={meta.totalTime}
@@ -644,8 +641,8 @@
   .rr-controller {
     width: 100%;
     height: 80px;
-    background: var(--rrweb-player-surface, #0a1325);
-    color: var(--rrweb-player-text, #edf1ff);
+    background: var(--rrweb-player-surface, var(--rr-theme-surface, #0a1325));
+    color: var(--rrweb-player-text, var(--rr-theme-text, #edf1ff));
     display: flex;
     flex-direction: column;
     justify-content: space-around;
@@ -663,7 +660,8 @@
   .rr-timeline {
     width: 100%;
     box-sizing: border-box;
-    padding: 0 12px;
+    --rr-timeline-inset: 12px;
+    padding: 0 var(--rr-timeline-inset);
     display: flex;
     align-items: center;
   }
@@ -671,7 +669,7 @@
   .rr-progress {
     flex: 1;
     height: 12px;
-    background: var(--rrweb-player-track, #dbe2fd24);
+    background: var(--rrweb-player-track, var(--rr-theme-track, #dbe2fd24));
     background-clip: padding-box;
     position: relative;
     border-radius: 3px;
@@ -688,7 +686,7 @@
     border-radius: 3px;
   }
   .rr-progress:not(.pointer-seek) .rr-progress__slider:focus-visible {
-    outline: 2px solid var(--rrweb-player-focus-ring, #ffe373);
+    outline: 2px solid var(--rrweb-player-focus-ring, var(--rr-theme-focus-ring, #ffe373));
     outline-offset: 2px;
   }
   .rr-progress.disabled {
@@ -700,7 +698,7 @@
     position: absolute;
     left: 0;
     top: 0;
-    background: var(--rrweb-player-played, var(--rrweb-player-accent, #eec20266));
+    background: var(--rrweb-player-played, var(--rr-theme-played, var(--rrweb-player-accent, var(--rr-theme-accent, #eec20266))));
   }
 
   .rr-progress__handler {
@@ -710,6 +708,6 @@
     position: absolute;
     top: 2px;
     transform: translate(-50%, -50%);
-    background: var(--rrweb-player-accent, #eec202);
+    background: var(--rrweb-player-accent, var(--rr-theme-accent, #eec202));
   }
 </style>

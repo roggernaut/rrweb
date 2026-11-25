@@ -36,21 +36,8 @@ function viteSvelteDts(): Plugin {
   return {
     name: 'vite-plugin-svelte-dts',
     apply: 'build',
-    async buildStart(options) {
-      console.log('Generating .d.ts files for Svelte components...');
-
-      const { input } = options;
-      if (typeof input === 'string') {
-        await generateDts(input);
-      } else if (Array.isArray(input)) {
-        for (const file of input) {
-          await generateDts(file);
-        }
-      } else {
-        for (const file of Object.values(input)) {
-          await generateDts(file);
-        }
-      }
+    async buildStart() {
+      await generateDts(path.resolve('src/main.ts'));
 
       // copy .d.ts files to src directory
       const files = await glob('**/*.svelte.d.ts', {
@@ -70,11 +57,12 @@ const sveltePlugins = svelte({
   preprocess: [sveltePreprocess({ typescript: true })],
 }) as Plugin[];
 const baseConfig = config(
-  path.resolve(__dirname, 'src/main.ts'),
+  { 'rrweb-player': path.resolve(__dirname, 'src/main.ts'), timeline: path.resolve(__dirname, 'src/timeline.ts') },
   'rrwebPlayer',
   {
     plugins: [viteSvelteDts(), ...sveltePlugins],
     umdExport: 'default',
+    umdEntry: 'rrweb-player',
   },
 );
 

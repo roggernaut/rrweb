@@ -165,10 +165,10 @@
     overflow-y: auto;
     border: 1px solid #ffffff26;
     border-radius: 8px;
-    background: var(--rrweb-player-popover, var(--rrweb-player-surface, #101827a6));
+    background: var(--rrweb-player-popover, var(--rr-theme-popover, var(--rrweb-player-surface, var(--rr-theme-surface, #101827a6))));
     backdrop-filter: blur(24px);
     -webkit-backdrop-filter: blur(24px);
-    color: var(--rrweb-player-text, #edf1ff);
+    color: var(--rrweb-player-text, var(--rr-theme-text, #edf1ff));
     box-shadow: 0 16px 32px #0004;
     font:
       12px/1.5 system-ui,

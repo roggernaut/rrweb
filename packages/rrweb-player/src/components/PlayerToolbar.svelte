@@ -1,6 +1,12 @@
+<script context="module" lang="ts">
+  let nextToolbar = 0;
+</script>
+
 <script lang="ts">
+  const switchId = `rrweb-switch-${++nextToolbar}`;
   import { createEventDispatcher } from 'svelte';
-  import { formatTime } from '../utils';
+  import TimePill from './TimePill.svelte';
+  import Switch from './Switch.svelte';
   import ControlIcon from './ControlIcon.svelte';
   import ControlPopover from './ControlPopover.svelte';
   import type { PlayerFeatures, PlayerControls, PlayerIcons } from '../features';
@@ -13,6 +19,8 @@
   export let playing: boolean;
   export let canSkip: boolean;
   export let currentTime: number;
+  export let recordingTimeZone: string | undefined = undefined;
+  export let startedAt: number;
   export let totalTime: number;
   export let speed: number;
   export let speedOption: number[];
@@ -38,6 +46,9 @@
   }
   $: minSpeed = Math.min(0.25, ...speedOption);
   $: maxSpeed = Math.max(8, ...speedOption);
+  function changeAnnotations(event: Event) {
+    if (event.target instanceof HTMLInputElement) dispatch('annotations', event.target.checked);
+  }
   function changeSpeed(value: number) {
     dispatch('speed', Math.max(minSpeed, Math.min(maxSpeed, value)));
   }
@@ -80,16 +91,7 @@
   >
   {/if}
   {#if controlVisibility.time !== false}
-  <div
-    class="rr-time-pill" data-rrweb-part="time"
-    data-replay-time
-    role="timer"
-    aria-label="Replay time"
-  >
-    <span class="rr-timeline__time">{formatTime(Math.max(0, currentTime))}</span
-    >
-    / <span class="rr-timeline__time">{formatTime(totalTime)}</span>
-  </div>
+  <TimePill {container} {currentTime} {totalTime} {startedAt} {recordingTimeZone} />
   {/if}
   <div class="rr-control-spacer" />
   {#if controlVisibility.speed !== false}
@@ -151,22 +153,15 @@
     bind:active={panel}
   >
     {#if hasAnnotations}
-    <label class="rr-setting"
-      ><span>Annotations<small>Captions and timeline notes</small></span><input
-        type="checkbox"
-        role="switch"
-        aria-label="Annotations"
+    <label for={switchId + '-annotations'} class="rr-setting"
+      ><span>Annotations<small>Captions and timeline notes</small></span><Switch id={switchId + '-annotations'} label="Annotations"
         checked={annotations}
-        on:change={(event) =>
-          dispatch('annotations', event.currentTarget.checked)}
+        on:change={changeAnnotations}
       /></label
     >
     {/if}
-    <label class="rr-setting"
-      ><span>Skip inactive</span><input
-        type="checkbox"
-        role="switch"
-        aria-label="Skip inactive"
+    <label for={switchId + '-skip-inactive'} class="rr-setting"
+      ><span>Skip inactive</span><Switch id={switchId + '-skip-inactive'} label="Skip inactive"
         bind:checked={skipInactive}
       /></label
     >
@@ -174,19 +169,19 @@
   {/if}
   {#if hasActivity && controlVisibility.activity !== false}
     <ControlPopover {icons} label="Timeline layers" icon="activity" {container} bind:active={panel}>
-      <label class="rr-setting rr-engagement">
+      <label for={switchId + '-engagement'} class="rr-setting rr-engagement">
         <span><strong>Engagement</strong><small>Clicks, input events, scroll and mouse travel</small></span>
-        <input type="checkbox" role="switch" aria-label="Engagement" bind:checked={activityVisible} />
+        <Switch id={switchId + '-engagement'} label="Engagement" bind:checked={activityVisible} />
       </label>
       {#if activityVisible}
         <div class="rr-layer-list">
           {#each legend.filter(([key]) => features.activity !== false && (features.activity?.allowedLayers?.includes(key) ?? true)) as [key, label, opacity]}
-            <label class="rr-layer-row">
+            <label for={`${switchId}-${key}`} class="rr-layer-row">
               <span aria-hidden="true" class="rr-swatch" data-legend-swatch={key} class:click-dot={key === 'clicks'}>
-                <i style:background={`var(--rrweb-player-activity-${key}, ${key === 'clicks' ? 'var(--rrweb-player-activity-click, white)' : 'white'})`} style:opacity />
+                <i style:background={`var(--rrweb-player-activity-${key}, ${key === 'clicks' ? 'var(--rrweb-player-activity-click, var(--rr-theme-activity-clicks, white))' : `var(--rr-theme-activity-${key}, white)`})`} style:opacity />
               </span>
               <span>{label}</span>
-              <input type="checkbox" role="switch" aria-label={label} bind:checked={layers[key]} />
+              <Switch id={`${switchId}-${key}`} label={label} bind:checked={layers[key]} />
             </label>
           {/each}
         </div>
@@ -211,7 +206,8 @@
   .rr-engagement strong { font-weight: 500; }
   .rr-engagement small { font-size: 11px; color: #ffffffa6; }
   .rr-layer-list { padding-left: 12px; border-left: 1px solid #ffffff26; }
-  .rr-layer-row {
+  .rr-layer-row > :global(.switch) { margin-left: auto; }
+  .rr-layer-row { --rr-switch-width:28px; --rr-switch-height:16px; --rr-switch-thumb:12px;
     display: flex;
     align-items: center;
     gap: 10px;
@@ -228,9 +224,6 @@
   .rr-swatch i { display: block; width: 100%; height: 100%; border-radius: inherit; }
   .rr-swatch.click-dot { box-shadow: none; }
   .click-dot i { width: 8px; height: 8px; margin: 2px; border-radius: 50%; }
-  .rr-layer-row input[role='switch'] { width: 28px; height: 16px; margin-left: auto; }
-  .rr-layer-row input[role='switch']::before { width: 12px; height: 12px; }
-  .rr-layer-row input[role='switch']:checked::before { transform: translateX(12px); }
   .rr-controller__btns {
     display: flex;
     align-items: center;
@@ -240,7 +233,7 @@
     padding: 4px 12px;
     /* Popovers are positioned against an ancestor outside the scrolling row. */
     overflow-x: auto;
-    color: var(--rrweb-player-text, #edf1ff);
+    color: var(--rrweb-player-text, var(--rr-theme-text, #edf1ff));
     font:
       12px/1.5 system-ui,
       sans-serif;
@@ -268,23 +261,12 @@
   }
   .rr-controller__btns :global(button:focus-visible),
   .rr-controller__btns :global(input:focus-visible) {
-    outline: 2px solid var(--rrweb-player-focus-ring, #ffe373);
+    outline: 2px solid var(--rrweb-player-focus-ring, var(--rr-theme-focus-ring, #ffe373));
     outline-offset: 2px;
   }
   .rr-controller__btns :global(button:disabled) {
     opacity: 0.35;
     cursor: not-allowed;
-  }
-  .rr-time-pill {
-    display: flex;
-    flex-shrink: 0;
-    gap: 4px;
-    padding: 4px 8px;
-    border-radius: 999px;
-    background: #ffffff1a;
-    white-space: nowrap;
-    font-size: 11px;
-    font-variant-numeric: tabular-nums;
   }
   .rr-control-spacer {
     flex: 1;
@@ -312,7 +294,7 @@
     min-width: 0;
     flex: 1;
     height: 32px;
-    accent-color: var(--rrweb-player-accent, #ffe373);
+    accent-color: var(--rrweb-player-accent, var(--rr-theme-accent, #ffe373));
     cursor: pointer;
   }
   .rr-speed-presets {
@@ -334,7 +316,7 @@
     font-size: 11px;
   }
   .rr-speed-presets button[aria-pressed='true'] {
-    background: var(--rrweb-player-selected, var(--rrweb-player-accent, #ffffff40));
+    background: var(--rrweb-player-selected, var(--rr-theme-selected, var(--rrweb-player-accent, var(--rr-theme-accent, #ffffff40))));
   }
   .normal {
     text-decoration: underline;
@@ -358,33 +340,6 @@
     padding-top: 12px;
     border-top: 1px solid #ffffff1a;
   }
-  input[role='switch'] {
-    appearance: none;
-    box-sizing: border-box;
-    border: 0;
-    margin: 0;
-    width: 36px;
-    height: 20px;
-    padding: 2px;
-    flex-shrink: 0;
-    border-radius: 999px;
-    background: #ffffff33;
-    cursor: pointer;
-  }
-  input[role='switch']::before {
-    content: '';
-    display: block;
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    background: white;
-  }
-  input[role='switch']:checked {
-    background: var(--rrweb-player-accent, #eec202);
-  }
-  input[role='switch']:checked::before {
-    transform: translateX(16px);
-  }
   @container (max-width: 440px) {
     .rr-controller__btns {
       gap: 0;
@@ -392,10 +347,6 @@
     }
     .rr-controller__btns :global(button[data-replay-control]) {
       width: 30px;
-    }
-    .rr-time-pill {
-      padding: 4px;
-      font-size: 10px;
     }
   }
 </style>
