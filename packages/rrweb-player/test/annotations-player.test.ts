@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { pack } from '@rrweb/packer';
 import { tick } from 'svelte';
 import { EventType, IncrementalSource } from '@rrweb/types';
@@ -96,6 +96,73 @@ describe('player transport', () => {
     expect(player.getReplayer().getCurrentTime()).toBe(0);
     click('[aria-label="Skip forward 10 seconds"]');
     expect(player.getReplayer().getCurrentTime()).toBe(10000);
+  });
+});
+
+describe('player fullscreen', () => {
+  let fullscreenElement: Element | null;
+  const exitFullscreen = vi.fn(() => Promise.resolve());
+
+  beforeEach(() => {
+    fullscreenElement = null;
+    exitFullscreen.mockClear();
+    Object.defineProperties(document, {
+      fullscreen: { configurable: true, get: () => fullscreenElement !== null },
+      fullscreenElement: { configurable: true, get: () => fullscreenElement },
+      exitFullscreen: { configurable: true, value: exitFullscreen },
+    });
+  });
+
+  afterEach(() => {
+    for (const property of ['fullscreen', 'fullscreenElement', 'exitFullscreen']) {
+      Reflect.deleteProperty(document, property);
+    }
+  });
+
+  it('fits fullscreen around the controls and restores the latest embedded size', async () => {
+    const player = await mount({ width: 640, height: 360 });
+    const root = target.querySelector<HTMLElement>('.rr-player')!;
+    const viewport = root.querySelector<HTMLElement>('.rr-player__viewport')!;
+    Object.defineProperties(root, {
+      clientWidth: { value: 1200 },
+      clientHeight: { value: 800 },
+    });
+
+    fullscreenElement = root;
+    document.dispatchEvent(new Event('fullscreenchange'));
+    await tick();
+    expect([viewport.style.width, viewport.style.height]).toEqual([
+      '1200px', '720px',
+    ]);
+
+    player.$set({ width: 500, height: 280, showController: false });
+    await tick();
+    expect([viewport.style.width, viewport.style.height]).toEqual([
+      '1200px', '800px',
+    ]);
+
+    fullscreenElement = null;
+    document.dispatchEvent(new Event('fullscreenchange'));
+    await tick();
+    expect([viewport.style.width, viewport.style.height]).toEqual([
+      '500px', '280px',
+    ]);
+  });
+
+  it('only exits fullscreen when this player owns it', async () => {
+    const player = await mount();
+    const root = target.querySelector<HTMLElement>('.rr-player')!;
+    const requestFullscreen = vi.fn(() => Promise.resolve());
+    Object.defineProperty(root, 'requestFullscreen', { value: requestFullscreen });
+
+    fullscreenElement = target;
+    player.toggleFullscreen();
+    expect(requestFullscreen).toHaveBeenCalledOnce();
+    expect(exitFullscreen).not.toHaveBeenCalled();
+
+    fullscreenElement = root;
+    player.toggleFullscreen();
+    expect(exitFullscreen).toHaveBeenCalledOnce();
   });
 });
 

@@ -79,7 +79,7 @@
         type="range"
         min={minSpeed}
         max={maxSpeed}
-        step="0.25"
+        step="any"
         value={speed}
         disabled={!canChangeSpeed}
         aria-label="Playback speed"
@@ -262,11 +262,6 @@
     margin-top: 4px;
     color: #edf1ffb3;
     font-size: 10px;
-  }
-  .rr-control-hint {
-    margin: 8px 0 0;
-    color: #edf1ffb3;
-    font-size: 11px;
   }
   .rr-setting {
     display: flex;
