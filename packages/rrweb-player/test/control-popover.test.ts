@@ -87,4 +87,18 @@ describe('native control popover focus', () => {
     expect(panel()).toBeNull();
     expect(document.activeElement).toBe(sibling);
   });
+
+  it('handles Escape from the trigger without moving its focus', async () => {
+    const { trigger, panel } = await mount();
+    trigger.click();
+    await tick();
+    trigger.focus();
+    await tick();
+    expect(panel()).not.toBeNull();
+
+    expect(trigger.dispatchEvent(escape())).toBe(false);
+    await tick();
+    expect(panel()).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
 });

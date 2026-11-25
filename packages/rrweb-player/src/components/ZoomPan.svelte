@@ -1,7 +1,7 @@
 <script lang="ts">
-  import {createEventDispatcher, onDestroy, onMount} from 'svelte';
-  import type {Replayer} from '@rrweb/replay';
-  import {followReplayCursor} from '../cursor-camera';
+  import { createEventDispatcher, onDestroy, onMount } from 'svelte';
+  import type { Replayer } from '@rrweb/replay';
+  import { followReplayCursor, getFrameScale } from '../cursor-camera';
   export let frame: HTMLElement;
   export let replay: HTMLElement;
   export let replayer: Replayer;
@@ -14,51 +14,88 @@
   let dragged = false;
   let stopFollowing: (()=>void) | undefined;
   function clamp(point: typeof pan) {
-    const rect = replay.getBoundingClientRect();
-    const x = zoom === 1 ? 0 : Math.max(0,(rect.width - frame.clientWidth)/2);
-    const y = zoom === 1 ? 0 : Math.max(0,(rect.height - frame.clientHeight)/2);
-    return {x: Math.max(-x, Math.min(x,point.x)), y: Math.max(-y,Math.min(y,point.y))};
+    if (zoom <= 1) return { x: 0, y: 0 };
+    const { width, height } = replay.getBoundingClientRect();
+    const scale = getFrameScale(frame);
+    const x = Math.max(0, (width / scale.x - frame.clientWidth) / 2);
+    const y = Math.max(0, (height / scale.y - frame.clientHeight) / 2);
+    return {
+      x: Math.max(-x, Math.min(x, point.x)),
+      y: Math.max(-y, Math.min(y, point.y)),
+    };
   }
   function paint(point: typeof pan) {
-    pan = clamp(point);
+    pan = point;
     replay.style.translate = `${pan.x}px ${pan.y}px`;
   }
-  function sync(value: number, follow: boolean) {
+  function stopCamera() {
     stopFollowing?.();
-    replay.style.scale = String(value);
-    paint(pan);
-    stopFollowing = follow && value > 1 ? followReplayCursor(frame,replay,replayer,()=>pan,paint,clamp) : undefined;
+    stopFollowing = undefined;
   }
-  $: sync(zoom,followCursor);
+  function syncZoom(value: number) {
+    replay.style.scale = String(value);
+    paint(clamp(pan));
+  }
+  function syncCamera(value: number, follow: boolean, holdingPointer: boolean) {
+    stopCamera();
+    if (follow && value > 1 && !holdingPointer) {
+      stopFollowing = followReplayCursor(
+        frame,
+        replay,
+        replayer,
+        () => pan,
+        paint,
+        clamp,
+      );
+    }
+  }
+  $: holdingPointer = press !== null;
+  $: syncZoom(zoom);
+  $: syncCamera(zoom, followCursor, holdingPointer);
   onMount(() => {
     if (typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(() => paint(pan));
+    const observer = new ResizeObserver(() => paint(clamp(pan)));
     observer.observe(frame); observer.observe(replay);
     return () => observer.disconnect();
   });
   onDestroy(() => {
-    stopFollowing?.();
+    stopCamera();
     replay.style.removeProperty('scale');
     replay.style.removeProperty('translate');
   });
   function down(e: PointerEvent) {
     if (e.button !== 0 || !e.isPrimary) return;
+    if (press && surface.hasPointerCapture?.(press.id)) return;
     dragged = false;
     press = {id:e.pointerId,x:e.clientX,y:e.clientY,lastX:e.clientX,lastY:e.clientY};
     if (zoom > 1) {
-      surface.focus();
+      // Hold the camera before the pointer crosses the drag threshold.
+      stopCamera();
+      surface.focus({ preventScroll: true });
       surface.setPointerCapture(e.pointerId);
     }
   }
   function move(e: PointerEvent) {
     if (!press || e.pointerId !== press.id) return;
-    if (!dragged && Math.hypot(e.clientX-press.x,e.clientY-press.y) <= 5) return;
+    const threshold = zoom > 1 ? 5 : 4;
+    if (!dragged && Math.hypot(e.clientX-press.x,e.clientY-press.y) <= threshold) return;
     dragged = true;
     if (zoom > 1) {
       followCursor = false;
-      paint({x:pan.x+e.clientX-press.lastX,y:pan.y+e.clientY-press.lastY});
+      const scale = getFrameScale(frame);
+      paint(
+        clamp({
+          x: pan.x + (e.clientX - press.lastX) / scale.x,
+          y: pan.y + (e.clientY - press.lastY) / scale.y,
+        }),
+      );
     }
     press.lastX=e.clientX; press.lastY=e.clientY;
+  }
+  function leave(e: PointerEvent) {
+    if (press?.id === e.pointerId && !surface.hasPointerCapture?.(e.pointerId)) {
+      dragged = true;
+    }
   }
   function end(e: PointerEvent) {
     if (!press || e.pointerId !== press.id) return;
@@ -73,12 +110,12 @@
     const delta = {ArrowLeft:[50,0],ArrowRight:[-50,0],ArrowUp:[0,50],ArrowDown:[0,-50]}[e.key];
     if (!delta) return;
     e.preventDefault(); followCursor = false;
-    paint({x:pan.x+delta[0],y:pan.y+delta[1]});
+    paint(clamp({ x: pan.x + delta[0], y: pan.y + delta[1] }));
   }
 </script>
 <button type="button" class="rr-player__surface" class:zoomed={zoom > 1} bind:this={surface}
   aria-label="Play or pause replay" on:pointerdown={down} on:pointermove={move}
-  on:pointerup={end} on:pointercancel={end} on:lostpointercapture={end}
+  on:pointerleave={leave} on:pointerup={end} on:pointercancel={end} on:lostpointercapture={end}
   on:keydown={keydown} on:click={e => { if (!e.detail || !dragged) dispatch('toggle'); }} />
 <style>
   .rr-player__surface {position:absolute;inset:0;width:100%;height:100%;padding:0;background:transparent;border:0;cursor:pointer;}
