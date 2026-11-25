@@ -77,6 +77,120 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+describe('player customization', () => {
+  it('describes configured jumps with their source and supports unsubscribing', async () => {
+    const player = await mount({
+      features: { jump: { seconds: 2, keyboard: 'player' } },
+    });
+    const onJump = vi.fn();
+    const unsubscribe = player.addEventListener('ui-jump', onJump);
+    const root = target.querySelector<HTMLElement>(
+      '[data-rrweb-part="player"]',
+    )!;
+    const arrow = (element: HTMLElement) =>
+      element.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'ArrowRight',
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+
+    player.goto(0, false);
+    expect(arrow(document.body)).toBe(true);
+    expect(arrow(root)).toBe(false);
+    click('[data-rrweb-control="jump-forward"]');
+    player.setFeatures({ jump: { seconds: 3 } });
+    player.jump('forward');
+    await tick();
+
+    expect(onJump.mock.calls.flat()).toEqual([
+      { fromMs: 0, toMs: 2000, source: 'keyboard' },
+      { fromMs: 2000, toMs: 4000, source: 'button' },
+      { fromMs: 4000, toMs: 7000, source: 'api' },
+    ]);
+    expect(root.tabIndex).toBe(0);
+    expect(arrow(document.body)).toBe(true);
+    unsubscribe();
+    player.jump('forward');
+    expect(player.getReplayer().getCurrentTime()).toBe(10000);
+    expect(onJump).toHaveBeenCalledTimes(3);
+
+    player.setFeatures({ jump: { seconds: 1 } });
+    await tick();
+    expect(
+      target
+        .querySelector('[data-rrweb-control="jump-forward"]')
+        ?.getAttribute('aria-label'),
+    ).toMatch(/\b1 second$/);
+
+    player.setFeatures({ jump: false });
+    await tick();
+    expect(
+      target.querySelector('[data-rrweb-control="jump-forward"]'),
+    ).toBeNull();
+    player.jump('back');
+    expect(player.getReplayer().getCurrentTime()).toBe(10000);
+  });
+
+  it('jumps back from the end when the playback clock has advanced past it', async () => {
+    const player = await mount({ features: { jump: { seconds: 2 } } });
+    const onJump = vi.fn();
+    player.addEventListener('ui-jump', onJump);
+    const currentTime = vi.spyOn(player.getReplayer(), 'getCurrentTime')
+      .mockReturnValueOnce(10040);
+    try {
+      player.jump('back');
+      expect(onJump).toHaveBeenCalledWith({ fromMs: 10000, toMs: 8000, source: 'api' });
+    } finally {
+      currentTime.mockRestore();
+    }
+  });
+
+  it('ignores a programmatic jump as soon as live replay starts', async () => {
+    const player = await mount();
+    const replayer = player.getReplayer();
+    const onJump = vi.fn();
+    player.addEventListener('ui-jump', onJump);
+    replayer.startLive();
+    player.jump('forward');
+
+    expect(replayer.service.state.value).toBe('live');
+    expect(onJump).not.toHaveBeenCalled();
+  });
+
+  it('hides jump controls independently and renders custom decorative SVGs', async () => {
+    const render = vi.fn(({ document }: { document: Document }) =>
+      document.createElementNS('http://www.w3.org/2000/svg', 'svg'),
+    );
+    const player = await mount({
+      features: { jump: { seconds: 2 }, clickToPlay: false },
+      controls: { jump: false },
+      icons: { 'jump-forward': render },
+    });
+    const forward = () =>
+      target.querySelector('[data-rrweb-control="jump-forward"]');
+
+    expect(forward()).toBeNull();
+    expect(target.querySelector('[data-rrweb-part="surface"]')).toBeNull();
+    expect(render).not.toHaveBeenCalled();
+    player.goto(0, false);
+    player.jump('forward');
+    expect(player.getReplayer().getCurrentTime()).toBe(2000);
+
+    player.$set({ controls: { jump: true } });
+    await tick();
+    expect(render).toHaveBeenCalledWith({
+      name: 'jump-forward',
+      seconds: 2,
+      document: target.ownerDocument,
+    });
+    const svg = forward()?.querySelector('svg');
+    expect(svg?.getAttribute('aria-hidden')).toBe('true');
+    expect(svg?.getAttribute('focusable')).toBe('false');
+  });
+});
+
 describe("player transport", () => {
   it("jumps without player focus and leaves inputs and the timeline in control", async () => {
     const player = await mount();
@@ -271,6 +385,71 @@ describe('player fullscreen', () => {
 });
 
 describe('player annotations', () => {
+  it('keeps a dismissed popup closed when its toolbar control returns', async () => {
+    const player = await mount();
+    const dialog = () =>
+      target.querySelector('[role="dialog"][aria-label="Playback speed"]');
+    click('[aria-label="Playback speed"]');
+    await tick();
+    expect(dialog()).not.toBeNull();
+
+    player.$set({ controls: { speed: false } });
+    await tick();
+    expect(dialog()).toBeNull();
+    player.$set({ controls: { speed: true } });
+    await tick();
+    expect(dialog()).toBeNull();
+    expect(
+      target
+        .querySelector('button[aria-label="Playback speed"]')
+        ?.getAttribute('aria-expanded'),
+    ).toBe('false');
+  });
+
+  it('keeps annotations hidden across caption prop changes and appended events', async () => {
+    const initialEvents = recording().filter(
+      (event) => event.type !== EventType.Annotation,
+    );
+    const player = await mount({ events: initialEvents });
+    click('[aria-label="Replay settings"]');
+    await tick();
+    const switchControl = () =>
+      target.querySelector<HTMLInputElement>(
+        '[role="switch"][aria-label="Annotations"]',
+      );
+    expect(switchControl()).toBeNull();
+
+    player.addEvent(annotation(11000, 'Appended caption'));
+    player.addEvent(timelineMarker(11000, 'Appended note'));
+    await Promise.resolve();
+    await tick();
+    player.goto(11000, false);
+    await tick();
+    expect(switchControl()?.checked).toBe(true);
+    expect(target.querySelector('.rr-player__caption')?.textContent).toBe(
+      'Appended caption',
+    );
+
+    switchControl()?.click();
+    player.$set({ showCaptions: false });
+    await tick();
+    player.$set({ showCaptions: true });
+    player.addEvent(timelineMarker(12000, 'Another note'));
+    await Promise.resolve();
+    await tick();
+    expect(switchControl()?.checked).toBe(false);
+    expect(target.querySelector('.rr-player__caption')).toBeNull();
+    expect(target.querySelector('.rr-custom-event')).toBeNull();
+    expect(target.querySelector('[title="ordinary"]')).not.toBeNull();
+
+    switchControl()?.click();
+    await tick();
+    expect(target.querySelector('.rr-player__caption')?.textContent).toBe(
+      'Appended caption',
+    );
+    expect(target.querySelectorAll('.rr-custom-event')).toHaveLength(2);
+  });
+
   it('keeps scrollable timeline marker panels outside the seek button and prevents timeline marker panel clicks from seeking', async () => {
     const player = await mount();
     player.goto(3000, false);
@@ -475,6 +654,7 @@ describe('player annotations', () => {
     const preset = target.querySelector<HTMLButtonElement>(
       'button[aria-label="2× speed"]',
     )!;
+    preset.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
     preset.focus();
     hover(settingsTrigger);
     await tick();

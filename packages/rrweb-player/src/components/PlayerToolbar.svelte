@@ -3,6 +3,12 @@
   import { formatTime } from '../utils';
   import ControlIcon from './ControlIcon.svelte';
   import ControlPopover from './ControlPopover.svelte';
+  import type { PlayerFeatures, PlayerControls, PlayerIcons } from '../features';
+  export let features: PlayerFeatures = {};
+  export let controlVisibility: PlayerControls = {};
+  export let icons: PlayerIcons = {};
+  export let seconds = 10;
+  export let fullscreen = false;
   export let container: HTMLElement;
   export let playing: boolean;
   export let canSkip: boolean;
@@ -16,6 +22,12 @@
   export let hasAnnotations: boolean;
   const dispatch = createEventDispatcher();
   let panel: 'speed' | 'settings' | null = null;
+  $: if (
+    (panel === 'speed' && controlVisibility.speed === false) ||
+    (panel === 'settings' && controlVisibility.settings === false)
+  ) {
+    panel = null;
+  }
   $: minSpeed = Math.min(0.25, ...speedOption);
   $: maxSpeed = Math.max(8, ...speedOption);
   function changeSpeed(value: number) {
@@ -23,35 +35,45 @@
   }
 </script>
 
-<div class="rr-controller__btns" role="group" aria-label="Replay controls">
+<div class="rr-controller__btns" data-rrweb-part="toolbar" role="group" aria-label="Replay controls">
+  {#if controlVisibility.play !== false}
   <button
     type="button"
     data-replay-control
+    data-rrweb-control="play"
     aria-label={playing ? 'Pause' : 'Play'}
     title={playing ? 'Pause' : 'Play'}
     on:click={() => dispatch('toggle')}
-    ><ControlIcon name={playing ? 'pause' : 'play'} /></button
+    ><ControlIcon {icons} name={playing ? 'pause' : 'play'} /></button
   >
+  {/if}
+  {#if features.jump !== false && controlVisibility.jump !== false}
   <button
     type="button"
     data-replay-control
-    aria-label="Skip back 10 seconds"
-    title="Skip back 10 seconds"
+    data-rrweb-control="jump-back"
+    aria-label={`Skip back ${seconds} ${seconds === 1 ? 'second' : 'seconds'}`}
+    title={`Skip back ${seconds} ${seconds === 1 ? 'second' : 'seconds'}`}
     disabled={!canSkip}
-    on:click={() => dispatch('skip', -10000)}
-    ><ControlIcon name="back" /></button
+    on:click={() => dispatch('skip', -1)}
+    ><ControlIcon {icons} {seconds} name="jump-back" /></button
   >
+  {/if}
+  {#if features.jump !== false && controlVisibility.jump !== false}
   <button
     type="button"
     data-replay-control
-    aria-label="Skip forward 10 seconds"
-    title="Skip forward 10 seconds"
+    data-rrweb-control="jump-forward"
+    aria-label={`Skip forward ${seconds} ${seconds === 1 ? 'second' : 'seconds'}`}
+    title={`Skip forward ${seconds} ${seconds === 1 ? 'second' : 'seconds'}`}
     disabled={!canSkip}
-    on:click={() => dispatch('skip', 10000)}
-    ><ControlIcon name="forward" /></button
+    on:click={() => dispatch('skip', 1)}
+    ><ControlIcon {icons} {seconds} name="jump-forward" /></button
   >
+  {/if}
+  {#if controlVisibility.time !== false}
   <div
-    class="rr-time-pill"
+    class="rr-time-pill" data-rrweb-part="time"
     data-replay-time
     role="timer"
     aria-label="Replay time"
@@ -60,8 +82,10 @@
     >
     / <span class="rr-timeline__time">{formatTime(totalTime)}</span>
   </div>
+  {/if}
   <div class="rr-control-spacer" />
-  <ControlPopover
+  {#if controlVisibility.speed !== false}
+  <ControlPopover {icons}
     label="Playback speed"
     icon="speed"
     {container}
@@ -110,7 +134,9 @@
       {/each}
     </div>
   </ControlPopover>
-  <ControlPopover
+  {/if}
+  {#if controlVisibility.settings !== false}
+  <ControlPopover {icons}
     label="Replay settings"
     icon="settings"
     {container}
@@ -137,14 +163,18 @@
       /></label
     >
   </ControlPopover>
+  {/if}
+  {#if features.fullscreen !== false && controlVisibility.fullscreen !== false}
   <button
     type="button"
     data-replay-control
-    aria-label="Fullscreen"
-    title="Fullscreen"
+    data-rrweb-control="fullscreen"
+    aria-label={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+    title={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
     on:click={() => dispatch('fullscreen')}
-    ><ControlIcon name="fullscreen" /></button
+    ><ControlIcon {icons} name={fullscreen ? 'exit-fullscreen' : 'enter-fullscreen'} /></button
   >
+  {/if}
 </div>
 
 <style>
@@ -157,7 +187,7 @@
     padding: 4px 12px;
     /* Popovers are positioned against an ancestor outside the scrolling row. */
     overflow-x: auto;
-    color: #edf1ff;
+    color: var(--rrweb-player-text, #edf1ff);
     font:
       12px/1.5 system-ui,
       sans-serif;
@@ -185,7 +215,7 @@
   }
   .rr-controller__btns :global(button:focus-visible),
   .rr-controller__btns :global(input:focus-visible) {
-    outline: 2px solid #ffe373;
+    outline: 2px solid var(--rrweb-player-focus-ring, #ffe373);
     outline-offset: 2px;
   }
   .rr-controller__btns :global(button:disabled) {
@@ -229,7 +259,7 @@
     min-width: 0;
     flex: 1;
     height: 32px;
-    accent-color: #ffe373;
+    accent-color: var(--rrweb-player-accent, #ffe373);
     cursor: pointer;
   }
   .rr-speed-presets {
@@ -251,7 +281,7 @@
     font-size: 11px;
   }
   .rr-speed-presets button[aria-pressed='true'] {
-    background: #ffffff40;
+    background: var(--rrweb-player-selected, var(--rrweb-player-accent, #ffffff40));
   }
   .normal {
     text-decoration: underline;
@@ -294,7 +324,7 @@
     background: white;
   }
   input[role='switch']:checked {
-    background: #d4ad00;
+    background: var(--rrweb-player-accent, #d4ad00);
   }
   input[role='switch']:checked::before {
     transform: translateX(16px);
