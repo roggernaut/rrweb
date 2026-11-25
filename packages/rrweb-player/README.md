@@ -74,18 +74,73 @@ new rrwebPlayer({
 | autoPlay            | true             | whether to autoplay                                                                                               |
 | speed               | 1                | The default speed to play at                                                                                      |
 | speedOption         | [1, 2, 4, 8]     | speed options in UI                                                                                               |
-| showCaptions        | true             | display timed captions from annotation events; viewers can toggle them with CC                                    |
+| showCaptions        | true             | Whether to show timed captions initially                                    |
 | showController      | true             | whether to show the controller UI                                                                                 |
 | timelineMarkerColor | rgb(73, 80, 246) | color of timeline marker annotations                                                                              |
 | tags                | {}               | customize the custom events style with a key-value map                                                            |
 | inactiveColor       | #D4D4D4          | Customize the color of inactive periods indicator in the progress bar with a valid CSS color string.              |
 | ...                 | -                | all the [rrweb Replayer options](https://github.com/rrweb-io/rrweb/blob/main/guide.md#options-1) will be bypassed |
 
+## Playback controls
+
+Use `features.jump` to set the jump distance in seconds. The default is 10.
+Its `keyboard` option accepts `'page'` (the default), `'player'` for the
+focused replay surface or player, and `'off'`. Set `features.jump: false` to disable
+jumps, or `controls.jump: false` to hide the jump buttons while keeping
+keyboard and programmatic jumps available. Set `features.clickToPlay: false`
+to turn off play/pause clicks on the replay surface.
+
+```js
+const player = new rrwebPlayer({
+  target: document.body,
+  props: { events, features: { jump: { seconds: 5, keyboard: 'player' } } },
+});
+
+const unsubscribe = player.addEventListener('ui-jump', ({ fromMs, toMs, source }) => {
+  console.log(fromMs, toMs, source);
+});
+player.jump('forward');
+player.setFeatures({ jump: { seconds: 15 } }); // retains keyboard: 'player'
+unsubscribe();
+```
+
+Jump events use replay offsets in milliseconds and identify the source as
+`'button'`, `'keyboard'`, or `'api'`. Use `icons['jump-back']` or
+`icons['jump-forward']` to supply custom artwork. Each callback receives
+`{ name, seconds, document }` and returns an SVG element created with that
+document. Buttons retain their accessible names. Use `[data-rrweb-part="timeline"]`
+or `[data-rrweb-control="jump-forward"]` for CSS selectors that target a
+specific part or control.
+
+Set the player's colors on its mounting element. CSS custom properties inherit
+into each player, so two players on the same page can use different themes.
+
+```css
+.customer-replay {
+  --rrweb-player-surface: #142036;
+  --rrweb-player-text: #f5f8ff;
+  --rrweb-player-accent: #71d9cc;
+  --rrweb-player-focus-ring: #ffcd70;
+}
+```
+
+Use `--rrweb-player-track` for the timeline background and
+`--rrweb-player-played` for its elapsed portion. The popover background uses
+`--rrweb-player-popover` and selected buttons use `--rrweb-player-selected`.
+
+Set `controls.play`, `controls.time`, `controls.speed`,
+`controls.settings`, or `controls.fullscreen` to `false` to hide individual
+toolbar controls. Set `features.fullscreen: false` to disable fullscreen.
+The `icons` option also accepts `play`, `pause`, `speed`, `settings`,
+`enter-fullscreen`, and `exit-fullscreen`.
+
 ## Captions and timeline markers
 
 Use `record.addAnnotation()` to add captions and timeline markers. Captions are
-shown by default; set `showCaptions: false` to hide them initially. Viewers can
-toggle them with CC.
+shown by default. Set `showCaptions: false` to hide initial captions. Viewers
+can toggle captions and annotation markers together in Replay settings. The
+Annotations switch appears when the recording includes captions or annotation
+markers. Custom event markers remain visible when annotations are turned off.
 
 ```js
 record.addAnnotation({ type: 'caption', text: 'Click Save.' });
