@@ -1,79 +1,23 @@
 <script lang="ts">
-  export let disabled: boolean;
-  export let checked: boolean;
   export let id: string;
+  export let checked: boolean;
+  export let disabled = false;
   export let label: string;
 </script>
-
+<span class="switch" class:disabled>
+  <input {id} type="checkbox" role="switch" aria-label={label} bind:checked {disabled} on:change />
+  <span class="track" aria-hidden="true"></span>
+</span>
 <style>
-  .switch {
-    height: 1em;
-    display: flex;
-    align-items: center;
-  }
-
-  .switch.disabled {
-    opacity: 0.5;
-  }
-
-  .label {
-    margin: 0 8px;
-  }
-
-  .switch input[type='checkbox'] {
-    position: absolute;
-    opacity: 0;
-  }
-
-  .switch label {
-    width: 2em;
-    height: 1em;
-    position: relative;
-    cursor: pointer;
-    display: block;
-  }
-
-  .switch.disabled label {
-    cursor: not-allowed;
-  }
-
-  .switch label:before {
-    content: '';
-    position: absolute;
-    width: 2em;
-    height: 1em;
-    left: 0.1em;
-    transition: background 0.1s ease;
-    background: rgba(73, 80, 246, 0.5);
-    border-radius: 50px;
-  }
-
-  .switch label:after {
-    content: '';
-    position: absolute;
-    width: 1em;
-    height: 1em;
-    border-radius: 50px;
-    left: 0;
-    transition: all 0.2s ease;
-    box-shadow: 0px 2px 5px 0px rgba(0, 0, 0, 0.3);
-    background: #fcfff4;
-    animation: switch-off 0.2s ease-out;
-    z-index: 2;
-  }
-
-  .switch input[type='checkbox']:checked + label:before {
-    background: rgb(73, 80, 246);
-  }
-
-  .switch input[type='checkbox']:checked + label:after {
-    animation: switch-on 0.2s ease-out;
-    left: 1.1em;
-  }
+  .switch { position:relative; display:inline-flex; flex:none; width:var(--rr-switch-width,36px); height:var(--rr-switch-height,20px); }
+  .disabled { opacity:.5; }
+  input { position:absolute; inset:0; z-index:1; width:100%; height:100%; margin:0; cursor:pointer; opacity:0; }
+  input:disabled { cursor:not-allowed; }
+  .track::before, .track::after { content:''; position:absolute; border-radius:999px; }
+  .track::before { inset:0; background:var(--rr-switch-off,#ffffff33); transition:background .1s ease; }
+  .track::after { top:var(--rr-switch-inset,2px); left:var(--rr-switch-inset,2px); width:var(--rr-switch-thumb,16px); height:var(--rr-switch-thumb,16px); background:var(--rr-switch-knob,white); box-shadow:var(--rr-switch-shadow,none); transition:transform .15s ease; }
+  input:checked + .track::before { background:var(--rrweb-player-accent,var(--rr-theme-accent,#eec202)); }
+  input:checked + .track::after { transform:translateX(calc(var(--rr-switch-width,36px) - var(--rr-switch-thumb,16px) - 2 * var(--rr-switch-inset,2px))); }
+  input:focus-visible + .track::before { outline:2px solid var(--rrweb-player-focus-ring,var(--rr-theme-focus-ring,#ffe373)); outline-offset:3px; }
+  @media (prefers-reduced-motion:reduce) { .track::before, .track::after { transition:none; } }
 </style>
-
-<div class="switch" class:disabled>
-  <input type="checkbox" {id} bind:checked {disabled} />
-  <label for={id} />
-  <span class="label">{label}</span>
-</div>
