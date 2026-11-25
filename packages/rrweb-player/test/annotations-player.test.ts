@@ -497,6 +497,29 @@ describe('player annotations', () => {
     ).toBe('false');
   });
 
+  it('retains a cast-only annotation across a later unannotated segment', async () => {
+    const player = await mount({
+      events: recording().filter(event => event.type !== EventType.Annotation),
+    });
+    click('[aria-label="Replay settings"]');
+    await tick();
+    const toggle = () => target.querySelector('[aria-label="Annotations"]');
+    expect(toggle()).toBeNull();
+
+    // Emit the engine notification without adding the annotation to its public list.
+    player.getReplayer()['emitter'].emit('event-cast', annotation(1000, 'Order placed'));
+    await tick();
+    expect(toggle()).not.toBeNull();
+    player.addEvent({
+      type: EventType.Custom,
+      timestamp: start + 12000,
+      data: { tag: 'segment-end', payload: {} },
+    });
+    await Promise.resolve();
+    await tick();
+    expect(toggle()).not.toBeNull();
+  });
+
   it('keeps annotations hidden across caption prop changes and appended events', async () => {
     const initialEvents = recording().filter(
       (event) => event.type !== EventType.Annotation,
