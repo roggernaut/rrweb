@@ -353,28 +353,36 @@ describe('replayer', function () {
     ]);
   });
 
-  it('freezes the skip on in-place pause and restores it on resume', async () => {
-    const result = await page.evaluate(`
-      const { Replayer } = rrweb;
-      const replayer = new Replayer(events);
-      replayer.play(0);
-      replayer.speedService.send({ type: 'FAST_FORWARD', payload: { speed: 8 } });
+  it('restores the selected speed on pause and skips again on resuming inside the gap', async () => {
+    const result = await page.evaluate(() => {
+      const { rrweb, events } = window as IWindow;
+      const end = {
+        type: 5 as const,
+        timestamp: events[events.length - 1].timestamp + 120000,
+        data: { tag: 'end', payload: {} },
+      };
+      const replayer = new rrweb.Replayer([...events, end], {
+        skipInactive: true,
+        speed: 2,
+      });
+      const state = () => ({
+        mode: replayer.speedService.state.value,
+        speed: replayer.speedService.state.context.timer.speed,
+      });
+      replayer.play(end.timestamp - events[0].timestamp - 60000);
+      const playing = state();
       replayer.pause();
-      const whilePaused = [
-        replayer.speedService.state.value,
-        replayer.speedService.state.context.timer.speed,
-      ];
-      replayer.play();
-      const afterResume = [
-        replayer.speedService.state.value,
-        replayer.speedService.state.context.timer.speed,
-      ];
-      [whilePaused, afterResume];
-    `);
-    expect(result).toEqual([
-      ['skipping', 8],
-      ['normal', 1],
-    ]);
+      const paused = state();
+      replayer.play(replayer.getCurrentTime());
+      const resumed = state();
+      replayer.destroy();
+      return { playing, paused, resumed };
+    });
+    expect(result.playing.mode).toBe('skipping');
+    expect(result.playing.speed).toBeGreaterThan(2);
+    expect(result.paused).toEqual({ mode: 'normal', speed: 2 });
+    expect(result.resumed.mode).toBe('skipping');
+    expect(result.resumed.speed).toBeGreaterThan(2);
   });
 
   it('can fast forward past StyleSheetRule changes on virtual elements', async () => {
