@@ -3,6 +3,7 @@
   import { ACTIVITY_LAYERS } from '../timeline-activity';
   import type {activitySamples, clickMarks} from '../timeline-activity';
   import type {ReplayTimelineScale} from '../timeline-scale';
+  import { formatTime } from '../utils';
   export let scale: ReplayTimelineScale;
   export let samples: ReturnType<typeof activitySamples>;
   export let marks: ReturnType<typeof clickMarks>;
@@ -19,29 +20,47 @@
       return round(100-94*sum);
     };
     return ACTIVITY_LAYERS.map((key,i) => {
-      if (!enabled[key]) return '';
+      if (!enabled[key] || !points.some((point) => point.layers[i] > 0)) return '';
       const edge = (n:number) => points.map(p=>round(p.position*1000)+','+top(p,n));
       return 'M'+edge(i+1).join(' L')+' L'+edge(i).reverse().join(' L')+' Z';
     });
   }
   $: bands = paths(samples,layers);
-  function key(e:KeyboardEvent) {
+  function key(event: KeyboardEvent) {
+    if (event.defaultPrevented || event.isComposing || event.altKey || event.ctrlKey || event.metaKey) return;
     const from = choice ?? currentTime;
-    const step = e.shiftKey ? 5000 : 1000;
-    const next = {ArrowLeft:from-step, ArrowRight:from+step, Home:0, End:scale.total}[e.key];
-    if (e.key === 'Escape') { choice=null; e.stopPropagation(); return; }
+    const step = event.shiftKey ? 5000 : 1000;
+    const next = {
+      ArrowLeft: from - step,
+      ArrowRight: from + step,
+      Home: 0,
+      End: scale.total,
+    }[event.key];
+    if (event.key === 'Escape' && choice !== null) {
+      choice = null;
+      event.stopPropagation();
+      return;
+    }
     if (next === undefined) return;
-    e.stopPropagation(); e.preventDefault();
-    choice = Math.max(0,Math.min(scale.total,next));
+    event.stopPropagation();
+    event.preventDefault();
+    choice = Math.max(0, Math.min(scale.total, next));
   }
-  function click(e:MouseEvent) {
-    if (!e.detail) { if(choice !== null) dispatch('seek',choice); return; }
-    const rect=(e.currentTarget as Element).getBoundingClientRect();
-    if(rect.width) dispatch('seek',scale.positionToTime((e.clientX-rect.left)/rect.width));
+  function click(event: MouseEvent) {
+    let time = choice;
+    if (event.detail) {
+      const rect = (event.currentTarget as Element).getBoundingClientRect();
+      if (!rect.width) return;
+      time = scale.positionToTime((event.clientX - rect.left) / rect.width);
+    }
+    if (time === null) return;
+    choice = null;
+    dispatch('seek', time);
   }
 </script>
 <button type="button" class="rr-activity" class:shown={bottomHovered}
-  aria-label="Seek on activity graph" title="Use arrows to choose a time and Enter to seek"
+  aria-label={choice === null ? 'Seek on activity graph' : `Seek to ${formatTime(choice)} on activity graph`}
+  title="Use arrows to choose a time and Enter to seek"
   on:click|stopPropagation={click} on:keydown={key} on:blur={() => choice = null}>
   <svg aria-hidden="true" viewBox="0 0 1000 110" preserveAspectRatio="none">
     {#each bands as path, i}

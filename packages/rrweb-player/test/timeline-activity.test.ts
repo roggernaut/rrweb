@@ -42,7 +42,7 @@ describe('timeline activity', () => {
       mouse: 0,
       scroll: 0,
     });
-    expect(buckets.get(2)?.clicks).toBe(0);
+    expect(buckets.has(2)).toBe(false);
   });
   it('places batched movement at its sample time and does not bridge idle gaps or snapshots', () => {
     const buckets = bucketReplayActivity(
@@ -61,14 +61,17 @@ describe('timeline activity', () => {
           positions: [{ x: 600, y: 800, timeOffset: 0 }],
         }),
         { type: 2, timestamp: 22000, data: {} },
-        event(22000, { source: 1, positions: [{ x: 0, y: 0, timeOffset: 0 }] }),
+        event(22000, {
+          source: 1,
+          positions: [{ x: 0, y: 0, timeOffset: 0 }],
+        }),
       ],
       30000,
     );
     expect(buckets.get(1)?.mouse).toBe(5);
     expect(buckets.get(2)?.mouse).toBe(5);
-    expect(buckets.get(20)?.mouse).toBe(0);
-    expect(buckets.get(22)?.mouse).toBe(0);
+    expect(buckets.has(20)).toBe(false);
+    expect(buckets.has(22)).toBe(false);
   });
   it('uses per-scroller offsets and sums both directions, without an invented first origin', () => {
     const buckets = bucketReplayActivity(
@@ -222,6 +225,65 @@ describe('click marks', () => {
 });
 
 describe('sampling bounds', () => {
+  it.each([10_000, 86_400_000])(
+    'draws input recorded on the final sample at %sms',
+    (duration) => {
+      const scale = createReplayTimelineScale(duration, []);
+      const buckets = bucketReplayActivity(
+        [meta, event(duration, { source: 5 })],
+        duration,
+      );
+      const samples = activitySamples(buckets, scale);
+      expect(samples.at(-1)?.layers[2]).toBe(1 / 3);
+    },
+  );
+  it('retains a full discrete input when activity resumes in the last millisecond of a bucket', () => {
+    const scale = createReplayTimelineScale(86_400_000, [[1000, 60_999]]);
+    const samples = activitySamples(
+      bucketReplayActivity(
+        [meta, event(60_999, { source: 5 }), event(600_000, { source: 5 })],
+        scale.total,
+      ),
+      scale,
+    );
+    const resumed = samples.find((s) => s.time > 60_999 && s.time < 61_000)!;
+    const later = samples.find((s) => s.time >= 600_000 && s.time < 601_000)!;
+    expect(resumed.layers[2]).toBe(1 / 3);
+    expect(resumed.layers[2]).toBe(later.layers[2]);
+  });
+  it('separates coarse bins on opposite sides of a sub-grid idle gap', () => {
+    const start = 43_190_000,
+      end = 43_210_000;
+    const scale = createReplayTimelineScale(86_400_000, [[start, end]]);
+    const samples = activitySamples(
+      new Map(
+        [43_189, 43_210].map((second) => [
+          second,
+          {
+            clicks: 0,
+            inputs: 1,
+            mouse: 0,
+            scroll: 0,
+          },
+        ]),
+      ),
+      scale,
+    );
+    const peaks = samples.filter((s) => s.layers[2] > 0);
+    expect(peaks).toHaveLength(2);
+    expect(peaks[0].time).toBeLessThan(start);
+    expect(peaks[1].time).toBeGreaterThan(end);
+    for (const time of [start, end])
+      expect(samples.find((s) => s.time === time)?.layers).toEqual([0, 0, 0]);
+    expect(
+      samples
+        .filter((s) => s.time >= start && s.time <= end)
+        .every((s) => s.layers[2] === 0),
+    ).toBe(true);
+    expect(
+      samples.every((s, i) => i === 0 || s.position >= samples[i - 1].position),
+    ).toBe(true);
+  });
   it('draws a one-second input burst between samples in a 24-hour session', () => {
     const samples = activitySamples(
       new Map([[70, { clicks: 0, inputs: 1, mouse: 0, scroll: 0 }]]),
