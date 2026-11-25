@@ -34,6 +34,7 @@
   export let features: PlayerFeatures = {};
   export let controlVisibility: PlayerControls = {};
   export let fullscreen = false;
+  export let recordingTimeZone: string | undefined = undefined;
   export let icons: PlayerIcons = {};
   $: seconds = jumpSeconds(features.jump);
   const dispatch = createEventDispatcher();
@@ -579,7 +580,7 @@
         <div class="rr-progress__handler" style="left: {percentage}" />
       </div>
     </div>
-    <PlayerToolbar {features} {controlVisibility} {icons} {seconds} {fullscreen}
+    <PlayerToolbar startedAt={meta.startTime} {recordingTimeZone} {features} {controlVisibility} {icons} {seconds} {fullscreen}
       bind:this={toolbar}
       {maxZoom} bind:zoom
       bind:followCursor
@@ -610,8 +611,8 @@
   .rr-controller {
     width: 100%;
     height: 80px;
-    background: var(--rrweb-player-surface, #0a1325);
-    color: var(--rrweb-player-text, #edf1ff);
+    background: var(--rrweb-player-surface, var(--rr-theme-surface, #0a1325));
+    color: var(--rrweb-player-text, var(--rr-theme-text, #edf1ff));
     display: flex;
     flex-direction: column;
     justify-content: space-around;
@@ -630,7 +631,7 @@
   .rr-progress {
     flex: 1;
     height: 12px;
-    background: var(--rrweb-player-track, #dbe2fd24);
+    background: var(--rrweb-player-track, var(--rr-theme-track, #dbe2fd24));
     background-clip: padding-box;
     position: relative;
     border-radius: 3px;
@@ -647,7 +648,7 @@
     border-radius: 3px;
   }
   .rr-progress:not(.pointer-seek) .rr-progress__slider:focus-visible {
-    outline: 2px solid var(--rrweb-player-focus-ring, #ffe373);
+    outline: 2px solid var(--rrweb-player-focus-ring, var(--rr-theme-focus-ring, #ffe373));
     outline-offset: 2px;
   }
   .rr-progress.disabled {
@@ -659,7 +660,7 @@
     position: absolute;
     left: 0;
     top: 0;
-    background: var(--rrweb-player-played, var(--rrweb-player-accent, #eec20266));
+    background: var(--rrweb-player-played, var(--rr-theme-played, var(--rrweb-player-accent, var(--rr-theme-accent, #eec20266))));
   }
 
   .rr-progress__handler {
@@ -669,6 +670,6 @@
     position: absolute;
     top: 2px;
     transform: translate(-50%, -50%);
-    background: var(--rrweb-player-accent, #eec202);
+    background: var(--rrweb-player-accent, var(--rr-theme-accent, #eec202));
   }
 </style>
