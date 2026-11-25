@@ -472,6 +472,7 @@
       hasAnnotations={timeline.hasCaptions || timeline.markers.some(marker => marker.text)}
       {speed}
       {speedOption}
+      canChangeSpeed={speedState !== 'skipping'}
       annotations={showCaptions || showTimelineNotes}
       bind:skipInactive
       on:toggle={toggle}

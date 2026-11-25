@@ -26,6 +26,20 @@
   function cancelClose() {
     clearTimeout(timer);
   }
+  function openOnHover(event: PointerEvent) {
+    if (event.pointerType !== 'mouse') return;
+    const focusedPanel = trigger.ownerDocument.activeElement?.closest(
+      '[data-replay-control-panel]',
+    );
+    if (
+      focusedPanel &&
+      focusedPanel !== panel &&
+      trigger.parentElement?.contains(focusedPanel)
+    )
+      return;
+    cancelClose();
+    setOpen(true);
+  }
   function scheduleClose() {
     cancelClose();
     timer = setTimeout(() => {
@@ -91,10 +105,10 @@
   }
   function escape(event: KeyboardEvent) {
     if (!open || event.key !== 'Escape' || event.defaultPrevented) return;
-    if (panel?.contains(document.activeElement)) {
-      event.preventDefault();
-      trigger.focus();
-    }
+    const activeElement = trigger.ownerDocument.activeElement;
+    const focusInPanel = panel?.contains(activeElement);
+    if (focusInPanel || activeElement === trigger) event.preventDefault();
+    if (focusInPanel) trigger.focus();
     setOpen(false);
   }
   $: if (!open) {
@@ -113,11 +127,7 @@
   aria-haspopup="dialog"
   aria-expanded={open}
   class:active={open}
-  on:pointerenter={(event) => {
-    if (event.pointerType !== 'mouse') return;
-    cancelClose();
-    setOpen(true);
-  }}
+  on:pointerenter={openOnHover}
   on:pointerleave={scheduleClose}
   on:click={click}
   on:focusout={closeOnBlur}
@@ -127,6 +137,7 @@
 {#if open}
   <div
     class="rr-control-panel"
+    data-replay-control-panel
     bind:this={panel}
     use:observe
     role="dialog"

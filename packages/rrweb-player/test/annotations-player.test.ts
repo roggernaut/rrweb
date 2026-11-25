@@ -275,7 +275,82 @@ describe('player annotations', () => {
     expect(target.querySelector('[role="dialog"][aria-label="Playback speed"]')).toBeNull();
   });
 
+  it('keeps a focused popup open on sibling hover and switches on click', async () => {
+    await mount();
+    const speedTrigger = target.querySelector<HTMLButtonElement>(
+      'button[aria-label="Playback speed"]',
+    )!;
+    const settingsTrigger = target.querySelector<HTMLButtonElement>(
+      'button[aria-label="Replay settings"]',
+    )!;
+    const dialogs = () =>
+      Array.from(target.querySelectorAll('.rr-controller__btns [role="dialog"]'));
+    const hover = (element: HTMLElement) => {
+      element.dispatchEvent(
+        new PointerEvent('pointerenter', { pointerType: 'mouse' }),
+      );
+    };
 
+    hover(speedTrigger);
+    await tick();
+    hover(settingsTrigger);
+    await tick();
+    expect(dialogs().map((dialog) => dialog.getAttribute('aria-label'))).toEqual([
+      'Replay settings',
+    ]);
+
+    speedTrigger.click();
+    await tick();
+    const preset = target.querySelector<HTMLButtonElement>(
+      'button[aria-label="2× speed"]',
+    )!;
+    preset.focus();
+    hover(settingsTrigger);
+    await tick();
+    expect(dialogs().map((dialog) => dialog.getAttribute('aria-label'))).toEqual([
+      'Playback speed',
+    ]);
+    expect(document.activeElement).toBe(preset);
+
+    settingsTrigger.click();
+    await tick();
+    expect(dialogs().map((dialog) => dialog.getAttribute('aria-label'))).toEqual([
+      'Replay settings',
+    ]);
+    expect(document.activeElement).toBe(dialogs()[0]);
+  });
+
+  it('disables speed controls while skipping inactivity', async () => {
+    const player = await mount({ skipInactive: true });
+    click('button[aria-label="Playback speed"]');
+    await tick();
+    const dialog = target.querySelector(
+      '[role="dialog"][aria-label="Playback speed"]',
+    )!;
+    const range = dialog.querySelector<HTMLInputElement>('input[type="range"]')!;
+    const preset = dialog.querySelector<HTMLButtonElement>(
+      'button[aria-label="2× speed"]',
+    )!;
+    expect(range.disabled).toBe(false);
+    expect(preset.disabled).toBe(false);
+
+    const { speedService } = player.getReplayer();
+    speedService.send({ type: 'FAST_FORWARD', payload: { speed: 5 } });
+    await tick();
+    expect(range.disabled).toBe(true);
+    expect(
+      Array.from(dialog.querySelectorAll('button')).every(
+        (button) => button.disabled,
+      ),
+    ).toBe(true);
+    preset.click();
+    expect(speedService.state.value).toBe('skipping');
+
+    speedService.send({ type: 'BACK_TO_NORMAL' });
+    await tick();
+    expect(range.disabled).toBe(false);
+    expect(preset.disabled).toBe(false);
+  });
   it('supports accessible keyboard seeking on the timeline slider', async () => {
     const player = await mount();
     player.goto(3000, false);

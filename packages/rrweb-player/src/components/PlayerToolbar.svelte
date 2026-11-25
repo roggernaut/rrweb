@@ -10,6 +10,7 @@
   export let totalTime: number;
   export let speed: number;
   export let speedOption: number[];
+  export let canChangeSpeed: boolean;
   export let annotations: boolean;
   export let skipInactive: boolean;
   export let hasAnnotations: boolean;
@@ -71,7 +72,7 @@
       <button
         type="button"
         aria-label="Decrease playback speed"
-        disabled={speed <= minSpeed}
+        disabled={!canChangeSpeed || speed <= minSpeed}
         on:click={() => changeSpeed(speed - 0.25)}>−</button
       >
       <input
@@ -80,6 +81,7 @@
         max={maxSpeed}
         step="0.25"
         value={speed}
+        disabled={!canChangeSpeed}
         aria-label="Playback speed"
         aria-valuetext={`${speed.toFixed(2)} times`}
         on:input={(event) => changeSpeed(Number(event.currentTarget.value))}
@@ -87,7 +89,7 @@
       <button
         type="button"
         aria-label="Increase playback speed"
-        disabled={speed >= maxSpeed}
+        disabled={!canChangeSpeed || speed >= maxSpeed}
         on:click={() => changeSpeed(speed + 0.25)}>+</button
       >
     </div>
@@ -98,7 +100,8 @@
             type="button"
             aria-label={`${value}× speed`}
             aria-pressed={speed === value}
-                on:click={() => changeSpeed(value)}
+            disabled={!canChangeSpeed}
+            on:click={() => changeSpeed(value)}
             ><span class:normal={value === 1}
               >{Number.isInteger(value) ? value.toFixed(1) : value}</span
             ></button
