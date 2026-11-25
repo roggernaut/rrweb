@@ -106,6 +106,22 @@ steps, or use Home/End to jump to the start/end.
 See the [annotation recipe](../../docs/recipes/annotations.md)
 for replay callbacks, keyboard interactions, seeking, and TypeScript usage.
 
+## Updating inactivity settings
+
+Call `setInactivity` with the options you want to change. During playback,
+the replayer applies the changes at the current position.
+
+```ts
+player.setInactivity({
+  skipInactive: true,
+  inactivePeriodThreshold: 15000,
+  maxSpeed: 100,
+});
+```
+
+The threshold is in milliseconds and `maxSpeed` caps the playback speed
+during a skip.
+
 ## Methods on the rrwebPlayer component
 
 ```ts

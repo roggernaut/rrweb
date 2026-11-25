@@ -441,6 +441,8 @@ export class Replayer {
   }
 
   public setConfig(config: Partial<playerConfig>) {
+    const maxSpeedChanged =
+      config.maxSpeed !== undefined && config.maxSpeed !== this.config.maxSpeed;
     Object.keys(config).forEach((key) => {
       const newConfigValue = config[key as keyof playerConfig];
       (this.config as Record<keyof playerConfig, typeof newConfigValue>)[
@@ -460,6 +462,7 @@ export class Replayer {
     }
     if (
       config.speed !== undefined ||
+      maxSpeedChanged ||
       config.skipInactive !== undefined ||
       config.inactivePeriodThreshold !== undefined
     ) {

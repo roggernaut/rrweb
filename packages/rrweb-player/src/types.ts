@@ -80,6 +80,11 @@ export type RRwebPlayerExpose = {
   // getSilly: () => void;
   toggle: () => void;
   setSpeed: (speed: number) => void;
+  setInactivity: (
+    options: Partial<
+      Pick<playerConfig, 'skipInactive' | 'inactivePeriodThreshold' | 'maxSpeed'>
+    >,
+  ) => void;
   toggleSkipInactive: () => void;
   toggleFullscreen: () => void;
   triggerResize: () => void;

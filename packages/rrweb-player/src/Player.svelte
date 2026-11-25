@@ -13,7 +13,7 @@
   } from './utils';
   import Controller from './Controller.svelte';
   import type { RRwebPlayerOptions, RRwebPlayerExpose } from './types';
-    
+
   export let width: NonNullable<RRwebPlayerOptions['props']['width']>  = 1024;
   export let height: NonNullable<RRwebPlayerOptions['props']['height']> = 576;
   export let maxScale: NonNullable<RRwebPlayerOptions['props']['maxScale']> = 1;
@@ -110,6 +110,18 @@
   };
   export const setSpeed: RRwebPlayerExpose['setSpeed'] = (speed: number) => {
     controller.setSpeed(speed);
+  };
+  export const setInactivity: RRwebPlayerExpose['setInactivity'] = (options) => {
+    const { skipInactive: enabled, inactivePeriodThreshold, maxSpeed } = options;
+    if (enabled !== undefined) skipInactive = enabled;
+    replayer.setConfig({
+      ...(enabled !== undefined && { skipInactive: enabled }),
+      ...(inactivePeriodThreshold !== undefined && { inactivePeriodThreshold }),
+      ...(maxSpeed !== undefined && { maxSpeed }),
+    });
+    if (inactivePeriodThreshold !== undefined) {
+      controller.updateInactivityTimeline();
+    }
   };
   export const toggleSkipInactive: RRwebPlayerExpose['toggleSkipInactive'] = () => {
     controller.toggleSkipInactive();
@@ -274,7 +286,7 @@
       {showController}
       {autoPlay}
       {speedOption}
-      {skipInactive}
+      bind:skipInactive
       {tags}
       {timelineMarkerColor}
       {inactiveColor}
